@@ -1,0 +1,111 @@
+Date : 2026-05-21 21:41:52
+Directory : c:\MiningQwQMusic
+Total : 48 files,  12785 codes, 10 comments, 588 blanks, all 13383 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| JSON               |          3 |      8,591 |          0 |          3 |      8,594 |
+| PostCSS            |          1 |      1,562 |          0 |        262 |      1,824 |
+| TypeScript         |         31 |      1,390 |          5 |        189 |      1,584 |
+| TypeScript JSX     |          5 |      1,005 |          2 |         84 |      1,091 |
+| Markdown           |          2 |         97 |          0 |         36 |        133 |
+| JavaScript         |          2 |         70 |          3 |         10 |         83 |
+| JSON with Comments |          2 |         48 |          0 |          2 |         50 |
+| XML                |          2 |         22 |          0 |          2 |         24 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++----------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                           | files      | code       | comment    | blank      | total      |
++----------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                              |         48 |     12,785 |         10 |        588 |     13,383 |
+| . (Files)                                                      |         10 |      8,738 |          6 |         35 |      8,779 |
+| app                                                            |          9 |      1,739 |          0 |        285 |      2,024 |
+| app (Files)                                                    |          3 |      1,587 |          0 |        268 |      1,855 |
+| app\api                                                        |          5 |        133 |          0 |         16 |        149 |
+| app\api\music                                                  |          5 |        133 |          0 |         16 |        149 |
+| app\api\music\playlist                                         |          1 |         24 |          0 |          3 |         27 |
+| app\api\music\playlist\[id]                                    |          1 |         24 |          0 |          3 |         27 |
+| app\api\music\search                                           |          1 |         37 |          0 |          4 |         41 |
+| app\api\music\track                                            |          3 |         72 |          0 |          9 |         81 |
+| app\api\music\track\[id]                                       |          3 |         72 |          0 |          9 |         81 |
+| app\api\music\track\[id] (Files)                               |          1 |         24 |          0 |          3 |         27 |
+| app\api\music\track\[id]\lyric                                 |          1 |         24 |          0 |          3 |         27 |
+| app\api\music\track\[id]\play-url                              |          1 |         24 |          0 |          3 |         27 |
+| app\offline                                                    |          1 |         19 |          0 |          1 |         20 |
+| docs                                                           |          1 |         36 |          0 |         14 |         50 |
+| public                                                         |          4 |         97 |          2 |         11 |        110 |
+| public (Files)                                                 |          2 |         75 |          2 |          9 |         86 |
+| public\icons                                                   |          2 |         22 |          0 |          2 |         24 |
+| src                                                            |         17 |      1,970 |          2 |        211 |      2,183 |
+| src\components                                                 |          2 |        961 |          2 |         77 |      1,040 |
+| src\hooks                                                      |          1 |        175 |          0 |         24 |        199 |
+| src\lib                                                        |         12 |        593 |          0 |         85 |        678 |
+| src\lib (Files)                                                |          8 |        226 |          0 |         37 |        263 |
+| src\lib\music                                                  |          4 |        367 |          0 |         48 |        415 |
+| src\lib\music (Files)                                          |          2 |         84 |          0 |         14 |         98 |
+| src\lib\music\providers                                        |          2 |        283 |          0 |         34 |        317 |
+| src\store                                                      |          1 |        181 |          0 |         13 |        194 |
+| src\types                                                      |          1 |         60 |          0 |         12 |         72 |
+| tests                                                          |          7 |        205 |          0 |         32 |        237 |
+| tests\e2e                                                      |          1 |          8 |          0 |          2 |         10 |
+| tests\integration                                              |          1 |         27 |          0 |          5 |         32 |
+| tests\unit                                                     |          5 |        170 |          0 |         25 |        195 |
++----------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++----------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                       | language           | code       | comment    | blank      | total      |
++----------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\MiningQwQMusic\.eslintrc.json                               | JSON with Comments |          3 |          0 |          1 |          4 |
+| c:\MiningQwQMusic\README.md                                    | Markdown           |         61 |          0 |         22 |         83 |
+| c:\MiningQwQMusic\app\api\music\playlist\[id]\route.ts         | TypeScript         |         24 |          0 |          3 |         27 |
+| c:\MiningQwQMusic\app\api\music\search\route.ts                | TypeScript         |         37 |          0 |          4 |         41 |
+| c:\MiningQwQMusic\app\api\music\track\[id]\lyric\route.ts      | TypeScript         |         24 |          0 |          3 |         27 |
+| c:\MiningQwQMusic\app\api\music\track\[id]\play-url\route.ts   | TypeScript         |         24 |          0 |          3 |         27 |
+| c:\MiningQwQMusic\app\api\music\track\[id]\route.ts            | TypeScript         |         24 |          0 |          3 |         27 |
+| c:\MiningQwQMusic\app\globals.css                              | PostCSS            |      1,562 |          0 |        262 |      1,824 |
+| c:\MiningQwQMusic\app\layout.tsx                               | TypeScript JSX     |         21 |          0 |          4 |         25 |
+| c:\MiningQwQMusic\app\offline\page.tsx                         | TypeScript JSX     |         19 |          0 |          1 |         20 |
+| c:\MiningQwQMusic\app\page.tsx                                 | TypeScript JSX     |          4 |          0 |          2 |          6 |
+| c:\MiningQwQMusic\docs\upstream-contract.md                    | Markdown           |         36 |          0 |         14 |         50 |
+| c:\MiningQwQMusic\next-env.d.ts                                | TypeScript         |          0 |          5 |          2 |          7 |
+| c:\MiningQwQMusic\next.config.mjs                              | JavaScript         |         17 |          1 |          2 |         20 |
+| c:\MiningQwQMusic\package-lock.json                            | JSON               |      8,531 |          0 |          1 |      8,532 |
+| c:\MiningQwQMusic\package.json                                 | JSON               |         38 |          0 |          1 |         39 |
+| c:\MiningQwQMusic\playwright.config.ts                         | TypeScript         |         25 |          0 |          2 |         27 |
+| c:\MiningQwQMusic\public\icons\icon-192.svg                    | XML                |         11 |          0 |          1 |         12 |
+| c:\MiningQwQMusic\public\icons\icon-512.svg                    | XML                |         11 |          0 |          1 |         12 |
+| c:\MiningQwQMusic\public\manifest.webmanifest                  | JSON               |         22 |          0 |          1 |         23 |
+| c:\MiningQwQMusic\public\sw.js                                 | JavaScript         |         53 |          2 |          8 |         63 |
+| c:\MiningQwQMusic\src\components\player-app.tsx                | TypeScript JSX     |        945 |          1 |         72 |      1,018 |
+| c:\MiningQwQMusic\src\components\sw-register.tsx               | TypeScript JSX     |         16 |          1 |          5 |         22 |
+| c:\MiningQwQMusic\src\hooks\use-player-controller.ts           | TypeScript         |        175 |          0 |         24 |        199 |
+| c:\MiningQwQMusic\src\lib\api-response.ts                      | TypeScript         |         26 |          0 |          3 |         29 |
+| c:\MiningQwQMusic\src\lib\circuit-breaker.ts                   | TypeScript         |         42 |          0 |          7 |         49 |
+| c:\MiningQwQMusic\src\lib\client-api.ts                        | TypeScript         |         27 |          0 |          6 |         33 |
+| c:\MiningQwQMusic\src\lib\errors.ts                            | TypeScript         |         19 |          0 |          3 |         22 |
+| c:\MiningQwQMusic\src\lib\http.ts                              | TypeScript         |         63 |          0 |          9 |         72 |
+| c:\MiningQwQMusic\src\lib\lyrics.ts                            | TypeScript         |         30 |          0 |          6 |         36 |
+| c:\MiningQwQMusic\src\lib\music\adapter.ts                     | TypeScript         |         13 |          0 |          3 |         16 |
+| c:\MiningQwQMusic\src\lib\music\providers\mock.ts              | TypeScript         |         92 |          0 |         11 |        103 |
+| c:\MiningQwQMusic\src\lib\music\providers\netease-like.ts      | TypeScript         |        191 |          0 |         23 |        214 |
+| c:\MiningQwQMusic\src\lib\music\service.ts                     | TypeScript         |         71 |          0 |         11 |         82 |
+| c:\MiningQwQMusic\src\lib\player-ui.ts                         | TypeScript         |         16 |          0 |          2 |         18 |
+| c:\MiningQwQMusic\src\lib\trace.ts                             | TypeScript         |          3 |          0 |          1 |          4 |
+| c:\MiningQwQMusic\src\store\player-store.ts                    | TypeScript         |        181 |          0 |         13 |        194 |
+| c:\MiningQwQMusic\src\types\music.ts                           | TypeScript         |         60 |          0 |         12 |         72 |
+| c:\MiningQwQMusic\tests\e2e\home.spec.ts                       | TypeScript         |          8 |          0 |          2 |         10 |
+| c:\MiningQwQMusic\tests\integration\music-search-route.test.ts | TypeScript         |         27 |          0 |          5 |         32 |
+| c:\MiningQwQMusic\tests\unit\lyrics.test.ts                    | TypeScript         |         18 |          0 |          3 |         21 |
+| c:\MiningQwQMusic\tests\unit\mock-adapter.test.ts              | TypeScript         |         18 |          0 |          4 |         22 |
+| c:\MiningQwQMusic\tests\unit\netease-adapter.test.ts           | TypeScript         |         58 |          0 |          7 |         65 |
+| c:\MiningQwQMusic\tests\unit\player-store.test.ts              | TypeScript         |         60 |          0 |          7 |         67 |
+| c:\MiningQwQMusic\tests\unit\player-ui.test.ts                 | TypeScript         |         16 |          0 |          4 |         20 |
+| c:\MiningQwQMusic\tsconfig.json                                | JSON with Comments |         45 |          0 |          1 |         46 |
+| c:\MiningQwQMusic\vitest.config.ts                             | TypeScript         |         17 |          0 |          2 |         19 |
+| c:\MiningQwQMusic\vitest.setup.ts                              | TypeScript         |          1 |          0 |          1 |          2 |
+| Total                                                          |                    |     12,785 |         10 |        588 |     13,383 |
++----------------------------------------------------------------+--------------------+------------+------------+------------+------------+

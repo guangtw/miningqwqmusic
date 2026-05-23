@@ -1,0 +1,38 @@
+{
+  "name": "miningqwqmusic-player",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Netease-like private source music player powered by Next.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "engines": {
+    "node": ">=18.18.0"
+  },
+  "dependencies": {
+    "next": "^15.3.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.53.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.15.30",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.5.2",
+    "eslint": "^9.27.0",
+    "eslint-config-next": "^15.3.2",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.2"
+  }
+}

@@ -992,6 +992,50 @@ input:focus-visible {
   gap: 8px;
 }
 
+.search-assist-block {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.search-assist-row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: start;
+  gap: 8px;
+}
+
+.search-assist-row span {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 28px;
+}
+
+.search-assist-row div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.search-assist-row button {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-sub);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease), background 0.18s ease, color 0.18s ease;
+}
+
+.search-assist-row button:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.search-assist-row button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
 .spotify-search-panel input {
   flex: 1;
   min-width: 0;
@@ -1738,6 +1782,82 @@ input:focus-visible {
   margin: 0;
   color: rgba(255, 255, 255, 0.52);
   font-size: 16px;
+}
+
+.meta-action-btn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.9);
+  padding: 7px 12px;
+  width: fit-content;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease), background 0.2s ease;
+}
+
+.meta-action-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.meta-action-btn:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.meta-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.download-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-row label {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 13px;
+}
+
+.download-row select {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.detail-lyric-shell {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+.detail-lyric-mode-row {
+  display: inline-flex;
+  width: fit-content;
+  gap: 6px;
+}
+
+.detail-lyric-mode-row button {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.72);
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease), background 0.2s ease, color 0.2s ease;
+}
+
+.detail-lyric-mode-row button.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.detail-lyric-mode-row button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .detail-lyric-scroll {

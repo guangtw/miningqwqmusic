@@ -1,6 +1,7 @@
 export type Artist = {
   id: string;
   name: string;
+  coverUrl?: string;
 };
 
 export type Album = {
@@ -43,6 +44,10 @@ export type TrackLyric = {
   trackId: string;
   lines: LyricLine[];
   raw?: string;
+  translatedLines?: LyricLine[];
+  translatedRaw?: string;
+  karaokeLines?: LyricLine[];
+  karaokeRaw?: string;
 };
 
 export type PagedResult<T> = {
@@ -50,6 +55,112 @@ export type PagedResult<T> = {
   page: number;
   pageSize: number;
   total: number;
+};
+
+export type DiscoverItemType =
+  | "track"
+  | "playlist"
+  | "album"
+  | "artist"
+  | "toplist"
+  | "banner"
+  | "scene";
+
+export type DiscoverItem = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  coverUrl?: string;
+  type: DiscoverItemType;
+  targetId?: string;
+};
+
+export type DiscoverBlock = {
+  id: string;
+  title: string;
+  items: DiscoverItem[];
+};
+
+export type SearchAssist = {
+  defaultKeyword?: string;
+  hotKeywords: string[];
+  suggestions: string[];
+};
+
+export type DiscoverData = {
+  blocks: DiscoverBlock[];
+  searchAssist: SearchAssist;
+};
+
+export type ToplistItem = {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  updateFrequency?: string;
+  tracksPreview: Track[];
+};
+
+export type AlbumDetail = {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  publishTime?: number;
+  artists: Artist[];
+  tracks: Track[];
+};
+
+export type ArtistDetail = {
+  id: string;
+  name: string;
+  coverUrl?: string;
+  briefDesc?: string;
+  topTracks: Track[];
+};
+
+export type SongCreator = {
+  name: string;
+  role?: string;
+};
+
+export type SongInsight = {
+  trackId: string;
+  playable?: boolean;
+  creators: SongCreator[];
+  wikiSummary?: string;
+  chorusStartMs?: number;
+  alternatives: Track[];
+};
+
+export type DownloadSource = {
+  trackId: string;
+  level: string;
+  url: string;
+  bitrate?: number;
+  size?: number;
+  format?: string;
+  ttlSeconds?: number;
+};
+
+export type SceneTag = {
+  id: string;
+  name: string;
+};
+
+export type SceneResource = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  coverUrl?: string;
+  trackId?: string;
+  bpm?: number;
+  tag?: string;
+};
+
+export type SceneData = {
+  tags: SceneTag[];
+  resources: SceneResource[];
 };
 
 export type ApiSuccess<T> = {

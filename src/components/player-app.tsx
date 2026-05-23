@@ -3,16 +3,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { getTrackDetail, searchMusic } from "@/src/lib/client-api";
+import {
+  getAlbumDetail,
+  getArtistDetail,
+  getDiscoverHome,
+  getPlaylistDetail,
+  getSatiScene,
+  getSearchAssist,
+  getSportScene,
+  getTrackDetail,
+  getTrackDownloadUrl,
+  getTrackInsight,
+  getToplistDetail,
+  searchMusic
+} from "@/src/lib/client-api";
 import { heroActionLabel, nextVolumeAfterMuteToggle } from "@/src/lib/player-ui";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
-import type { PlaybackMode, Track } from "@/src/types/music";
+import type { DiscoverData, DiscoverItem, PlaybackMode, SceneData, SongInsight, Track } from "@/src/types/music";
 
 type NavTab = "home" | "search" | "library";
 type SearchStatus = "idle" | "loading" | "success" | "empty" | "error";
 type LibraryView = "library-overview" | "library-favorites" | "library-recent";
 type DetailViewTab = "lyric" | "meta";
+type DetailLyricMode = "origin" | "translated" | "karaoke";
 type DetailModalPhase = "closed" | "opening" | "open" | "closing";
 type DetailPalette = {
   bgA: string;
@@ -278,11 +292,28 @@ export function PlayerApp() {
   const [libraryView, setLibraryView] = useState<LibraryView>("library-overview");
   const [detailPhase, setDetailPhase] = useState<DetailModalPhase>("closed");
   const [detailTab, setDetailTab] = useState<DetailViewTab>("lyric");
+  const [detailLyricMode, setDetailLyricMode] = useState<DetailLyricMode>("origin");
   const [detailPalette, setDetailPalette] = useState<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
   const [keyword, setKeyword] = useState("");
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
   const [result, setResult] = useState<Track[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [discoverData, setDiscoverData] = useState<DiscoverData | null>(null);
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+  const [searchAssist, setSearchAssist] = useState<{ hotKeywords: string[]; suggestions: string[]; defaultKeyword?: string } | null>(null);
+  const [trackInsight, setTrackInsight] = useState<SongInsight | null>(null);
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [downloadState, setDownloadState] = useState<{
+    loading: boolean;
+    level: string;
+    message: string | null;
+  }>({
+    loading: false,
+    level: "exhigh",
+    message: null
+  });
+  const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
+  const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const previousVolumeRef = useRef(0.8);
   const detailCloseTimerRef = useRef<number | null>(null);
@@ -314,6 +345,97 @@ export function PlayerApp() {
   useEffect(() => {
     detailPhaseRef.current = detailPhase;
   }, [detailPhase]);
+
+  useEffect(() => {
+    let active = true;
+    getDiscoverHome()
+      .then((data) => {
+        if (!active) return;
+        setDiscoverData(data);
+        setDiscoverError(null);
+        setSearchAssist(data.searchAssist);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDiscoverError(error instanceof Error ? error.message : "发现页加载失败");
+        getSearchAssist("")
+          .then((assist) => {
+            if (!active) return;
+            setSearchAssist(assist);
+          })
+          .catch(() => undefined);
+      });
+
+    getSatiScene()
+      .then((data) => {
+        if (!active) return;
+        setSceneSati(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSceneSati(null);
+      });
+
+    getSportScene(130)
+      .then((data) => {
+        if (!active) return;
+        setSceneSport(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSceneSport(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const q = keyword.trim();
+    if (!q) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      getSearchAssist(q)
+        .then((assist) => {
+          if (!active) return;
+          setSearchAssist(assist);
+        })
+        .catch(() => undefined);
+    }, 220);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [keyword]);
+
+  useEffect(() => {
+    setDetailLyricMode("origin");
+  }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (!currentTrack) {
+      setTrackInsight(null);
+      return;
+    }
+    let active = true;
+    setInsightLoading(true);
+    getTrackInsight(currentTrack.id)
+      .then((data) => {
+        if (!active) return;
+        setTrackInsight(data);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTrackInsight(null);
+      })
+      .finally(() => {
+        if (active) setInsightLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentTrack?.id]);
 
   const goTab = (tab: NavTab, nextLibraryView?: LibraryView) => {
     const previousTab = activeTabRef.current;
@@ -353,6 +475,114 @@ export function PlayerApp() {
     }
   };
 
+  const applyKeywordAndSearch = (nextKeyword: string) => {
+    const normalized = nextKeyword.trim();
+    if (!normalized) return;
+    setKeyword(normalized);
+    setSearchStatus("loading");
+    setSearchError(null);
+    window.setTimeout(() => {
+      void searchMusic(normalized, 1, 20)
+        .then((data) => {
+          setResult(data.items);
+          setSearchStatus(data.items.length ? "success" : "empty");
+          setSearchError(null);
+        })
+        .catch((error) => {
+          setResult([]);
+          setSearchStatus("error");
+          setSearchError(error instanceof Error ? error.message : "网络异常，搜索失败，请稍后重试。");
+        });
+    }, 0);
+  };
+
+  const tryPlaySceneTrack = async (trackId?: string) => {
+    if (!trackId) return;
+    try {
+      const detail = await getTrackDetail(trackId);
+      player.playTrackNow(detail);
+      player.setPlaying(true);
+    } catch {
+      // 场景资源不可播时保持静默，避免打断主页面操作。
+    }
+  };
+
+  const handleDiscoverItem = async (item: DiscoverItem) => {
+    const targetId = item.targetId ?? item.id;
+    if (!targetId) return;
+
+    try {
+      if (item.type === "track" || item.type === "banner" || item.type === "scene") {
+        await tryPlaySceneTrack(targetId);
+        return;
+      }
+
+      if (item.type === "playlist") {
+        const playlist = await getPlaylistDetail(targetId);
+        if (!playlist.tracks.length) return;
+        player.setQueue(playlist.tracks, 0);
+        player.setPlaying(true);
+        return;
+      }
+
+      if (item.type === "toplist") {
+        const toplist = await getToplistDetail(targetId);
+        if (!toplist.tracks.length) return;
+        player.setQueue(toplist.tracks, 0);
+        player.setPlaying(true);
+        return;
+      }
+
+      if (item.type === "album") {
+        const album = await getAlbumDetail(targetId);
+        if (!album.tracks.length) return;
+        player.setQueue(album.tracks, 0);
+        player.setPlaying(true);
+        return;
+      }
+
+      if (item.type === "artist") {
+        const artist = await getArtistDetail(targetId);
+        if (!artist.topTracks.length) return;
+        player.setQueue(artist.topTracks, 0);
+        player.setPlaying(true);
+        return;
+      }
+    } catch {
+      setSearchError("该推荐项暂时不可播放，请稍后重试。");
+    }
+  };
+
+  const handleDownloadTrack = async () => {
+    if (!currentTrack) return;
+    setDownloadState((previous) => ({ ...previous, loading: true, message: null }));
+    try {
+      const preferred = downloadState.level;
+      const fallbackLevels = ["standard", "exhigh", "lossless", "hires"].filter((level) => level !== preferred);
+      const levelsToTry = [preferred, ...fallbackLevels];
+      let source = null as Awaited<ReturnType<typeof getTrackDownloadUrl>> | null;
+      for (const level of levelsToTry) {
+        try {
+          source = await getTrackDownloadUrl(currentTrack.id, level);
+          break;
+        } catch {
+          source = null;
+        }
+      }
+      if (!source) {
+        throw new Error("当前歌曲没有可用下载链路");
+      }
+      window.open(source.url, "_blank", "noopener,noreferrer");
+      setDownloadState((previous) => ({ ...previous, loading: false, message: `已获取 ${source.level} 音质下载链接` }));
+    } catch (error) {
+      setDownloadState((previous) => ({
+        ...previous,
+        loading: false,
+        message: error instanceof Error ? error.message : "下载链接获取失败"
+      }));
+    }
+  };
+
   const toggleMute = () => {
     const next = nextVolumeAfterMuteToggle(player.volume, previousVolumeRef.current);
     previousVolumeRef.current = next.previousVolume;
@@ -366,6 +596,15 @@ export function PlayerApp() {
   const progressPercent =
     player.durationMs > 0 ? Math.min(100, Math.max(0, (player.currentTimeMs / player.durationMs) * 100)) : 0;
   const volumePercent = Math.min(100, Math.max(0, player.volume * 100));
+  const activeDetailLyricLines = useMemo(() => {
+    if (detailLyricMode === "translated" && controller.lyricTranslatedLines.length) {
+      return controller.lyricTranslatedLines;
+    }
+    if (detailLyricMode === "karaoke" && controller.lyricKaraokeLines.length) {
+      return controller.lyricKaraokeLines;
+    }
+    return controller.lyricLines;
+  }, [controller.lyricKaraokeLines, controller.lyricLines, controller.lyricTranslatedLines, detailLyricMode]);
   const detailLyricRef = useRef<HTMLDivElement>(null);
   const homeSeedTracks = useMemo(() => {
     const map = new Map<string, Track>();
@@ -551,7 +790,7 @@ export function PlayerApp() {
     if (active instanceof HTMLElement) {
       active.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-  }, [isDetailMounted, detailTab, controller.lyricIndex, currentTrack?.id]);
+  }, [isDetailMounted, detailTab, detailLyricMode, controller.lyricIndex, currentTrack?.id, activeDetailLyricLines.length]);
 
   useEffect(() => {
     if (!isDetailMounted) return;
@@ -818,22 +1057,38 @@ export function PlayerApp() {
               </header>
 
               <section className="home-channel-row">
-                {(homeSeedTracks.length ? homeSeedTracks : player.queue).slice(0, 6).map((track, index) => (
+                {(discoverData?.blocks.find((block) => block.id === "discover-banner")?.items ?? []).slice(0, 6).map((item, index) => (
                   <button
-                    key={`channel-${track.id}-${index}`}
+                    key={`discover-channel-${item.id}-${index}`}
                     className="home-channel-card"
                     onClick={() => {
-                      player.playTrackNow(track);
-                      player.setPlaying(true);
+                      void handleDiscoverItem(item);
                     }}
                   >
-                    <div className="home-channel-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
+                    <div className="home-channel-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
                     <span className="home-channel-tag">推荐频道</span>
-                    <h3>{track.name}</h3>
-                    <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
+                    <h3>{item.title}</h3>
+                    <p>{item.subtitle ?? "精选内容推荐"}</p>
                   </button>
                 ))}
-                {!homeSeedTracks.length ? (
+                {!discoverData?.blocks.find((block) => block.id === "discover-banner")?.items.length ? (
+                  (homeSeedTracks.length ? homeSeedTracks : player.queue).slice(0, 6).map((track, index) => (
+                    <button
+                      key={`channel-${track.id}-${index}`}
+                      className="home-channel-card"
+                      onClick={() => {
+                        player.playTrackNow(track);
+                        player.setPlaying(true);
+                      }}
+                    >
+                      <div className="home-channel-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
+                      <span className="home-channel-tag">推荐频道</span>
+                      <h3>{track.name}</h3>
+                      <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
+                    </button>
+                  ))
+                ) : null}
+                {!homeSeedTracks.length && !discoverData?.blocks.find((block) => block.id === "discover-banner")?.items.length ? (
                   <article className="home-channel-card placeholder">
                     <span className="home-channel-tag">今日推荐</span>
                     <h3>还没有播放任何歌曲</h3>
@@ -860,24 +1115,38 @@ export function PlayerApp() {
                   <button onClick={() => goTab("search")}>查看更多</button>
                 </div>
                 <div className="home-playlist-grid">
-                  {homeSeedTracks.slice(0, 10).map((track, index) => (
+                  {(discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items ?? []).slice(0, 10).map((item, index) => (
                     <button
-                      key={`playlist-${track.id}-${index}`}
+                      key={`playlist-discover-${item.id}-${index}`}
                       className="home-playlist-card"
                       onClick={() => {
-                        player.playTrackNow(track);
-                        player.setPlaying(true);
+                        void handleDiscoverItem(item);
                       }}
                     >
-                      <div
-                        className="home-playlist-cover"
-                        style={{ backgroundImage: `url(${resolveTrackCover(track)})` }}
-                      />
-                      <h3>{track.name}</h3>
-                      <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
+                      <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                      <h3>{item.title}</h3>
+                      <p>{item.subtitle ?? "推荐歌单"}</p>
                     </button>
                   ))}
-                  {!homeSeedTracks.length ? <p className="spotify-empty">还没有可推荐内容，先去搜索并播放一首歌吧。</p> : null}
+                  {!discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items.length
+                    ? homeSeedTracks.slice(0, 10).map((track, index) => (
+                        <button
+                          key={`playlist-${track.id}-${index}`}
+                          className="home-playlist-card"
+                          onClick={() => {
+                            player.playTrackNow(track);
+                            player.setPlaying(true);
+                          }}
+                        >
+                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
+                          <h3>{track.name}</h3>
+                          <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
+                        </button>
+                      ))
+                    : null}
+                  {!homeSeedTracks.length && !discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items.length ? (
+                    <p className="spotify-empty">还没有可推荐内容，先去搜索并播放一首歌吧。</p>
+                  ) : null}
                 </div>
               </section>
 
@@ -885,6 +1154,19 @@ export function PlayerApp() {
                 <div className="home-section-head">
                   <h2>精选活动</h2>
                 </div>
+                {discoverData?.blocks.find((block) => block.id === "discover-toplist")?.items.length ? (
+                  <div className="home-mini-list">
+                    {discoverData.blocks
+                      .find((block) => block.id === "discover-toplist")
+                      ?.items.slice(0, 6)
+                      .map((item, index) => (
+                        <button key={`toplist-${item.id}-${index}`} onClick={() => void handleDiscoverItem(item)}>
+                          <span>{item.title}</span>
+                          <span className="home-mini-index">{item.subtitle ?? "点击播放"}</span>
+                        </button>
+                      ))}
+                  </div>
+                ) : null}
                 <div className="home-event-grid">
                   <article className="home-event-card">
                     <h3>本周热听精选</h3>
@@ -896,7 +1178,36 @@ export function PlayerApp() {
                     <p>在搜索页输入歌名或歌手，构建属于你的私人歌单。</p>
                     <button onClick={() => goTab("search")}>去搜索</button>
                   </article>
+                  <article className="home-event-card">
+                    <h3>助眠解压</h3>
+                    <p>调用场景资源接口，快速进入轻氛围播放。</p>
+                    <button
+                      onClick={() => {
+                        const trackId = sceneSati?.resources[0]?.trackId;
+                        if (trackId) {
+                          void tryPlaySceneTrack(trackId);
+                        }
+                      }}
+                    >
+                      立即体验
+                    </button>
+                  </article>
+                  <article className="home-event-card alt">
+                    <h3>跑步漫游</h3>
+                    <p>按 BPM 推荐节奏内容，适合运动场景连续播放。</p>
+                    <button
+                      onClick={() => {
+                        const trackId = sceneSport?.resources[0]?.trackId;
+                        if (trackId) {
+                          void tryPlaySceneTrack(trackId);
+                        }
+                      }}
+                    >
+                      开始 130 BPM
+                    </button>
+                  </article>
                 </div>
+                {discoverError ? <p className="error error-inline">{discoverError}</p> : null}
               </section>
             </>
           ) : null}
@@ -913,7 +1224,9 @@ export function PlayerApp() {
                   ref={searchInputRef}
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="例如：周杰伦、晴天"
+                  placeholder={
+                    searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：周杰伦、晴天"
+                  }
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       void doSearch();
@@ -931,6 +1244,42 @@ export function PlayerApp() {
                   )}
                 </button>
               </div>
+              {searchAssist ? (
+                <div className="search-assist-block">
+                  {searchAssist.hotKeywords.length ? (
+                    <div className="search-assist-row">
+                      <span>热搜</span>
+                      <div>
+                        {searchAssist.hotKeywords.slice(0, 8).map((hot) => (
+                          <button
+                            key={`hot-${hot}`}
+                            type="button"
+                            onClick={() => applyKeywordAndSearch(hot)}
+                          >
+                            {hot}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {searchAssist.suggestions.length ? (
+                    <div className="search-assist-row">
+                      <span>联想</span>
+                      <div>
+                        {searchAssist.suggestions.slice(0, 8).map((suggestion) => (
+                          <button
+                            key={`suggest-${suggestion}`}
+                            type="button"
+                            onClick={() => applyKeywordAndSearch(suggestion)}
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div className="spotify-track-table-head">
                 <span>歌曲</span>
@@ -1185,22 +1534,104 @@ export function PlayerApp() {
 
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list">
-                    <p>作词：{currentTrack?.artists[0]?.name ?? "未知"}</p>
-                    <p>作曲：{currentTrack?.artists[0]?.name ?? "未知"}</p>
-                    <p>编曲：{currentTrack?.album?.name ?? "未知专辑"}</p>
                     <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
+                    <p>可播性：{trackInsight?.playable === false ? "受限" : "正常"}</p>
+                    {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
+                    {trackInsight?.creators.length ? (
+                      <p>
+                        创作者：{trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
+                      </p>
+                    ) : null}
+                    {trackInsight?.wikiSummary ? <p>百科：{trackInsight.wikiSummary}</p> : null}
+                    {trackInsight?.chorusStartMs ? (
+                      <button
+                        type="button"
+                        className="meta-action-btn"
+                        onClick={() => controller.seekTo(trackInsight.chorusStartMs ?? 0)}
+                      >
+                        跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
+                      </button>
+                    ) : null}
+                    {trackInsight?.alternatives.length ? (
+                      <button
+                        type="button"
+                        className="meta-action-btn"
+                        onClick={() => {
+                          const alternative = trackInsight.alternatives[0];
+                          if (!alternative) return;
+                          player.playTrackNow(alternative);
+                          player.setPlaying(true);
+                        }}
+                      >
+                        播放替代版本：{trackInsight.alternatives[0].name}
+                      </button>
+                    ) : null}
+                    <div className="download-row">
+                      <label htmlFor="download-level">下载音质</label>
+                      <select
+                        id="download-level"
+                        value={downloadState.level}
+                        onChange={(event) =>
+                          setDownloadState((previous) => ({
+                            ...previous,
+                            level: event.target.value
+                          }))
+                        }
+                      >
+                        <option value="standard">standard</option>
+                        <option value="exhigh">exhigh</option>
+                        <option value="lossless">lossless</option>
+                        <option value="hires">hires</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="meta-action-btn"
+                        disabled={downloadState.loading || !currentTrack}
+                        onClick={() => void handleDownloadTrack()}
+                      >
+                        {downloadState.loading ? "获取中..." : "获取下载链接"}
+                      </button>
+                    </div>
+                    {downloadState.message ? <p>{downloadState.message}</p> : null}
                   </div>
                 ) : (
-                  <div className="detail-lyric-scroll polished" ref={detailLyricRef}>
-                    {!controller.lyricLines.length ? (
-                      <p className="detail-empty">暂无歌词或纯音乐</p>
-                    ) : (
-                      controller.lyricLines.map((line, index) => (
-                        <p key={`${line.timeMs}-${index}`} className={`detail-lyric-line ${index === controller.lyricIndex ? "active" : ""}`}>
-                          {line.text}
-                        </p>
-                      ))
-                    )}
+                  <div className="detail-lyric-shell">
+                    <div className="detail-lyric-mode-row">
+                      <button
+                        className={detailLyricMode === "origin" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("origin")}
+                        type="button"
+                      >
+                        原文
+                      </button>
+                      <button
+                        className={detailLyricMode === "translated" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("translated")}
+                        disabled={!controller.lyricTranslatedLines.length}
+                        type="button"
+                      >
+                        翻译
+                      </button>
+                      <button
+                        className={detailLyricMode === "karaoke" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("karaoke")}
+                        disabled={!controller.lyricKaraokeLines.length}
+                        type="button"
+                      >
+                        逐字
+                      </button>
+                    </div>
+                    <div className="detail-lyric-scroll polished" ref={detailLyricRef}>
+                      {!activeDetailLyricLines.length ? (
+                        <p className="detail-empty">暂无该版本歌词</p>
+                      ) : (
+                        activeDetailLyricLines.map((line, index) => (
+                          <p key={`${line.timeMs}-${index}`} className={`detail-lyric-line ${index === controller.lyricIndex ? "active" : ""}`}>
+                            {line.text}
+                          </p>
+                        ))
+                      )}
+                    </div>
                   </div>
                 )}
               </section>

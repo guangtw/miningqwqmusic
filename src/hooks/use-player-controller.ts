@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getTrackDetail, getTrackLyric, getTrackPlaySource } from "@/src/lib/client-api";
+import { getTrackDetail, getTrackInsight, getTrackLyric, getTrackPlaySource } from "@/src/lib/client-api";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import type { LyricLine, PlaySource, PlaybackMode, Track } from "@/src/types/music";
@@ -17,6 +17,8 @@ type ControllerState = {
   currentTrack: Track | null;
   currentSource: PlaySource | null;
   lyricLines: LyricLine[];
+  lyricTranslatedLines: LyricLine[];
+  lyricKaraokeLines: LyricLine[];
   lyricIndex: number;
   errorText: string | null;
   loadingSource: boolean;
@@ -75,11 +77,14 @@ export function usePlayerController(): ControllerState {
   const setDurationMs = usePlayerStore((state) => state.setDurationMs);
   const nextTrack = usePlayerStore((state) => state.nextTrack);
   const rememberTrack = usePlayerStore((state) => state.rememberTrack);
+  const playTrackNow = usePlayerStore((state) => state.playTrackNow);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
   const currentTrackId = queueTrack?.id ?? null;
   const [source, setSource] = useState<PlaySource | null>(null);
   const [lyricLines, setLyricLines] = useState<LyricLine[]>([]);
+  const [lyricTranslatedLines, setLyricTranslatedLines] = useState<LyricLine[]>([]);
+  const [lyricKaraokeLines, setLyricKaraokeLines] = useState<LyricLine[]>([]);
   const [resolvedTrack, setResolvedTrack] = useState<Track | null>(queueTrack);
   const [loadingSource, setLoadingSource] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -254,6 +259,8 @@ export function usePlayerController(): ControllerState {
       }
       setSource(null);
       setLyricLines([]);
+      setLyricTranslatedLines([]);
+      setLyricKaraokeLines([]);
       setCurrentTimeMs(0);
       setDurationMs(0);
       setTransitionPhase("idle");
@@ -279,6 +286,8 @@ export function usePlayerController(): ControllerState {
       setTransitionPhase("switching");
       setSource(null);
       setLyricLines([]);
+      setLyricTranslatedLines([]);
+      setLyricKaraokeLines([]);
       setCurrentTimeMs(0);
       setDurationMs(0);
       rememberTrack(queueTrack);
@@ -296,7 +305,19 @@ export function usePlayerController(): ControllerState {
         prefetchedSourceRef.current.set(queueTrack.id, { source: playSource, cachedAt: Date.now() });
       } catch (error) {
         if (!active || token !== transitionTokenRef.current) return;
-        setErrorText((error as Error).message || "播放地址获取失败");
+        const errorMessage = (error as Error).message || "播放地址获取失败";
+        try {
+          const insight = await getTrackInsight(queueTrack.id);
+          const fallbackTrack = insight.alternatives.find((item) => item.id && item.id !== queueTrack.id);
+          if (fallbackTrack) {
+            setErrorText(`当前歌曲受限，已切换到可播放版本：${fallbackTrack.name}`);
+            playTrackNow(fallbackTrack);
+            return;
+          }
+        } catch {
+          // 替代推荐不可用时保留原错误。
+        }
+        setErrorText(errorMessage);
       } finally {
         if (active && token === transitionTokenRef.current) {
           setLoadingSource(false);
@@ -307,10 +328,14 @@ export function usePlayerController(): ControllerState {
         .then((lyric) => {
           if (!active || token !== transitionTokenRef.current) return;
           setLyricLines(lyric.lines);
+          setLyricTranslatedLines(lyric.translatedLines ?? []);
+          setLyricKaraokeLines(lyric.karaokeLines ?? []);
         })
         .catch(() => {
           if (!active || token !== transitionTokenRef.current) return;
           setLyricLines([]);
+          setLyricTranslatedLines([]);
+          setLyricKaraokeLines([]);
         });
     };
 
@@ -318,7 +343,7 @@ export function usePlayerController(): ControllerState {
     return () => {
       active = false;
     };
-  }, [queueTrack, currentTrackId, rememberTrack, setCurrentTimeMs, setDurationMs]);
+  }, [queueTrack, currentTrackId, playTrackNow, rememberTrack, setCurrentTimeMs, setDurationMs]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -396,7 +421,19 @@ export function usePlayerController(): ControllerState {
         prefetchedSourceRef.current.set(queueTrack.id, { source: renewed, cachedAt: Date.now() });
         setErrorText("播放地址已刷新");
       } catch (error) {
-        setErrorText((error as Error).message || "音频播放失败");
+        const message = (error as Error).message || "音频播放失败";
+        try {
+          const insight = await getTrackInsight(queueTrack.id);
+          const fallbackTrack = insight.alternatives.find((item) => item.id && item.id !== queueTrack.id);
+          if (fallbackTrack) {
+            setErrorText(`当前歌曲受限，已切换到可播放版本：${fallbackTrack.name}`);
+            playTrackNow(fallbackTrack);
+            return;
+          }
+        } catch {
+          // 忽略替代推荐失败。
+        }
+        setErrorText(message);
       }
     };
 
@@ -411,7 +448,7 @@ export function usePlayerController(): ControllerState {
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
     };
-  }, [queueTrack, currentTrackId, nextTrack, setCurrentTimeMs, setDurationMs]);
+  }, [queueTrack, currentTrackId, nextTrack, playTrackNow, setCurrentTimeMs, setDurationMs]);
 
   useEffect(() => {
     if (renewTimerRef.current) {
@@ -466,6 +503,8 @@ export function usePlayerController(): ControllerState {
     currentTrack: resolvedTrack,
     currentSource: source,
     lyricLines,
+    lyricTranslatedLines,
+    lyricKaraokeLines,
     lyricIndex,
     errorText,
     loadingSource,

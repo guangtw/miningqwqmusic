@@ -4,7 +4,21 @@ import type { MusicSourceAdapter } from "@/src/lib/music/adapter";
 import type { TrackSearchInput } from "@/src/lib/music/adapter";
 import { createMockMusicAdapter } from "@/src/lib/music/providers/mock";
 import { createNeteaseLikeAdapterFromEnv } from "@/src/lib/music/providers/netease-like";
-import type { PagedResult, Playlist, PlaySource, Track, TrackLyric } from "@/src/types/music";
+import type {
+  AlbumDetail,
+  ArtistDetail,
+  DiscoverData,
+  DownloadSource,
+  PagedResult,
+  Playlist,
+  PlaySource,
+  SceneData,
+  SearchAssist,
+  SongInsight,
+  ToplistItem,
+  Track,
+  TrackLyric
+} from "@/src/types/music";
 
 const breaker = new CircuitBreaker({ failureThreshold: 3, coolDownMs: 7000 });
 let adapter: MusicSourceAdapter | null = null;
@@ -84,5 +98,95 @@ export async function getPlaylist(playlistId: string): Promise<Playlist> {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     adapter = createMockMusicAdapter();
     return adapter.getPlaylist(playlistId);
+  }
+}
+
+export async function getSearchAssist(keyword: string): Promise<SearchAssist> {
+  try {
+    return await breaker.execute(() => getAdapter().getSearchAssist(keyword));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getSearchAssist(keyword);
+  }
+}
+
+export async function getDiscoverData(): Promise<DiscoverData> {
+  try {
+    return await breaker.execute(() => getAdapter().getDiscoverData());
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getDiscoverData();
+  }
+}
+
+export async function getToplist(): Promise<ToplistItem[]> {
+  try {
+    return await breaker.execute(() => getAdapter().getToplist());
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getToplist();
+  }
+}
+
+export async function getAlbumDetail(albumId: string): Promise<AlbumDetail> {
+  try {
+    return await breaker.execute(() => getAdapter().getAlbumDetail(albumId));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getAlbumDetail(albumId);
+  }
+}
+
+export async function getArtistDetail(artistId: string): Promise<ArtistDetail> {
+  try {
+    return await breaker.execute(() => getAdapter().getArtistDetail(artistId));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getArtistDetail(artistId);
+  }
+}
+
+export async function getTrackInsight(trackId: string): Promise<SongInsight> {
+  try {
+    return await breaker.execute(() => getAdapter().getTrackInsight(trackId));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getTrackInsight(trackId);
+  }
+}
+
+export async function getDownloadSource(trackId: string, level?: string): Promise<DownloadSource> {
+  try {
+    return await breaker.execute(() => getAdapter().getDownloadSource(trackId, level));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getDownloadSource(trackId, level);
+  }
+}
+
+export async function getSatiScene(tag?: string): Promise<SceneData> {
+  try {
+    return await breaker.execute(() => getAdapter().getSatiScene(tag));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getSatiScene(tag);
+  }
+}
+
+export async function getSportScene(bpm: number): Promise<SceneData> {
+  try {
+    return await breaker.execute(() => getAdapter().getSportScene(bpm));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getSportScene(bpm);
   }
 }

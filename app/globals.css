@@ -101,6 +101,9 @@ input:focus-visible {
 }
 
 .spotify-shell {
+  height: 100vh;
+  height: 100svh;
+  height: 100dvh;
   min-height: 100vh;
   min-height: 100svh;
   min-height: 100dvh;
@@ -116,6 +119,7 @@ input:focus-visible {
   min-height: 0;
   height: auto;
   display: grid;
+  overflow: hidden;
   align-items: stretch;
   gap: 10px;
   grid-template-columns: clamp(14rem, 14vw + 8rem, 17.5rem) minmax(0, 1fr) clamp(19rem, 18vw + 9rem, 24rem);
@@ -2045,7 +2049,107 @@ input:focus-visible {
   }
 }
 
-@media (max-width: 1099px) {
+@media (max-width: 1099px) and (min-width: 900px) and (pointer: fine) {
+  .spotify-layout {
+    grid-template-columns: clamp(12.6rem, 20vw, 15.4rem) minmax(0, 1fr);
+  }
+
+  .spotify-main {
+    padding: 15px;
+  }
+
+  .spotify-right {
+    display: none;
+  }
+
+  .now-playing-merged {
+    display: grid;
+  }
+
+  .home-playlist-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-channel-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spotify-player-bar {
+    grid-template-columns: 1fr 1.2fr auto;
+    gap: 10px;
+  }
+
+  .spotify-player-right .range-volume {
+    width: clamp(76px, 11vw, 114px);
+  }
+}
+
+@media (orientation: portrait) and (min-width: 900px) and (pointer: fine) {
+  .spotify-layout {
+    grid-template-columns: clamp(12.6rem, 20vw, 15.4rem) minmax(0, 1fr);
+  }
+
+  .spotify-right {
+    display: none;
+  }
+
+  .now-playing-merged {
+    display: grid;
+  }
+}
+
+@media (max-width: 899px) and (pointer: fine) {
+  .spotify-shell {
+    --shell-gap: 8px;
+    --player-bar-height: 88px;
+    padding: 8px;
+    padding-bottom: calc(var(--player-bar-height-actual, var(--player-bar-height)) + var(--player-safe-bottom) + var(--shell-gap) + 8px);
+  }
+
+  .spotify-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .spotify-sidebar {
+    padding: 12px;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 10px;
+  }
+
+  .spotify-nav {
+    display: flex;
+    gap: 6px;
+    overflow: auto;
+  }
+
+  .spotify-collections {
+    grid-column: 1 / -1;
+  }
+
+  .spotify-main {
+    padding: 14px;
+  }
+
+  .spotify-right {
+    display: none;
+  }
+
+  .now-playing-merged {
+    display: grid;
+  }
+
+  .spotify-player-bar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    min-height: 88px;
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 1099px) and ((pointer: coarse) or (hover: none)) {
   .spotify-shell {
     --shell-gap: 8px;
     --player-bar-height: 88px;
@@ -2215,7 +2319,7 @@ input:focus-visible {
   }
 }
 
-@media (max-width: 760px) {
+@media (max-width: 760px) and ((pointer: coarse) or (hover: none)) {
   .spotify-shell {
     --shell-gap: 6px;
     padding: 6px;

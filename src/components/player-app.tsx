@@ -526,11 +526,13 @@ export function PlayerApp() {
     }
 
     window.addEventListener("resize", updateDockHeight);
+    window.addEventListener("orientationchange", updateDockHeight);
     window.visualViewport?.addEventListener("resize", updateDockHeight);
 
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updateDockHeight);
+      window.removeEventListener("orientationchange", updateDockHeight);
       window.visualViewport?.removeEventListener("resize", updateDockHeight);
     };
   }, [dockPortalTarget]);

@@ -92,6 +92,21 @@ export function usePlayerController(): ControllerState {
   const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const prefetchedSourceRef = useRef<Map<string, CachedPlaySource>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
+  const isPlayingRef = useRef(isPlaying);
+  const volumeRef = useRef(volume);
+  const currentSourceRef = useRef<PlaySource | null>(null);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  useEffect(() => {
+    currentSourceRef.current = source;
+  }, [source]);
 
   const ensureAudioGraph = (): boolean => {
     const audio = audioRef.current;
@@ -141,7 +156,8 @@ export function usePlayerController(): ControllerState {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const shouldFade = isPlaying && !audio.paused;
+    const hasCurrentSource = Boolean(currentSourceRef.current?.url || audio.currentSrc || audio.src);
+    const shouldFade = isPlayingRef.current && !audio.paused && hasCurrentSource;
     if (!shouldFade) {
       audio.pause();
       return;
@@ -168,13 +184,14 @@ export function usePlayerController(): ControllerState {
   const fadeInAudio = async (token: number) => {
     const audio = audioRef.current;
     if (!audio || token !== transitionTokenRef.current) return;
+    const targetVolume = volumeRef.current;
 
     if (ensureAudioGraph() && gainNodeRef.current && audioContextRef.current) {
       if (audioContextRef.current.state === "suspended") {
         await audioContextRef.current.resume().catch(() => undefined);
       }
       const now = audioContextRef.current.currentTime;
-      const target = resolveBoostedGain(volume);
+      const target = resolveBoostedGain(targetVolume);
       gainNodeRef.current.gain.cancelScheduledValues(now);
       gainNodeRef.current.gain.setValueAtTime(0, now);
       gainNodeRef.current.gain.linearRampToValueAtTime(target, now + CROSSFADE_MS / 1000);
@@ -184,7 +201,7 @@ export function usePlayerController(): ControllerState {
       const steps = 8;
       for (let index = 1; index <= steps; index += 1) {
         if (token !== transitionTokenRef.current) return;
-        audio.volume = Math.min(1, (volume * index) / steps);
+        audio.volume = Math.min(1, (targetVolume * index) / steps);
         await wait(Math.round(CROSSFADE_MS / steps));
       }
     }
@@ -240,7 +257,7 @@ export function usePlayerController(): ControllerState {
       setCurrentTimeMs(0);
       setDurationMs(0);
       setTransitionPhase("idle");
-      applyGain(volume, 30);
+      applyGain(volumeRef.current, 30);
       return;
     }
 
@@ -250,6 +267,11 @@ export function usePlayerController(): ControllerState {
     const run = async () => {
       setErrorText(null);
       setLoadingSource(true);
+
+      const cached = prefetchedSourceRef.current.get(queueTrack.id);
+      const validCached = isCachedSourceUsable(cached);
+      const playSourcePromise = validCached && cached ? Promise.resolve(cached.source) : getTrackPlaySource(queueTrack.id);
+
       setTransitionPhase("fadingOut");
       await fadeOutAudio(token);
       if (!active || token !== transitionTokenRef.current) return;
@@ -267,11 +289,8 @@ export function usePlayerController(): ControllerState {
         audio.load();
       }
 
-      const cached = prefetchedSourceRef.current.get(queueTrack.id);
-      const validCached = isCachedSourceUsable(cached);
-
       try {
-        const playSource = validCached && cached ? cached.source : await getTrackPlaySource(queueTrack.id);
+        const playSource = await playSourcePromise;
         if (!active || token !== transitionTokenRef.current) return;
         setSource(playSource);
         prefetchedSourceRef.current.set(queueTrack.id, { source: playSource, cachedAt: Date.now() });
@@ -299,7 +318,7 @@ export function usePlayerController(): ControllerState {
     return () => {
       active = false;
     };
-  }, [queueTrack, currentTrackId, rememberTrack, setCurrentTimeMs, setDurationMs, volume]);
+  }, [queueTrack, currentTrackId, rememberTrack, setCurrentTimeMs, setDurationMs]);
 
   useEffect(() => {
     const audio = audioRef.current;

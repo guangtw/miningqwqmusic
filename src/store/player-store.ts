@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { PlaybackMode, Track } from "@/src/types/music";
+import type { ImportedPlaylist, PlaybackMode, Track } from "@/src/types/music";
 
 type PersistTrack = Track;
 
@@ -16,6 +16,7 @@ type PlayerState = {
   volume: number;
   favorites: Record<string, PersistTrack>;
   recent: PersistTrack[];
+  importedPlaylists: Record<string, ImportedPlaylist>;
   hasHydrated: boolean;
 };
 
@@ -36,6 +37,9 @@ type PlayerActions = {
   setVolume: (value: number) => void;
   toggleFavorite: (track: Track) => void;
   rememberTrack: (track: Track) => void;
+  upsertImportedPlaylist: (playlist: ImportedPlaylist) => void;
+  removeImportedPlaylist: (playlistId: string) => void;
+  listImportedPlaylists: () => ImportedPlaylist[];
 };
 
 export type PlayerStore = PlayerState & PlayerActions;
@@ -52,6 +56,7 @@ export const usePlayerStore = create<PlayerStore>()(
       volume: 0.8,
       favorites: {},
       recent: [],
+      importedPlaylists: {},
       hasHydrated: false,
       setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
       setQueue: (tracks, startIndex = 0) => {
@@ -161,7 +166,24 @@ export const usePlayerStore = create<PlayerStore>()(
         set((state) => {
           const withoutCurrent = state.recent.filter((item) => item.id !== track.id);
           return { recent: [track, ...withoutCurrent].slice(0, 50) };
-        })
+        }),
+      upsertImportedPlaylist: (playlist) =>
+        set((state) => ({
+          importedPlaylists: {
+            ...state.importedPlaylists,
+            [playlist.id]: playlist
+          }
+        })),
+      removeImportedPlaylist: (playlistId) =>
+        set((state) => {
+          const next = { ...state.importedPlaylists };
+          delete next[playlistId];
+          return { importedPlaylists: next };
+        }),
+      listImportedPlaylists: () => {
+        const state = get();
+        return Object.values(state.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt);
+      }
     }),
     {
       name: "qwq-music-store-v1",
@@ -172,12 +194,27 @@ export const usePlayerStore = create<PlayerStore>()(
         mode: state.mode,
         volume: state.volume,
         favorites: state.favorites,
-        recent: state.recent
+        recent: state.recent,
+        importedPlaylists: state.importedPlaylists
       }),
+      migrate: (persistedState, version) => {
+        if (!persistedState || typeof persistedState !== "object") return persistedState as PlayerStore;
+        const state = persistedState as Partial<PlayerStore>;
+        if (version < 2) {
+          return {
+            ...state,
+            importedPlaylists: {}
+          } as PlayerStore;
+        }
+        return {
+          ...state,
+          importedPlaylists: state.importedPlaylists ?? {}
+        } as PlayerStore;
+      },
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
       },
-      version: 1
+      version: 2
     }
   )
 );

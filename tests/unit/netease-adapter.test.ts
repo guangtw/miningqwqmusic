@@ -51,6 +51,36 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.items[0].album?.coverUrl).toBe("cover.png");
   });
 
+  it("maps artist search result to ArtistSearchItem list", async () => {
+    const adapter = createAdapter();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        result: {
+          artistCount: 1,
+          artists: [
+            {
+              id: 7763,
+              name: "G.E.M.邓紫棋",
+              picUrl: "artist.png",
+              musicSize: 419,
+              albumSize: 61
+            }
+          ]
+        }
+      })
+    );
+
+    const result = await adapter.searchArtists({ keyword: "邓紫棋", page: 1, pageSize: 20 });
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      id: "7763",
+      name: "G.E.M.邓紫棋",
+      coverUrl: "artist.png",
+      musicSize: 419,
+      albumSize: 61
+    });
+  });
+
   it("maps lyric response", async () => {
     const adapter = createAdapter();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -82,7 +112,26 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/song/url/v1");
   });
 
-  it("tries multiple unblock sources and returns first non-preview source", async () => {
+  it("prefers expi for play source ttl and ignores track duration time", async () => {
+    const adapter = createAdapter();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        data: [
+          {
+            url: "https://cdn.test/full.mp3",
+            time: 245000,
+            expi: 1200
+          }
+        ]
+      })
+    );
+
+    const source = await adapter.getPlaySource("108485");
+    expect(source.url).toBe("https://cdn.test/full.mp3");
+    expect(source.ttlSeconds).toBe(1200);
+  });
+
+  it("tries match without source first and then fallback sources", async () => {
     const adapter = createAdapter({
       pathPlayUrlUnblock: "/song/url/match",
       unblockSources: ["kuwo", "kugou", "migu"],
@@ -97,18 +146,18 @@ describe("NeteaseLikeAdapter mapping", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        data: [{ url: "https://cdn.test/full-kugou.mp3", time: 250000 }]
+        data: [{ url: "https://cdn.test/full-kuwo.mp3", time: 250000 }]
       })
     );
 
     const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-kugou.mp3");
+    expect(result.url).toBe("https://cdn.test/full-kuwo.mp3");
     expect(fetchMock).toHaveBeenCalledTimes(3);
 
     const unblockFirstUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
     const unblockSecondUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    expect(unblockFirstUrl.searchParams.get("source")).toBe("kuwo");
-    expect(unblockSecondUrl.searchParams.get("source")).toBe("kugou");
+    expect(unblockFirstUrl.searchParams.get("source")).toBeNull();
+    expect(unblockSecondUrl.searchParams.get("source")).toBe("kuwo");
   });
 
   it("attempts unblock when default source url is empty", async () => {
@@ -169,19 +218,138 @@ describe("NeteaseLikeAdapter mapping", () => {
         data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
       })
     );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/preview-default.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("parses song url match when data is a url string", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        data: [{ url: null, time: 200000 }]
+        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
       })
     );
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        data: [{ url: "https://cdn.test/preview-kugou.mp3", time: 25000 }]
+        code: 200,
+        data: "https://cdn.test/full-from-string.flac"
       })
     );
 
     const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/preview-default.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(result.url).toBe("https://cdn.test/full-from-string.flac");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to source loop when match without source fails", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo", "kugou"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/full-from-kugou.mp3", time: 240000 }]
+      })
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/full-from-kugou.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    const noSourceUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    const kuwoUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
+    const kugouUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
+    expect(noSourceUrl.searchParams.get("source")).toBeNull();
+    expect(kuwoUrl.searchParams.get("source")).toBe("kuwo");
+    expect(kugouUrl.searchParams.get("source")).toBe("kugou");
+  });
+
+  it("maps banner targetType to executable discover item type with external link fallback", async () => {
+    const adapter = createAdapter();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/search/hot/detail")) {
+        return jsonResponse({ data: [] });
+      }
+      if (url.includes("/search/default")) {
+        return jsonResponse({ data: { realkeyword: "晴天" } });
+      }
+      if (url.includes("/search/suggest/pc")) {
+        return jsonResponse({ data: { suggests: [] } });
+      }
+      if (url.includes("/banner")) {
+        return jsonResponse({
+          banners: [
+            {
+              targetId: 11,
+              targetType: 1,
+              typeTitle: "单曲",
+              copywriter: "track",
+              imageUrl: "track.png"
+            },
+            {
+              targetId: 22,
+              targetType: 1000,
+              typeTitle: "歌单",
+              copywriter: "playlist",
+              imageUrl: "playlist.png"
+            },
+            {
+              targetId: 0,
+              targetType: 3000,
+              typeTitle: "活动",
+              copywriter: "external",
+              imageUrl: "external.png",
+              url: "https://example.com/activity"
+            }
+          ]
+        });
+      }
+      if (url.includes("/personalized")) {
+        return jsonResponse({ result: [] });
+      }
+      if (url.includes("/toplist/detail")) {
+        return jsonResponse({ list: [] });
+      }
+      if (url.includes("/top/playlist/highquality")) {
+        return jsonResponse({ playlists: [] });
+      }
+      return jsonResponse({});
+    });
+
+    const discover = await adapter.getDiscoverData();
+    const bannerBlock = discover.blocks.find((block) => block.id === "discover-banner");
+    expect(bannerBlock?.items).toHaveLength(3);
+    expect(bannerBlock?.items[0]).toMatchObject({
+      type: "track",
+      targetId: "11"
+    });
+    expect(bannerBlock?.items[1]).toMatchObject({
+      type: "playlist",
+      targetId: "22"
+    });
+    expect(bannerBlock?.items[2]).toMatchObject({
+      type: "banner",
+      linkUrl: "https://example.com/activity"
+    });
   });
 });

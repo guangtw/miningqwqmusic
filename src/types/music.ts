@@ -27,6 +27,17 @@ export type Playlist = {
   tracks: Track[];
 };
 
+export type ImportedPlaylist = {
+  id: string;
+  name: string;
+  description?: string;
+  coverUrl?: string;
+  tracks: Track[];
+  sourceUrl: string;
+  importedAt: number;
+  updatedAt: number;
+};
+
 export type PlaySource = {
   trackId: string;
   url: string;
@@ -73,6 +84,7 @@ export type DiscoverItem = {
   coverUrl?: string;
   type: DiscoverItemType;
   targetId?: string;
+  linkUrl?: string;
 };
 
 export type DiscoverBlock = {
@@ -117,6 +129,14 @@ export type ArtistDetail = {
   coverUrl?: string;
   briefDesc?: string;
   topTracks: Track[];
+};
+
+export type ArtistSearchItem = {
+  id: string;
+  name: string;
+  coverUrl?: string;
+  musicSize?: number;
+  albumSize?: number;
 };
 
 export type SongCreator = {

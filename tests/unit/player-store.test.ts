@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { usePlayerStore } from "@/src/store/player-store";
-import type { Track } from "@/src/types/music";
+import type { ImportedPlaylist, Track } from "@/src/types/music";
 
 const mockTrack = (id: string): Track => ({
   id,
@@ -21,6 +21,7 @@ describe("player store state machine", () => {
       volume: 0.8,
       favorites: {},
       recent: [],
+      importedPlaylists: {},
       hasHydrated: true
     });
   });
@@ -62,5 +63,42 @@ describe("player store state machine", () => {
     expect(usePlayerStore.getState().mode).toBe("shuffle");
     usePlayerStore.getState().nextMode();
     expect(usePlayerStore.getState().mode).toBe("sequence");
+  });
+
+  it("upserts and removes imported playlists", () => {
+    const playlistA: ImportedPlaylist = {
+      id: "1",
+      name: "歌单 A",
+      tracks: [mockTrack("11")],
+      sourceUrl: "https://music.163.com/playlist?id=1",
+      importedAt: 1,
+      updatedAt: 1
+    };
+    const playlistAUpdated: ImportedPlaylist = {
+      ...playlistA,
+      name: "歌单 A 新版",
+      updatedAt: 3
+    };
+    const playlistB: ImportedPlaylist = {
+      id: "2",
+      name: "歌单 B",
+      tracks: [mockTrack("22")],
+      sourceUrl: "https://music.163.com/playlist?id=2",
+      importedAt: 2,
+      updatedAt: 2
+    };
+
+    usePlayerStore.getState().upsertImportedPlaylist(playlistA);
+    usePlayerStore.getState().upsertImportedPlaylist(playlistB);
+    usePlayerStore.getState().upsertImportedPlaylist(playlistAUpdated);
+
+    const list = usePlayerStore.getState().listImportedPlaylists();
+    expect(list).toHaveLength(2);
+    expect(list[0].id).toBe("1");
+    expect(list[0].name).toBe("歌单 A 新版");
+
+    usePlayerStore.getState().removeImportedPlaylist("1");
+    expect(usePlayerStore.getState().listImportedPlaylists()).toHaveLength(1);
+    expect(usePlayerStore.getState().listImportedPlaylists()[0].id).toBe("2");
   });
 });

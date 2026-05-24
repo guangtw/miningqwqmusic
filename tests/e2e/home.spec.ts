@@ -34,3 +34,42 @@ test("playlist card opens second-level panel without forced autoplay", async ({ 
   await expect(page.getByRole("button", { name: "播放全部" })).toBeVisible();
   await expect(page.getByRole("button", { name: "暂停" })).toHaveCount(0);
 });
+
+test("can import a playlist link into library and open it", async ({ page }) => {
+  await page.route("**/api/music/playlist/123456789", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 0,
+        message: "ok",
+        traceId: "e2e-import",
+        data: {
+          id: "123456789",
+          name: "E2E 导入歌单",
+          description: "来自自动化测试",
+          coverUrl: "https://picsum.photos/seed/e2e/300/300",
+          tracks: [
+            {
+              id: "track-1",
+              name: "E2E Track",
+              artists: [{ id: "artist-1", name: "E2E Artist" }],
+              durationMs: 180000,
+              coverUrl: "https://picsum.photos/seed/e2e-track/300/300"
+            }
+          ]
+        }
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await page.getByRole("button", { name: "我的歌单" }).first().click();
+  await expect(page.locator(".library-import-row input")).toBeVisible();
+  await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=123456789");
+  await page.getByRole("button", { name: "导入歌单" }).click();
+  await expect(page.locator(".library-imported-item")).toContainText("E2E 导入歌单");
+  await page.getByRole("button", { name: "打开" }).first().click();
+  await expect(page.getByRole("dialog", { name: "歌单详情" })).toBeVisible();
+});

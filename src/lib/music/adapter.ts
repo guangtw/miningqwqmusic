@@ -1,5 +1,6 @@
 import type {
   AlbumDetail,
+  ArtistSearchItem,
   ArtistDetail,
   DiscoverData,
   DownloadSource,
@@ -20,8 +21,15 @@ export type TrackSearchInput = {
   pageSize: number;
 };
 
+export type ArtistSearchInput = {
+  keyword: string;
+  page: number;
+  pageSize: number;
+};
+
 export interface MusicSourceAdapter {
   searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>>;
+  searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>>;
   getTrackDetail(trackId: string): Promise<Track>;
   getPlaySource(trackId: string): Promise<PlaySource>;
   getTrackLyric(trackId: string): Promise<TrackLyric>;

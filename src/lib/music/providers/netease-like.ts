@@ -1,12 +1,14 @@
 import { AppError } from "@/src/lib/errors";
 import { fetchWithRetry } from "@/src/lib/http";
 import { parseLyric } from "@/src/lib/lyrics";
-import type { MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
+import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
 import type {
   AlbumDetail,
+  ArtistSearchItem,
   ArtistDetail,
   DiscoverBlock,
   DiscoverData,
+  DiscoverItemType,
   DownloadSource,
   PagedResult,
   Playlist,
@@ -134,6 +136,14 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function asIdString(value: unknown): string | undefined {
+  const stringValue = asString(value);
+  if (stringValue !== undefined) return stringValue;
+  const numericValue = asNumber(value);
+  if (numericValue !== undefined) return String(numericValue);
+  return undefined;
+}
+
 function parseCsvList(value: string | undefined): string[] {
   if (!value) return [];
   return value
@@ -148,6 +158,14 @@ function normalizePath(path: string): string {
 
 function trimEndSlash(url: string): string {
   return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
+function mapBannerTargetTypeToDiscoverType(targetType: number | undefined): DiscoverItemType {
+  if (targetType === 1) return "track";
+  if (targetType === 10) return "album";
+  if (targetType === 100) return "artist";
+  if (targetType === 1000) return "playlist";
+  return "banner";
 }
 
 function resolveCoverUrl(song: NeteaseSong, albumRaw?: NeteaseAlbum): string | undefined {
@@ -301,8 +319,14 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   private extractPlayData(raw: unknown): PlayData | null {
     const payload = asObject(raw);
     const pickFromCandidate = (value: unknown): PlayData | null => {
+      if (typeof value === "string" && value.trim()) {
+        return { url: value.trim() };
+      }
       if (Array.isArray(value)) {
         for (const item of value) {
+          if (typeof item === "string" && item.trim()) {
+            return { url: item.trim() };
+          }
           const entry = asObject(item) as PlayData;
           if (Object.keys(entry).length) {
             return entry;
@@ -383,16 +407,18 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return Boolean(topLevelMessage && /(trial|preview|vip|copyright|无版权|试听|付费)/i.test(topLevelMessage));
   }
 
+  private debugUnblockTrace(trackId: string, stage: string, extra?: Record<string, unknown>) {
+    if (process.env.NODE_ENV !== "development") return;
+    const details = extra ? ` ${JSON.stringify(extra)}` : "";
+    console.info(`[music-unblock] track=${trackId} stage=${stage}${details}`);
+  }
+
   private toPlaySource(trackId: string, data: PlayData): PlaySource {
     return {
       trackId,
       url: data.url ?? "",
       bitrate: data.br,
-      ttlSeconds: data.time
-        ? Math.max(10, Math.floor(data.time / 1000))
-        : data.expi
-          ? Math.max(10, Math.floor(data.expi))
-          : undefined,
+      ttlSeconds: data.expi ? Math.max(10, Math.floor(data.expi)) : undefined,
       expiresAt: data.expiresAt
     };
   }
@@ -417,6 +443,31 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
   }
 
+  async searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>> {
+    const offset = (input.page - 1) * input.pageSize;
+    const raw = await this.request<{
+      result?: { artists?: Array<{ id?: number | string; name?: string; picUrl?: string; img1v1Url?: string; musicSize?: number; albumSize?: number }>; artistCount?: number };
+    }>(this.config.pathSearch, {
+      keywords: input.keyword,
+      type: 100,
+      limit: input.pageSize,
+      offset
+    });
+    const artists = raw.result?.artists ?? [];
+    return {
+      items: artists.map((artist) => ({
+        id: String(artist.id ?? ""),
+        name: artist.name ?? "未知歌手",
+        coverUrl: artist.picUrl ?? artist.img1v1Url,
+        musicSize: asNumber(artist.musicSize),
+        albumSize: asNumber(artist.albumSize)
+      })),
+      page: input.page,
+      pageSize: input.pageSize,
+      total: raw.result?.artistCount ?? artists.length
+    };
+  }
+
   async getTrackDetail(trackId: string): Promise<Track> {
     const raw = await this.request<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
     const song = raw.songs?.[0];
@@ -434,6 +485,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     const data = this.extractPlayData(raw);
     const unblockPath = this.config.pathPlayUrlUnblock;
     const shouldTryUnblock = this.shouldAttemptUnblock(raw, data);
+    this.debugUnblockTrace(trackId, "v1", {
+      hasUrl: this.hasPlayableUrl(data),
+      preview: Boolean(data && this.isVipPreview(data)),
+      shouldTryUnblock
+    });
 
     if (!unblockPath || !shouldTryUnblock) {
       if (this.hasPlayableUrl(data)) {
@@ -443,12 +499,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     let bestCandidate: PlayData | null = this.hasPlayableUrl(data) ? data : null;
-
-    const sourceCandidates = this.config.unblockSources?.length
+    const fallbackSources = this.config.unblockSources?.length
       ? this.config.unblockSources
       : this.config.unblockSource
         ? [this.config.unblockSource]
-        : [""];
+        : [];
+    const sourceCandidates = ["", ...fallbackSources];
 
     for (const source of sourceCandidates) {
       try {
@@ -457,9 +513,19 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           level: this.config.playLevel,
           ...(source ? { source } : {})
         });
-        if (!unblockRaw) continue;
+        if (!unblockRaw) {
+          this.debugUnblockTrace(trackId, source ? "match-source-empty-response" : "match-no-source-empty-response", { source });
+          continue;
+        }
         const unblockData = this.extractPlayData(unblockRaw);
-        if (!this.hasPlayableUrl(unblockData)) continue;
+        if (!this.hasPlayableUrl(unblockData)) {
+          this.debugUnblockTrace(trackId, source ? "match-source-no-url" : "match-no-source-no-url", { source });
+          continue;
+        }
+        this.debugUnblockTrace(trackId, source ? "match-source-hit" : "match-no-source-hit", {
+          source: source || "none",
+          preview: this.isVipPreview(unblockData)
+        });
         if (!bestCandidate) {
           bestCandidate = unblockData;
         }
@@ -468,6 +534,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         }
       } catch {
         // 当前解灰 source 不可用时自动尝试下一个 source。
+        this.debugUnblockTrace(trackId, source ? "match-source-error" : "match-no-source-error", { source });
       }
     }
 
@@ -575,14 +642,21 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     const blocks: DiscoverBlock[] = [];
 
     const banners = asArray<AnyRecord>(bannerRaw?.banners)
-      .map((item, index) => ({
-        id: String(item.targetId ?? item.encodeId ?? `banner-${index}`),
-        title: asString(item.typeTitle) ?? "推荐内容",
-        subtitle: asString(item.copywriter) ?? asString(item.typeTitle) ?? "精选内容推荐",
-        coverUrl: asString(item.imageUrl) ?? asString(item.pic),
-        type: "banner" as const,
-        targetId: asString(item.targetId)
-      }))
+      .map((item, index) => {
+        const targetType = asNumber(item.targetType);
+        const mappedType = mapBannerTargetTypeToDiscoverType(targetType);
+        const targetId = asIdString(item.targetId) ?? asIdString(item.encodeId);
+        const linkUrl = asString(item.url);
+        return {
+          id: String(item.targetId ?? item.encodeId ?? `banner-${index}`),
+          title: asString(item.typeTitle) ?? "推荐内容",
+          subtitle: asString(item.copywriter) ?? asString(item.typeTitle) ?? "精选内容推荐",
+          coverUrl: asString(item.imageUrl) ?? asString(item.pic),
+          type: mappedType,
+          targetId,
+          linkUrl: mappedType === "banner" ? linkUrl : undefined
+        };
+      })
       .slice(0, 8);
     if (banners.length) {
       blocks.push({ id: "discover-banner", title: "推荐内容", items: banners });

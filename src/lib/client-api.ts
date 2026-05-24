@@ -3,6 +3,7 @@
 import type {
   AlbumDetail,
   ApiResult,
+  ArtistSearchItem,
   ArtistDetail,
   DiscoverData,
   DownloadSource,
@@ -40,6 +41,13 @@ export async function searchMusic(keyword: string, page = 1, pageSize = 20): Pro
     method: "GET"
   });
   return readResult<PagedResult<Track>>(response);
+}
+
+export async function searchArtists(keyword: string, page = 1, pageSize = 20): Promise<PagedResult<ArtistSearchItem>> {
+  const response = await fetch(`/api/music/search/artists?q=${encodeURIComponent(keyword)}&page=${page}&pageSize=${pageSize}`, {
+    method: "GET"
+  });
+  return readResult<PagedResult<ArtistSearchItem>>(response);
 }
 
 export async function getTrackPlaySource(trackId: string): Promise<PlaySource> {

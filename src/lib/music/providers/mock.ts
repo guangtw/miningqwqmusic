@@ -1,7 +1,8 @@
-import type { MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
+import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
 import { parseLyric } from "@/src/lib/lyrics";
 import type {
   AlbumDetail,
+  ArtistSearchItem,
   ArtistDetail,
   DiscoverData,
   DownloadSource,
@@ -73,6 +74,40 @@ export class MockMusicAdapter implements MusicSourceAdapter {
     const items = filtered.slice(start, start + input.pageSize);
     return {
       items,
+      page: input.page,
+      pageSize: input.pageSize,
+      total: filtered.length
+    };
+  }
+
+  async searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>> {
+    const q = input.keyword.trim().toLowerCase();
+    const artistMap = new Map<string, ArtistSearchItem>();
+    MOCK_TRACKS.forEach((track) => {
+      track.artists.forEach((artist) => {
+        if (!artistMap.has(artist.id)) {
+          artistMap.set(artist.id, {
+            id: artist.id,
+            name: artist.name,
+            coverUrl: artist.coverUrl,
+            musicSize: 1,
+            albumSize: 1
+          });
+        } else {
+          const previous = artistMap.get(artist.id);
+          artistMap.set(artist.id, {
+            ...(previous as ArtistSearchItem),
+            musicSize: (previous?.musicSize ?? 0) + 1
+          });
+        }
+      });
+    });
+
+    const artists = Array.from(artistMap.values());
+    const filtered = !q ? artists : artists.filter((artist) => artist.name.toLowerCase().includes(q));
+    const start = (input.page - 1) * input.pageSize;
+    return {
+      items: filtered.slice(start, start + input.pageSize),
       page: input.page,
       pageSize: input.pageSize,
       total: filtered.length

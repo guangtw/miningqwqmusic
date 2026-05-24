@@ -9,6 +9,7 @@ import {
   getDiscoverHome,
   getPlaylistDetail,
   getSatiScene,
+  searchArtists,
   getSearchAssist,
   getSportScene,
   getTrackDetail,
@@ -17,17 +18,35 @@ import {
   getToplistDetail,
   searchMusic
 } from "@/src/lib/client-api";
+import { computeHomeGridPlan } from "@/src/lib/home-grid";
+import { extractPlaylistId } from "@/src/lib/playlist-import";
+import { resolveDiscoverAction } from "@/src/lib/discover-action";
+import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import { heroActionLabel, nextVolumeAfterMuteToggle } from "@/src/lib/player-ui";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
-import type { DiscoverData, DiscoverItem, PlaybackMode, Playlist, SceneData, SongInsight, Track } from "@/src/types/music";
+import type {
+  ArtistDetail,
+  ArtistSearchItem,
+  DiscoverData,
+  DiscoverItem,
+  ImportedPlaylist,
+  PlaybackMode,
+  Playlist,
+  SceneData,
+  SongInsight,
+  Track
+} from "@/src/types/music";
 
 type NavTab = "home" | "search" | "library";
 type SearchStatus = "idle" | "loading" | "success" | "empty" | "error";
-type LibraryView = "library-overview" | "library-favorites" | "library-recent";
+type SearchMode = "track" | "artist";
+type LibraryView = "library-overview" | "library-favorites" | "library-recent" | "library-playlists";
+type HomePlaylistView = "featured" | "more";
 type DetailViewTab = "lyric" | "meta";
 type DetailLyricMode = "origin" | "translated" | "karaoke";
 type DetailModalPhase = "closed" | "opening" | "open" | "closing";
+type PlaylistPanelPhase = "closed" | "opening" | "open" | "closing";
 type DetailPalette = {
   bgA: string;
   bgB: string;
@@ -35,7 +54,7 @@ type DetailPalette = {
 };
 type HomePlaylistPanelState = {
   id: string;
-  sourceType: "playlist" | "toplist";
+  sourceType: "playlist" | "toplist" | "imported";
   title: string;
   subtitle?: string;
   coverUrl?: string;
@@ -53,6 +72,11 @@ type HistoryGuardState = {
 };
 
 const DETAIL_ANIMATION_MS = 260;
+const PLAYLIST_PANEL_ANIMATION_MS = 260;
+const HOME_GRID_GAP = 12;
+const HOME_CHANNEL_MIN_CARD_WIDTH = 196;
+const HOME_PLAYLIST_MIN_CARD_WIDTH = 152;
+const HOME_EVENT_MIN_CARD_WIDTH = 152;
 const THEME_DETAIL_FALLBACK_PALETTE: DetailPalette = {
   bgA: "var(--detail-fallback-a)",
   bgB: "var(--detail-fallback-b)",
@@ -111,6 +135,17 @@ function visibleSubtitle(text: string | undefined, fallback: string): string {
     return fallback;
   }
   return trimmed;
+}
+
+function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
+  return {
+    id: `${prefix}-${track.id}`,
+    title: track.name,
+    subtitle: track.artists.map((item) => item.name).join(" / ") || "未知歌手",
+    coverUrl: track.coverUrl ?? track.album?.coverUrl,
+    type: "track",
+    targetId: track.id
+  };
 }
 
 function PlayIcon() {
@@ -299,6 +334,33 @@ function TrackRow({
   );
 }
 
+function ArtistSearchRow({
+  artist,
+  onOpen
+}: {
+  artist: ArtistSearchItem;
+  onOpen: (artist: ArtistSearchItem) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="artist-search-row"
+      onClick={() => onOpen(artist)}
+    >
+      <div className="artist-search-cover" style={{ backgroundImage: `url(${artist.coverUrl ?? DEFAULT_COVER_URL})` }} />
+      <div className="artist-search-main">
+        <h3>{artist.name}</h3>
+        <p>
+          {typeof artist.musicSize === "number" ? `${artist.musicSize} 首单曲` : "歌曲数未知"}
+          {" · "}
+          {typeof artist.albumSize === "number" ? `${artist.albumSize} 张专辑` : "专辑数未知"}
+        </p>
+      </div>
+      <span className="artist-search-entry">查看详情</span>
+    </button>
+  );
+}
+
 export function PlayerApp() {
   const player = usePlayerStore();
   const controller = usePlayerController();
@@ -312,15 +374,35 @@ export function PlayerApp() {
   const [detailLyricMode, setDetailLyricMode] = useState<DetailLyricMode>("origin");
   const [detailPalette, setDetailPalette] = useState<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
   const [keyword, setKeyword] = useState("");
+  const [searchMode, setSearchMode] = useState<SearchMode>("track");
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
-  const [result, setResult] = useState<Track[]>([]);
+  const [trackResult, setTrackResult] = useState<Track[]>([]);
+  const [artistResult, setArtistResult] = useState<ArtistSearchItem[]>([]);
+  const [searchArtistDetail, setSearchArtistDetail] = useState<ArtistDetail | null>(null);
+  const [searchArtistDetailLoading, setSearchArtistDetailLoading] = useState(false);
+  const [searchArtistDetailError, setSearchArtistDetailError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [discoverData, setDiscoverData] = useState<DiscoverData | null>(null);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [homePlaylistPanel, setHomePlaylistPanel] = useState<HomePlaylistPanelState | null>(null);
+  const [homePlaylistPhase, setHomePlaylistPhase] = useState<PlaylistPanelPhase>("closed");
+  const [homePlaylistView, setHomePlaylistView] = useState<HomePlaylistView>("featured");
   const [searchAssist, setSearchAssist] = useState<{ hotKeywords: string[]; suggestions: string[]; defaultKeyword?: string } | null>(null);
   const [trackInsight, setTrackInsight] = useState<SongInsight | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
+  const [importPlaylistInput, setImportPlaylistInput] = useState("");
+  const [importPlaylistState, setImportPlaylistState] = useState<{
+    loading: boolean;
+    message: string | null;
+    error: string | null;
+  }>({
+    loading: false,
+    message: null,
+    error: null
+  });
+  const [channelGridWidth, setChannelGridWidth] = useState(0);
+  const [playlistGridWidth, setPlaylistGridWidth] = useState(0);
+  const [eventGridWidth, setEventGridWidth] = useState(0);
   const [downloadState, setDownloadState] = useState<{
     loading: boolean;
     level: string;
@@ -332,17 +414,33 @@ export function PlayerApp() {
   });
   const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
   const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
+  const [isMobileUi, setIsMobileUi] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const importPlaylistInputRef = useRef<HTMLInputElement>(null);
   const previousVolumeRef = useRef(0.8);
   const detailCloseTimerRef = useRef<number | null>(null);
+  const homePlaylistCloseTimerRef = useRef<number | null>(null);
   const homePlaylistRequestIdRef = useRef(0);
   const pendingArtworkRef = useRef<Set<string>>(new Set());
   const popstateHandlingRef = useRef(false);
   const activeTabRef = useRef<NavTab>("home");
   const detailPhaseRef = useRef<DetailModalPhase>("closed");
+  const homePlaylistPhaseRef = useRef<PlaylistPanelPhase>("closed");
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null);
   const [playlistPortalTarget, setPlaylistPortalTarget] = useState<HTMLElement | null>(null);
+  const homeChannelGridRef = useRef<HTMLElement>(null);
+  const homePlaylistGridRef = useRef<HTMLDivElement>(null);
+  const homeEventGridRef = useRef<HTMLDivElement>(null);
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
+  const lyricAutoScrollRafRef = useRef<number | null>(null);
+  const lyricAutoScrollTimerRef = useRef<number | null>(null);
+  const lyricLastModeRef = useRef<DetailLyricMode>("origin");
+  const lyricLastTrackIdRef = useRef<string | null>(null);
+  const lyricLastAutoIndexRef = useRef<number>(-1);
+  const lyricLastDetailTabRef = useRef<DetailViewTab>("lyric");
+  const lyricLineRefsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
+  const lyricUserScrollLockUntilRef = useRef(0);
+  const lyricUserLockTimerRef = useRef<number | null>(null);
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -365,8 +463,22 @@ export function PlayerApp() {
   }, [activeTab]);
 
   useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 899px), (pointer: coarse), (hover: none)");
+    const update = () => setIsMobileUi(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => {
+      mediaQuery.removeEventListener("change", update);
+    };
+  }, []);
+
+  useEffect(() => {
     detailPhaseRef.current = detailPhase;
   }, [detailPhase]);
+
+  useEffect(() => {
+    homePlaylistPhaseRef.current = homePlaylistPhase;
+  }, [homePlaylistPhase]);
 
   useEffect(() => {
     let active = true;
@@ -433,7 +545,15 @@ export function PlayerApp() {
 
   useEffect(() => {
     setDetailLyricMode("origin");
+    lyricLastTrackIdRef.current = null;
+    lyricLastModeRef.current = "origin";
+    lyricLastAutoIndexRef.current = -1;
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (detailTab === "lyric") return;
+    lyricLastDetailTabRef.current = detailTab;
+  }, [detailTab]);
 
   useEffect(() => {
     if (!currentTrackId) {
@@ -459,8 +579,52 @@ export function PlayerApp() {
     };
   }, [currentTrackId]);
 
+  useEffect(() => {
+    if (!isMobileUi) return;
+    if (player.volume < 0.999) {
+      previousVolumeRef.current = player.volume > 0 ? player.volume : previousVolumeRef.current;
+      player.setVolume(1);
+    }
+  }, [isMobileUi, player]);
+
   const closeHomePlaylistPanelDirectly = useCallback(() => {
+    if (homePlaylistCloseTimerRef.current) {
+      window.clearTimeout(homePlaylistCloseTimerRef.current);
+      homePlaylistCloseTimerRef.current = null;
+    }
+    setHomePlaylistPhase("closed");
     setHomePlaylistPanel(null);
+  }, []);
+
+  const openHomePlaylistPanelWithAnimation = useCallback(() => {
+    if (homePlaylistCloseTimerRef.current) {
+      window.clearTimeout(homePlaylistCloseTimerRef.current);
+      homePlaylistCloseTimerRef.current = null;
+    }
+    const currentPhase = homePlaylistPhaseRef.current;
+    if (currentPhase === "open" || currentPhase === "opening") {
+      return;
+    }
+    setHomePlaylistPhase("opening");
+    window.requestAnimationFrame(() => {
+      setHomePlaylistPhase("open");
+    });
+  }, []);
+
+  const closeHomePlaylistPanelWithAnimation = useCallback(() => {
+    const currentPhase = homePlaylistPhaseRef.current;
+    if (currentPhase === "closed" || currentPhase === "closing") {
+      return;
+    }
+    if (homePlaylistCloseTimerRef.current) {
+      window.clearTimeout(homePlaylistCloseTimerRef.current);
+    }
+    setHomePlaylistPhase("closing");
+    homePlaylistCloseTimerRef.current = window.setTimeout(() => {
+      setHomePlaylistPhase("closed");
+      setHomePlaylistPanel(null);
+      homePlaylistCloseTimerRef.current = null;
+    }, PLAYLIST_PANEL_ANIMATION_MS);
   }, []);
 
   const closeHomePlaylistPanel = useCallback(() => {
@@ -469,8 +633,8 @@ export function PlayerApp() {
       window.history.back();
       return;
     }
-    closeHomePlaylistPanelDirectly();
-  }, [closeHomePlaylistPanelDirectly]);
+    closeHomePlaylistPanelWithAnimation();
+  }, [closeHomePlaylistPanelWithAnimation]);
 
   const restoreHomeTab = useCallback(() => {
     setActiveTab("home");
@@ -485,6 +649,7 @@ export function PlayerApp() {
     setActiveTab(tab);
     if (tab !== "home") {
       closeHomePlaylistPanelDirectly();
+      setHomePlaylistView("featured");
     }
     if (tab === "library" && nextLibraryView) {
       setLibraryView(nextLibraryView);
@@ -496,12 +661,15 @@ export function PlayerApp() {
     }
   };
 
-  const openPlaylistPanel = async (item: DiscoverItem) => {
-    const targetId = item.targetId ?? item.id;
-    if (!targetId) return;
-    const sourceType = item.type === "toplist" ? "toplist" : "playlist";
+  const openPlaylistPanel = async (item: DiscoverItem, sourceType: "playlist" | "toplist") => {
+    const targetId = item.targetId;
+    if (!targetId) {
+      setSearchError("该推荐项暂时不可用，请稍后重试。");
+      return;
+    }
     const requestId = ++homePlaylistRequestIdRef.current;
-    if (!popstateHandlingRef.current) {
+    const panelVisible = homePlaylistPhaseRef.current !== "closed";
+    if (!popstateHandlingRef.current && !panelVisible) {
       pushHistoryGuardState("playlist", activeTabRef.current);
     }
     setHomePlaylistPanel({
@@ -514,6 +682,7 @@ export function PlayerApp() {
       loading: true,
       error: null
     });
+    openHomePlaylistPanelWithAnimation();
 
     try {
       const data: Playlist =
@@ -542,47 +711,164 @@ export function PlayerApp() {
     }
   };
 
-  const doSearch = async () => {
-    const q = keyword.trim();
+  const openImportedPlaylistPanel = (playlist: ImportedPlaylist) => {
+    const panelVisible = homePlaylistPhaseRef.current !== "closed";
+    if (!popstateHandlingRef.current && !panelVisible) {
+      pushHistoryGuardState("playlist", activeTabRef.current);
+    }
+    setHomePlaylistPanel({
+      id: playlist.id,
+      sourceType: "imported",
+      title: playlist.name,
+      subtitle: playlist.description,
+      coverUrl: playlist.coverUrl,
+      tracks: playlist.tracks,
+      loading: false,
+      error: null
+    });
+    openHomePlaylistPanelWithAnimation();
+  };
+
+  const importPlaylistFromInput = async () => {
+    const raw = importPlaylistInput.trim();
+    if (!raw) {
+      setImportPlaylistState((previous) => ({
+        ...previous,
+        message: null,
+        error: "请输入网易云歌单链接或歌单 ID。"
+      }));
+      return;
+    }
+    const playlistId = extractPlaylistId(raw);
+    if (!playlistId) {
+      setImportPlaylistState((previous) => ({
+        ...previous,
+        message: null,
+        error: "未识别到歌单 ID，请检查链接格式。"
+      }));
+      return;
+    }
+
+    setImportPlaylistState({
+      loading: true,
+      message: null,
+      error: null
+    });
+    try {
+      const data = await getPlaylistDetail(playlistId);
+      const now = Date.now();
+      const existing = player.importedPlaylists[playlistId];
+      player.upsertImportedPlaylist({
+        id: data.id || playlistId,
+        name: data.name || `歌单 ${playlistId}`,
+        description: data.description,
+        coverUrl: data.coverUrl,
+        tracks: data.tracks,
+        sourceUrl: raw,
+        importedAt: existing?.importedAt ?? now,
+        updatedAt: now
+      });
+      setImportPlaylistState({
+        loading: false,
+        message: existing ? `已更新歌单：${data.name}` : `已导入歌单：${data.name}`,
+        error: null
+      });
+      setImportPlaylistInput("");
+    } catch (error) {
+      setImportPlaylistState({
+        loading: false,
+        message: null,
+        error: error instanceof Error ? error.message : "导入歌单失败，请稍后重试。"
+      });
+    }
+  };
+
+  const runSearch = async (nextKeyword: string, mode: SearchMode) => {
+    const q = nextKeyword.trim();
     if (!q) {
       setSearchStatus("idle");
-      setResult([]);
+      setTrackResult([]);
+      setArtistResult([]);
+      setSearchArtistDetail(null);
+      setSearchArtistDetailError(null);
       setSearchError(null);
       return;
     }
 
     setSearchStatus("loading");
+    setSearchArtistDetail(null);
+    setSearchArtistDetailError(null);
     setSearchError(null);
     try {
-      const data = await searchMusic(q, 1, 20);
-      setResult(data.items);
-      setSearchStatus(data.items.length === 0 ? "empty" : "success");
+      if (mode === "artist") {
+        const data = await searchArtists(q, 1, 20);
+        setArtistResult(data.items);
+        setTrackResult([]);
+        setSearchStatus(data.items.length === 0 ? "empty" : "success");
+      } else {
+        const data = await searchMusic(q, 1, 20);
+        setTrackResult(data.items);
+        setArtistResult([]);
+        setSearchStatus(data.items.length === 0 ? "empty" : "success");
+      }
     } catch (error) {
-      setResult([]);
+      setTrackResult([]);
+      setArtistResult([]);
       setSearchStatus("error");
       setSearchError(error instanceof Error ? error.message : "网络异常，搜索失败，请稍后重试。");
     }
+  };
+
+  const doSearch = async () => {
+    await runSearch(keyword, searchMode);
   };
 
   const applyKeywordAndSearch = (nextKeyword: string) => {
     const normalized = nextKeyword.trim();
     if (!normalized) return;
     setKeyword(normalized);
-    setSearchStatus("loading");
-    setSearchError(null);
     window.setTimeout(() => {
-      void searchMusic(normalized, 1, 20)
-        .then((data) => {
-          setResult(data.items);
-          setSearchStatus(data.items.length ? "success" : "empty");
-          setSearchError(null);
-        })
-        .catch((error) => {
-          setResult([]);
-          setSearchStatus("error");
-          setSearchError(error instanceof Error ? error.message : "网络异常，搜索失败，请稍后重试。");
-        });
+      void runSearch(normalized, searchMode);
     }, 0);
+  };
+
+  const openSearchArtistDetail = async (artist: ArtistSearchItem) => {
+    setSearchArtistDetail(null);
+    setSearchArtistDetailLoading(true);
+    setSearchArtistDetailError(null);
+    try {
+      const detail = await getArtistDetail(artist.id);
+      setSearchArtistDetail(detail);
+    } catch (error) {
+      setSearchArtistDetailError(error instanceof Error ? error.message : "歌手详情加载失败，请稍后重试。");
+    } finally {
+      setSearchArtistDetailLoading(false);
+    }
+  };
+
+  const playArtistTopTracks = (artistDetail: ArtistDetail) => {
+    if (!artistDetail.topTracks.length) return;
+    player.setQueue(artistDetail.topTracks, 0);
+    player.setPlaying(true);
+  };
+
+  const addArtistTopTracksToQueue = (artistDetail: ArtistDetail) => {
+    artistDetail.topTracks.forEach((track) => player.addToQueue(track));
+  };
+
+  const switchSearchMode = (nextMode: SearchMode) => {
+    if (nextMode === searchMode) return;
+    setSearchMode(nextMode);
+    setSearchArtistDetail(null);
+    setSearchArtistDetailError(null);
+    setSearchArtistDetailLoading(false);
+    if (!keyword.trim()) {
+      setSearchStatus("idle");
+      setTrackResult([]);
+      setArtistResult([]);
+      return;
+    }
+    void runSearch(keyword, nextMode);
   };
 
   const tryPlaySceneTrack = async (trackId?: string) => {
@@ -597,35 +883,38 @@ export function PlayerApp() {
   };
 
   const handleDiscoverItem = async (item: DiscoverItem) => {
-    const targetId = item.targetId ?? item.id;
-    if (!targetId) return;
+    const action = resolveDiscoverAction(item);
+    if (action.type === "unsupported") {
+      setSearchError("该推荐项暂时不可用，请稍后重试。");
+      return;
+    }
 
     try {
-      if (item.type === "track" || item.type === "banner" || item.type === "scene") {
-        await tryPlaySceneTrack(targetId);
+      if (action.type === "open-external") {
+        window.open(action.url, "_blank", "noopener,noreferrer");
         return;
       }
 
-      if (item.type === "playlist") {
-        await openPlaylistPanel(item);
+      if (action.type === "play-track") {
+        await tryPlaySceneTrack(action.targetId);
         return;
       }
 
-      if (item.type === "toplist") {
-        await openPlaylistPanel(item);
+      if (action.type === "open-playlist") {
+        await openPlaylistPanel(item, action.sourceType);
         return;
       }
 
-      if (item.type === "album") {
-        const album = await getAlbumDetail(targetId);
+      if (action.type === "open-album") {
+        const album = await getAlbumDetail(action.targetId);
         if (!album.tracks.length) return;
         player.setQueue(album.tracks, 0);
         player.setPlaying(true);
         return;
       }
 
-      if (item.type === "artist") {
-        const artist = await getArtistDetail(targetId);
+      if (action.type === "open-artist") {
+        const artist = await getArtistDetail(action.targetId);
         if (!artist.topTracks.length) return;
         player.setQueue(artist.topTracks, 0);
         player.setPlaying(true);
@@ -642,8 +931,10 @@ export function PlayerApp() {
     player.setPlaying(true);
   };
 
-  const playHomePlaylistTrack = (track: Track) => {
-    player.playTrackNow(track);
+  const playHomePlaylistTrackAt = (trackIndex: number) => {
+    if (!homePlaylistPanel?.tracks.length) return;
+    const safeIndex = Math.min(Math.max(trackIndex, 0), homePlaylistPanel.tracks.length - 1);
+    player.setQueue(homePlaylistPanel.tracks, safeIndex);
     player.setPlaying(true);
   };
 
@@ -683,6 +974,7 @@ export function PlayerApp() {
   };
 
   const toggleMute = () => {
+    if (isMobileUi) return;
     const next = nextVolumeAfterMuteToggle(player.volume, previousVolumeRef.current);
     previousVolumeRef.current = next.previousVolume;
     player.setVolume(next.volume);
@@ -704,7 +996,14 @@ export function PlayerApp() {
     }
     return controller.lyricLines;
   }, [controller.lyricKaraokeLines, controller.lyricLines, controller.lyricTranslatedLines, detailLyricMode]);
+  const activeDetailLyricIndex = useMemo(
+    () => locateCurrentLyricIndex(activeDetailLyricLines, player.currentTimeMs),
+    [activeDetailLyricLines, player.currentTimeMs]
+  );
   const detailLyricRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    lyricLineRefsRef.current.clear();
+  }, [activeDetailLyricLines, detailLyricMode, currentTrack?.id]);
   const homeSeedTracks = useMemo(() => {
     const map = new Map<string, Track>();
     const candidates = [
@@ -720,11 +1019,83 @@ export function PlayerApp() {
     }
     return Array.from(map.values());
   }, [currentTrack, queueTrack, player.recent, player.favorites, player.queue]);
+  const importedPlaylists = useMemo(
+    () => Object.values(player.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt),
+    [player.importedPlaylists]
+  );
+  const discoverBlocks = useMemo(() => {
+    const blockMap = new Map<string, DiscoverItem[]>();
+    discoverData?.blocks.forEach((block) => {
+      blockMap.set(block.id, block.items);
+    });
+    return blockMap;
+  }, [discoverData]);
+  const homeChannelItems = useMemo(() => {
+    const primary = discoverBlocks.get("discover-banner") ?? [];
+    const fallback = homeSeedTracks.map((track) => toTrackFallbackItem(track, "channel-fallback"));
+    const merged = [...primary];
+    for (const item of fallback) {
+      if (!merged.some((exist) => exist.id === item.id || exist.targetId === item.targetId)) {
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [discoverBlocks, homeSeedTracks]);
+  const homePlaylistItems = useMemo(() => {
+    const primary = discoverBlocks.get("discover-personalized") ?? [];
+    const highQuality = discoverBlocks.get("discover-highquality") ?? [];
+    const fallback = homeSeedTracks.map((track) => toTrackFallbackItem(track, "playlist-fallback"));
+    const merged = [...primary, ...highQuality];
+    for (const item of fallback) {
+      if (!merged.some((exist) => exist.id === item.id || exist.targetId === item.targetId)) {
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [discoverBlocks, homeSeedTracks]);
+  const homeEventItems = useMemo(() => {
+    const toplist = discoverBlocks.get("discover-toplist") ?? [];
+    const scene = [...(sceneSati?.resources ?? []), ...(sceneSport?.resources ?? [])]
+      .filter((item) => item.trackId)
+      .map(
+        (item, index): DiscoverItem => ({
+          id: `scene-resource-${item.id || index}`,
+          title: item.title,
+          subtitle: item.subtitle,
+          coverUrl: item.coverUrl,
+          type: "scene",
+          targetId: item.trackId
+        })
+      );
+    const merged = [...toplist];
+    for (const item of scene) {
+      if (!merged.some((exist) => exist.id === item.id || exist.targetId === item.targetId)) {
+        merged.push(item);
+      }
+    }
+    return merged;
+  }, [discoverBlocks, sceneSati, sceneSport]);
+
+  const homeChannelPlan = useMemo(
+    () => computeHomeGridPlan(channelGridWidth, homeChannelItems.length, HOME_CHANNEL_MIN_CARD_WIDTH, HOME_GRID_GAP),
+    [channelGridWidth, homeChannelItems.length]
+  );
+  const homePlaylistPlan = useMemo(
+    () => computeHomeGridPlan(playlistGridWidth, homePlaylistItems.length, HOME_PLAYLIST_MIN_CARD_WIDTH, HOME_GRID_GAP),
+    [playlistGridWidth, homePlaylistItems.length]
+  );
+  const homeEventPlan = useMemo(
+    () => computeHomeGridPlan(eventGridWidth, homeEventItems.length, HOME_EVENT_MIN_CARD_WIDTH, HOME_GRID_GAP),
+    [eventGridWidth, homeEventItems.length]
+  );
+  const visibleChannelItems = useMemo(() => homeChannelItems.slice(0, homeChannelPlan.count), [homeChannelItems, homeChannelPlan.count]);
+  const visiblePlaylistItems = useMemo(() => homePlaylistItems.slice(0, homePlaylistPlan.count), [homePlaylistItems, homePlaylistPlan.count]);
+  const visibleEventItems = useMemo(() => homeEventItems.slice(0, homeEventPlan.count), [homeEventItems, homeEventPlan.count]);
 
   useEffect(() => {
     const sourceTracks = [
       ...homeSeedTracks,
-      ...result,
+      ...trackResult,
       ...player.queue,
       ...player.recent,
       ...Object.values(player.favorites),
@@ -763,7 +1134,7 @@ export function PlayerApp() {
           pendingArtworkRef.current.delete(track.id);
         });
     });
-  }, [homeSeedTracks, result, player.queue, player.recent, player.favorites, currentTrack, artworkByTrackId]);
+  }, [homeSeedTracks, trackResult, player.queue, player.recent, player.favorites, currentTrack, artworkByTrackId]);
 
   const closeDetailWithAnimation = useCallback(() => {
     if (detailPhaseRef.current === "closed" || detailPhaseRef.current === "closing") {
@@ -873,6 +1244,38 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
+    const channelNode = homeChannelGridRef.current;
+    const playlistNode = homePlaylistGridRef.current;
+    const eventNode = homeEventGridRef.current;
+    if (!channelNode && !playlistNode && !eventNode) return;
+
+    const update = () => {
+      if (channelNode) {
+        setChannelGridWidth(Math.ceil(channelNode.getBoundingClientRect().width));
+      }
+      if (playlistNode) {
+        setPlaylistGridWidth(Math.ceil(playlistNode.getBoundingClientRect().width));
+      }
+      if (eventNode) {
+        setEventGridWidth(Math.ceil(eventNode.getBoundingClientRect().width));
+      }
+    };
+
+    update();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    if (resizeObserver) {
+      if (channelNode) resizeObserver.observe(channelNode);
+      if (playlistNode) resizeObserver.observe(playlistNode);
+      if (eventNode) resizeObserver.observe(eventNode);
+    }
+    window.addEventListener("resize", update);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [activeTab, homePlaylistView, isDetailMounted]);
+
+  useEffect(() => {
     if (!playerDockRef.current) return;
     const root = document.documentElement;
     const updateDockHeight = () => {
@@ -908,16 +1311,126 @@ export function PlayerApp() {
       if (detailCloseTimerRef.current) {
         window.clearTimeout(detailCloseTimerRef.current);
       }
+      if (homePlaylistCloseTimerRef.current) {
+        window.clearTimeout(homePlaylistCloseTimerRef.current);
+      }
+      if (lyricAutoScrollRafRef.current) {
+        window.cancelAnimationFrame(lyricAutoScrollRafRef.current);
+      }
+      if (lyricAutoScrollTimerRef.current) {
+        window.clearTimeout(lyricAutoScrollTimerRef.current);
+      }
+      if (lyricUserLockTimerRef.current) {
+        window.clearTimeout(lyricUserLockTimerRef.current);
+      }
     };
   }, []);
 
-  useEffect(() => {
-    if (!isDetailMounted || detailTab !== "lyric" || !detailLyricRef.current) return;
-    const active = detailLyricRef.current.querySelector(".detail-lyric-line.active");
-    if (active instanceof HTMLElement) {
-      active.scrollIntoView({ block: "center", behavior: "smooth" });
+  const markLyricUserInteraction = useCallback(() => {
+    lyricUserScrollLockUntilRef.current = Date.now() + 1800;
+    if (lyricUserLockTimerRef.current) {
+      window.clearTimeout(lyricUserLockTimerRef.current);
     }
-  }, [isDetailMounted, detailTab, detailLyricMode, controller.lyricIndex, currentTrack?.id, activeDetailLyricLines.length]);
+    lyricUserLockTimerRef.current = window.setTimeout(() => {
+      lyricUserScrollLockUntilRef.current = 0;
+      lyricUserLockTimerRef.current = null;
+    }, 1900);
+  }, []);
+
+  const bindLyricLineRef = useCallback(
+    (index: number) => (node: HTMLParagraphElement | null) => {
+      if (node) {
+        lyricLineRefsRef.current.set(index, node);
+      } else {
+        lyricLineRefsRef.current.delete(index);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isDetailMounted || detailTab !== "lyric") return;
+    const container = detailLyricRef.current;
+    if (!container) return;
+    const onWheel = () => markLyricUserInteraction();
+    const onTouchStart = () => markLyricUserInteraction();
+    const onPointerDown = () => markLyricUserInteraction();
+    container.addEventListener("wheel", onWheel, { passive: true });
+    container.addEventListener("touchstart", onTouchStart, { passive: true });
+    container.addEventListener("pointerdown", onPointerDown, { passive: true });
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [detailTab, isDetailMounted, markLyricUserInteraction]);
+
+  const scrollActiveLyric = useCallback(
+    (behavior: ScrollBehavior) => {
+      if (!isDetailMounted || detailTab !== "lyric" || !detailLyricRef.current) return;
+      if (Date.now() < lyricUserScrollLockUntilRef.current) return;
+      const container = detailLyricRef.current;
+      const active = lyricLineRefsRef.current.get(activeDetailLyricIndex);
+      if (!(active instanceof HTMLElement)) return;
+      const centeredTop = active.offsetTop - container.clientHeight / 2 + active.clientHeight / 2;
+      const maxTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+      const nextTop = Math.max(0, Math.min(centeredTop, maxTop));
+      if (Math.abs(container.scrollTop - nextTop) < 1) return;
+      container.scrollTo({ top: nextTop, behavior });
+      if (lyricAutoScrollTimerRef.current) {
+        window.clearTimeout(lyricAutoScrollTimerRef.current);
+      }
+      lyricAutoScrollTimerRef.current = window.setTimeout(() => {
+        lyricAutoScrollTimerRef.current = null;
+      }, behavior === "smooth" ? 340 : 80);
+    },
+    [activeDetailLyricIndex, detailTab, isDetailMounted]
+  );
+
+  const scheduleLyricAutoScroll = useCallback(
+    (behavior: ScrollBehavior) => {
+      if (lyricAutoScrollRafRef.current) {
+        window.cancelAnimationFrame(lyricAutoScrollRafRef.current);
+      }
+      lyricAutoScrollRafRef.current = window.requestAnimationFrame(() => {
+        lyricAutoScrollRafRef.current = null;
+        scrollActiveLyric(behavior);
+      });
+    },
+    [scrollActiveLyric]
+  );
+
+  useEffect(() => {
+    if (!isDetailMounted || detailTab !== "lyric") return;
+    if (activeDetailLyricIndex < 0) return;
+    const trackChanged = lyricLastTrackIdRef.current !== (currentTrack?.id ?? null);
+    const modeChanged = lyricLastModeRef.current !== detailLyricMode;
+    const tabChanged = lyricLastDetailTabRef.current !== "lyric";
+    const shouldAlignNow = trackChanged || modeChanged || tabChanged || detailPhase === "opening";
+    if (!shouldAlignNow) return;
+    lyricLastTrackIdRef.current = currentTrack?.id ?? null;
+    lyricLastModeRef.current = detailLyricMode;
+    lyricLastDetailTabRef.current = "lyric";
+    lyricLastAutoIndexRef.current = activeDetailLyricIndex;
+    scheduleLyricAutoScroll("auto");
+  }, [
+    activeDetailLyricIndex,
+    activeDetailLyricLines.length,
+    currentTrack?.id,
+    detailLyricMode,
+    detailPhase,
+    detailTab,
+    isDetailMounted,
+    scheduleLyricAutoScroll
+  ]);
+
+  useEffect(() => {
+    if (!isDetailMounted || detailTab !== "lyric") return;
+    if (activeDetailLyricIndex < 0) return;
+    if (lyricLastAutoIndexRef.current === activeDetailLyricIndex) return;
+    lyricLastAutoIndexRef.current = activeDetailLyricIndex;
+    scheduleLyricAutoScroll("smooth");
+  }, [activeDetailLyricIndex, detailTab, isDetailMounted, scheduleLyricAutoScroll]);
 
   useEffect(() => {
     const shouldLockBody = isDetailMounted || Boolean(homePlaylistPanel);
@@ -1038,7 +1551,7 @@ export function PlayerApp() {
             max={Math.max(player.durationMs, 1)}
             value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
             style={{
-              background: `linear-gradient(90deg, var(--green) 0%, var(--green) ${progressPercent}%, #4a4a4a ${progressPercent}%, #4a4a4a 100%)`
+              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%, rgba(255,255,255,0.22) 100%)`
             }}
             onChange={(event) => controller.seekTo(Number(event.target.value))}
             onClick={(event) => event.stopPropagation()}
@@ -1047,37 +1560,45 @@ export function PlayerApp() {
         </div>
       </div>
 
-      <div className="spotify-player-right">
-        <IconButton ariaLabel={isMuted ? "取消静音" : "静音"} title={isMuted ? "取消静音" : "静音"} onClick={toggleMute} className={isMuted ? "warn" : "ghost"}>
-          <VolumeIcon muted={isMuted} />
-        </IconButton>
-        <input
-          className="range-slider range-volume"
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={player.volume}
-          style={{
-            background: `linear-gradient(90deg, #16c55b 0%, #35e073 ${volumePercent}%, #4a4a4a ${volumePercent}%, #4a4a4a 100%)`
-          }}
-          onChange={(event) => player.setVolume(Number(event.target.value))}
-          onClick={(event) => event.stopPropagation()}
-        />
-        <span>{Math.round(player.volume * 100)}%</span>
-      </div>
+      {!isMobileUi ? (
+        <div className="spotify-player-right">
+          <IconButton ariaLabel={isMuted ? "取消静音" : "静音"} title={isMuted ? "取消静音" : "静音"} onClick={toggleMute} className={isMuted ? "warn" : "ghost"}>
+            <VolumeIcon muted={isMuted} />
+          </IconButton>
+          <input
+            className="range-slider range-volume"
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={player.volume}
+            style={{
+              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand-strong) ${volumePercent}%, rgba(255,255,255,0.22) ${volumePercent}%, rgba(255,255,255,0.22) 100%)`
+            }}
+            onChange={(event) => player.setVolume(Number(event.target.value))}
+            onClick={(event) => event.stopPropagation()}
+          />
+          <span>{Math.round(player.volume * 100)}%</span>
+        </div>
+      ) : null}
     </footer>
   );
 
   return (
     <main ref={shellRef} className="spotify-shell">
-      <audio ref={controller.audioRef} preload="metadata" />
+      <audio ref={controller.audioRef} preload="auto" />
 
       <section className="spotify-layout">
         <aside className="spotify-sidebar">
           <div className="spotify-logo">MiningQwQ Music</div>
           <nav className="spotify-nav">
-            <button className={activeTab === "home" ? "active" : ""} onClick={() => goTab("home")}>
+            <button
+              className={activeTab === "home" ? "active" : ""}
+              onClick={() => {
+                setHomePlaylistView("featured");
+                goTab("home");
+              }}
+            >
               主页
             </button>
             <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
@@ -1115,6 +1636,14 @@ export function PlayerApp() {
                 <small>{player.recent.length} 首</small>
                 <em>›</em>
               </button>
+              <button
+                className={`sidebar-entry ${activeTab === "library" && libraryView === "library-playlists" ? "active" : ""}`.trim()}
+                onClick={() => goTab("library", "library-playlists")}
+              >
+                <span>我的歌单</span>
+                <small>{importedPlaylists.length} 个</small>
+                <em>›</em>
+              </button>
             </div>
           </section>
         </aside>
@@ -1123,7 +1652,7 @@ export function PlayerApp() {
           <section className="now-playing-merged glass-surface">
             <div className="now-playing-merged-main">
               <div className="now-playing-merged-cover">
-                <div className={`vinyl ${player.isPlaying ? "spinning" : ""}`}>
+                <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
                   <div
                     className="vinyl-cover"
                     role="img"
@@ -1184,159 +1713,133 @@ export function PlayerApp() {
                 </div>
               </header>
 
-              <section className="home-channel-row">
-                {(discoverData?.blocks.find((block) => block.id === "discover-banner")?.items ?? []).slice(0, 6).map((item, index) => (
-                  <button
-                    key={`discover-channel-${item.id}-${index}`}
-                    className="home-channel-card"
-                    onClick={() => {
-                      void handleDiscoverItem(item);
-                    }}
+              {homePlaylistView === "featured" ? (
+                <>
+                  <section
+                    ref={homeChannelGridRef}
+                    className="home-channel-row"
+                    style={{ "--home-grid-columns": homeChannelPlan.columns } as CSSProperties}
                   >
-                    <div className="home-channel-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
-                    <span className="home-channel-tag">推荐频道</span>
-                    <h3>{item.title}</h3>
-                    <p>{visibleSubtitle(item.subtitle, "精选内容推荐")}</p>
-                  </button>
-                ))}
-                {!discoverData?.blocks.find((block) => block.id === "discover-banner")?.items.length ? (
-                  (homeSeedTracks.length ? homeSeedTracks : player.queue).slice(0, 6).map((track, index) => (
-                    <button
-                      key={`channel-${track.id}-${index}`}
-                      className="home-channel-card"
-                      onClick={() => {
-                        player.playTrackNow(track);
-                        player.setPlaying(true);
-                      }}
-                    >
-                      <div className="home-channel-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
-                      <span className="home-channel-tag">推荐频道</span>
-                      <h3>{track.name}</h3>
-                      <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
-                    </button>
-                  ))
-                ) : null}
-                {!homeSeedTracks.length && !discoverData?.blocks.find((block) => block.id === "discover-banner")?.items.length ? (
-                  <article className="home-channel-card placeholder">
-                    <span className="home-channel-tag">今日推荐</span>
-                    <h3>还没有播放任何歌曲</h3>
-                    <p>去搜索页选择喜欢的歌曲，马上开始播放</p>
-                    <button
-                      className="home-channel-cta"
-                      onClick={() => {
-                        if (hasTrack) {
-                          player.togglePlay();
-                        } else {
-                          goTab("search");
-                        }
-                      }}
-                    >
-                      {heroActionLabel(hasTrack, player.isPlaying)}
-                    </button>
-                  </article>
-                ) : null}
-              </section>
-
-              <section className="home-playlist-section">
-                <div className="home-section-head">
-                  <h2>推荐歌单</h2>
-                  <button onClick={() => goTab("search")}>查看更多</button>
-                </div>
-                <div className="home-playlist-grid">
-                  {(discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items ?? []).slice(0, 10).map((item, index) => (
-                    <button
-                      key={`playlist-discover-${item.id}-${index}`}
-                      className="home-playlist-card"
-                      onClick={() => {
-                        void handleDiscoverItem(item);
-                      }}
-                    >
-                      <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
-                      <h3>{item.title}</h3>
-                      <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
-                    </button>
-                  ))}
-                  {!discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items.length
-                    ? homeSeedTracks.slice(0, 10).map((track, index) => (
+                    {visibleChannelItems.map((item, index) => (
+                      <button
+                        key={`discover-channel-${item.id}-${index}`}
+                        className="home-channel-card"
+                        onClick={() => {
+                          void handleDiscoverItem(item);
+                        }}
+                      >
+                        <div className="home-channel-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                        <span className="home-channel-tag">推荐频道</span>
+                        <h3>{item.title}</h3>
+                        <p>{visibleSubtitle(item.subtitle, "精选内容推荐")}</p>
+                      </button>
+                    ))}
+                    {!visibleChannelItems.length ? (
+                      <article className="home-channel-card placeholder">
+                        <span className="home-channel-tag">今日推荐</span>
+                        <h3>还没有播放任何歌曲</h3>
+                        <p>去搜索页选择喜欢的歌曲，马上开始播放</p>
                         <button
-                          key={`playlist-${track.id}-${index}`}
-                          className="home-playlist-card"
+                          className="home-channel-cta"
                           onClick={() => {
-                            player.playTrackNow(track);
-                            player.setPlaying(true);
+                            if (hasTrack) {
+                              player.togglePlay();
+                            } else {
+                              goTab("search");
+                            }
                           }}
                         >
-                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
-                          <h3>{track.name}</h3>
-                          <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
+                          {heroActionLabel(hasTrack, player.isPlaying)}
                         </button>
-                      ))
-                    : null}
-                  {!homeSeedTracks.length && !discoverData?.blocks.find((block) => block.id === "discover-personalized")?.items.length ? (
-                    <p className="spotify-empty">还没有可推荐内容，先去搜索并播放一首歌吧。</p>
-                  ) : null}
-                </div>
-              </section>
+                      </article>
+                    ) : null}
+                  </section>
 
-              <section className="home-event-section">
-                <div className="home-section-head">
-                  <h2>精选活动</h2>
-                </div>
-                {discoverData?.blocks.find((block) => block.id === "discover-toplist")?.items.length ? (
-                  <div className="home-mini-list">
-                    {discoverData.blocks
-                      .find((block) => block.id === "discover-toplist")
-                      ?.items.slice(0, 6)
-                      .map((item, index) => (
-                        <button key={`toplist-${item.id}-${index}`} onClick={() => void handleDiscoverItem(item)}>
-                          <span>{item.title}</span>
-                          <span className="home-mini-index">{visibleSubtitle(item.subtitle, "查看歌单")}</span>
+                  <section className="home-playlist-section">
+                    <div className="home-section-head">
+                      <h2>推荐歌单</h2>
+                      <button onClick={() => setHomePlaylistView("more")}>查看更多</button>
+                    </div>
+                    <div
+                      ref={homePlaylistGridRef}
+                      className="home-playlist-grid"
+                      style={{ "--home-grid-columns": homePlaylistPlan.columns } as CSSProperties}
+                    >
+                      {visiblePlaylistItems.map((item, index) => (
+                        <button
+                          key={`playlist-discover-${item.id}-${index}`}
+                          className="home-playlist-card"
+                          onClick={() => {
+                            void handleDiscoverItem(item);
+                          }}
+                        >
+                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <h3>{item.title}</h3>
+                          <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
                         </button>
                       ))}
+                      {!visiblePlaylistItems.length ? (
+                        <p className="spotify-empty">还没有可推荐内容，先去搜索并播放一首歌吧。</p>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className="home-event-section">
+                    <div className="home-section-head">
+                      <h2>精选活动</h2>
+                    </div>
+                    <div
+                      ref={homeEventGridRef}
+                      className="home-event-grid"
+                      style={{ "--home-grid-columns": homeEventPlan.columns } as CSSProperties}
+                    >
+                      {visibleEventItems.map((item, index) => (
+                        <button
+                          key={`event-${item.id}-${index}`}
+                          className="home-playlist-card home-event-card-square"
+                          onClick={() => {
+                            void handleDiscoverItem(item);
+                          }}
+                        >
+                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <h3>{item.title}</h3>
+                          <p>{visibleSubtitle(item.subtitle, "精选活动")}</p>
+                        </button>
+                      ))}
+                      {!visibleEventItems.length ? (
+                        <p className="spotify-empty">暂无精选活动，稍后再来看看。</p>
+                      ) : null}
+                    </div>
+                    {discoverError ? <p className="error error-inline">{discoverError}</p> : null}
+                  </section>
+                </>
+              ) : (
+                <section className="home-playlist-section home-playlist-more-section">
+                  <div className="home-section-head">
+                    <h2>更多推荐歌单</h2>
+                    <button onClick={() => setHomePlaylistView("featured")}>返回首页推荐</button>
                   </div>
-                ) : null}
-                <div className="home-event-grid">
-                  <article className="home-event-card">
-                    <h3>本周热听精选</h3>
-                    <p>根据你的播放偏好生成，快速找回最近循环的旋律。</p>
-                    <button onClick={() => goTab("library")}>查看最近播放</button>
-                  </article>
-                  <article className="home-event-card alt">
-                    <h3>立刻开始你的音乐旅程</h3>
-                    <p>在搜索页输入歌名或歌手，构建属于你的私人歌单。</p>
-                    <button onClick={() => goTab("search")}>去搜索</button>
-                  </article>
-                  <article className="home-event-card">
-                    <h3>助眠解压</h3>
-                    <p>调用场景资源接口，快速进入轻氛围播放。</p>
-                    <button
-                      onClick={() => {
-                        const trackId = sceneSati?.resources[0]?.trackId;
-                        if (trackId) {
-                          void tryPlaySceneTrack(trackId);
-                        }
-                      }}
-                    >
-                      立即体验
-                    </button>
-                  </article>
-                  <article className="home-event-card alt">
-                    <h3>跑步漫游</h3>
-                    <p>按 BPM 推荐节奏内容，适合运动场景连续播放。</p>
-                    <button
-                      onClick={() => {
-                        const trackId = sceneSport?.resources[0]?.trackId;
-                        if (trackId) {
-                          void tryPlaySceneTrack(trackId);
-                        }
-                      }}
-                    >
-                      开始 130 BPM
-                    </button>
-                  </article>
-                </div>
-                {discoverError ? <p className="error error-inline">{discoverError}</p> : null}
-              </section>
+                  <div
+                    ref={homePlaylistGridRef}
+                    className="home-playlist-grid"
+                    style={{ "--home-grid-columns": Math.max(1, homePlaylistPlan.columns) } as CSSProperties}
+                  >
+                    {homePlaylistItems.map((item, index) => (
+                      <button
+                        key={`playlist-more-${item.id}-${index}`}
+                        className="home-playlist-card"
+                        onClick={() => {
+                          void handleDiscoverItem(item);
+                        }}
+                      >
+                        <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                        <h3>{item.title}</h3>
+                        <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
 
             </>
           ) : null}
@@ -1371,6 +1874,26 @@ export function PlayerApp() {
                   ) : (
                     "搜索"
                   )}
+                </button>
+              </div>
+              <div className="search-mode-switch" role="tablist" aria-label="搜索类型切换">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={searchMode === "track"}
+                  className={searchMode === "track" ? "active" : ""}
+                  onClick={() => switchSearchMode("track")}
+                >
+                  单曲
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={searchMode === "artist"}
+                  className={searchMode === "artist" ? "active" : ""}
+                  onClick={() => switchSearchMode("artist")}
+                >
+                  歌手
                 </button>
               </div>
               {searchAssist ? (
@@ -1410,41 +1933,124 @@ export function PlayerApp() {
                 </div>
               ) : null}
 
-              <div className="spotify-track-table-head">
-                <span>歌曲</span>
-                <span>专辑</span>
-                <span className="align-right">时长</span>
-                <span className="align-center">操作</span>
-              </div>
-              <div className="spotify-track-list">
-                {searchStatus === "loading"
-                  ? Array.from({ length: 5 }).map((_, index) => (
-                      <div key={`skeleton-${index}`} className="track-skeleton-row" aria-hidden="true">
-                        <div />
-                        <div />
-                        <div />
-                        <div />
+              {searchMode === "track" ? (
+                <>
+                  <div className="spotify-track-table-head">
+                    <span>歌曲</span>
+                    <span>专辑</span>
+                    <span className="align-right">时长</span>
+                    <span className="align-center">操作</span>
+                  </div>
+                  <div className="spotify-track-list">
+                    {searchStatus === "loading"
+                      ? Array.from({ length: 5 }).map((_, index) => (
+                          <div key={`skeleton-track-${index}`} className="track-skeleton-row" aria-hidden="true">
+                            <div />
+                            <div />
+                            <div />
+                            <div />
+                          </div>
+                        ))
+                      : null}
+
+                    {trackResult.map((track) => (
+                      <TrackRow
+                        key={track.id}
+                        track={track}
+                        liked={Boolean(favoriteSet[track.id])}
+                        onPlay={(item) => {
+                          player.playTrackNow(item);
+                          player.setPlaying(true);
+                        }}
+                        onToggleFavorite={(item) => player.toggleFavorite(item)}
+                      />
+                    ))}
+
+                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“周杰伦”或“晴天”。</p> : null}
+                    {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
+                    {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
+                  </div>
+                </>
+              ) : (
+                <div className="spotify-track-list">
+                  {searchArtistDetail ? (
+                    <section className="artist-detail-panel">
+                      <header className="artist-detail-head">
+                        <button
+                          type="button"
+                          className="meta-action-btn"
+                          onClick={() => {
+                            setSearchArtistDetail(null);
+                            setSearchArtistDetailError(null);
+                            setSearchArtistDetailLoading(false);
+                          }}
+                        >
+                          返回歌手列表
+                        </button>
+                        <div className="artist-detail-profile">
+                          <div
+                            className="artist-detail-cover"
+                            style={{ backgroundImage: `url(${searchArtistDetail.coverUrl ?? DEFAULT_COVER_URL})` }}
+                          />
+                          <div>
+                            <h3>{searchArtistDetail.name}</h3>
+                            <p>{searchArtistDetail.briefDesc ? searchArtistDetail.briefDesc.slice(0, 120) : "暂无歌手简介"}</p>
+                          </div>
+                        </div>
+                        <div className="artist-detail-actions">
+                          <button type="button" className="meta-action-btn" onClick={() => playArtistTopTracks(searchArtistDetail)}>
+                            播放热门单曲
+                          </button>
+                          <button type="button" className="meta-action-btn" onClick={() => addArtistTopTracksToQueue(searchArtistDetail)}>
+                            加入队列
+                          </button>
+                        </div>
+                      </header>
+                      <div className="spotify-track-table-head">
+                        <span>歌曲</span>
+                        <span>专辑</span>
+                        <span className="align-right">时长</span>
+                        <span className="align-center">操作</span>
                       </div>
-                    ))
-                  : null}
-
-                {result.map((track) => (
-                  <TrackRow
-                    key={track.id}
-                    track={track}
-                    liked={Boolean(favoriteSet[track.id])}
-                    onPlay={(item) => {
-                      player.playTrackNow(item);
-                      player.setPlaying(true);
-                    }}
-                    onToggleFavorite={(item) => player.toggleFavorite(item)}
-                  />
-                ))}
-
-                {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“周杰伦”或“晴天”。</p> : null}
-                {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
-                {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
-              </div>
+                      <div className="spotify-track-list">
+                        {searchArtistDetail.topTracks.map((track) => (
+                          <TrackRow
+                            key={`artist-track-${track.id}`}
+                            track={track}
+                            liked={Boolean(favoriteSet[track.id])}
+                            onPlay={(item) => {
+                              player.playTrackNow(item);
+                              player.setPlaying(true);
+                            }}
+                            onToggleFavorite={(item) => player.toggleFavorite(item)}
+                          />
+                        ))}
+                        {!searchArtistDetail.topTracks.length ? <p className="spotify-empty">该歌手暂无可播放热门单曲。</p> : null}
+                      </div>
+                    </section>
+                  ) : (
+                    <>
+                      {searchStatus === "loading"
+                        ? Array.from({ length: 5 }).map((_, index) => (
+                            <div key={`skeleton-artist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
+                              <div />
+                              <div />
+                              <div />
+                            </div>
+                          ))
+                        : null}
+                      {artistResult.map((artist) => (
+                        <ArtistSearchRow key={artist.id} artist={artist} onOpen={(item) => void openSearchArtistDetail(item)} />
+                      ))}
+                      {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索歌手，例如“邓紫棋”。</p> : null}
+                      {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配歌手，换个关键词试试。</p> : null}
+                      {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
+                      {searchArtistDetailLoading ? <p className="spotify-empty">歌手详情加载中...</p> : null}
+                      {searchArtistDetailError ? <p className="error error-inline">{searchArtistDetailError}</p> : null}
+                    </>
+                  )}
+                </div>
+              )}
             </section>
           ) : null}
 
@@ -1465,6 +2071,9 @@ export function PlayerApp() {
                   <button className={libraryView === "library-recent" ? "active" : ""} onClick={() => setLibraryView("library-recent")}>
                     最近播放
                   </button>
+                  <button className={libraryView === "library-playlists" ? "active" : ""} onClick={() => setLibraryView("library-playlists")}>
+                    我的歌单
+                  </button>
                 </div>
               </header>
 
@@ -1481,6 +2090,12 @@ export function PlayerApp() {
                     <h3>{player.recent.length} 首</h3>
                     <p>继续上次的播放进度，快速回到熟悉旋律。</p>
                     <button onClick={() => setLibraryView("library-recent")}>查看最近播放</button>
+                  </article>
+                  <article className="library-overview-card">
+                    <p className="library-overview-label">我的歌单</p>
+                    <h3>{importedPlaylists.length} 个</h3>
+                    <p>支持导入网易云歌单链接，统一沉淀到你的音乐库。</p>
+                    <button onClick={() => setLibraryView("library-playlists")}>管理我的歌单</button>
                   </article>
                 </section>
               ) : null}
@@ -1532,6 +2147,64 @@ export function PlayerApp() {
                   </div>
                 </section>
               ) : null}
+
+              {libraryView === "library-playlists" ? (
+                <section className="library-list-block">
+                  <div className="library-list-head">
+                    <h3>我的歌单</h3>
+                    <span>{importedPlaylists.length} 个</span>
+                  </div>
+                  <div className="library-import-row">
+                    <input
+                      ref={importPlaylistInputRef}
+                      value={importPlaylistInput}
+                      onChange={(event) => setImportPlaylistInput(event.target.value)}
+                      placeholder="粘贴网易云歌单链接、分享文案或歌单 ID"
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          void importPlaylistFromInput();
+                        }
+                      }}
+                    />
+                    <button type="button" disabled={importPlaylistState.loading} onClick={() => void importPlaylistFromInput()}>
+                      {importPlaylistState.loading ? "导入中..." : "导入歌单"}
+                    </button>
+                  </div>
+                  {importPlaylistState.message ? <p className="library-import-message success">{importPlaylistState.message}</p> : null}
+                  {importPlaylistState.error ? <p className="library-import-message error">{importPlaylistState.error}</p> : null}
+                  <div className="library-imported-list">
+                    {importedPlaylists.map((playlist) => (
+                      <article className="library-imported-item" key={`imported-${playlist.id}`}>
+                        <div className="library-imported-cover" style={{ backgroundImage: `url(${playlist.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                        <div className="library-imported-meta">
+                          <h4>{playlist.name}</h4>
+                          <p>{visibleSubtitle(playlist.description, "已导入歌单")}</p>
+                          <small>{playlist.tracks.length} 首 · 更新于 {new Date(playlist.updatedAt).toLocaleString()}</small>
+                        </div>
+                        <div className="library-imported-actions">
+                          <button type="button" onClick={() => openImportedPlaylistPanel(playlist)}>
+                            打开
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (!playlist.tracks.length) return;
+                              player.setQueue(playlist.tracks, 0);
+                              player.setPlaying(true);
+                            }}
+                          >
+                            播放
+                          </button>
+                          <button type="button" className="danger" onClick={() => player.removeImportedPlaylist(playlist.id)}>
+                            删除
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {!importedPlaylists.length ? <p className="spotify-empty">还没有导入歌单，先粘贴一个网易云分享链接试试。</p> : null}
+                  </div>
+                </section>
+              ) : null}
             </section>
           ) : null}
         </section>
@@ -1544,7 +2217,7 @@ export function PlayerApp() {
               <span className="status-pill">{modeMeta.label}</span>
             </div>
             <div className="spotify-now-cover">
-              <div className={`vinyl ${player.isPlaying ? "spinning" : ""}`}>
+              <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
                 <div
                   className="vinyl-cover"
                   role="img"
@@ -1609,17 +2282,23 @@ export function PlayerApp() {
 
       {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
 
-      {playlistPortalTarget && homePlaylistPanel
+      {playlistPortalTarget && homePlaylistPanel && homePlaylistPhase !== "closed"
         ? createPortal(
-            <section className="home-playlist-drawer-overlay" role="dialog" aria-label="歌单详情">
-              <div className="home-playlist-drawer-backdrop" onClick={closeHomePlaylistPanel} />
-              <aside className="home-playlist-drawer" onClick={(event) => event.stopPropagation()}>
+            <section className={`home-playlist-drawer-overlay phase-${homePlaylistPhase}`.trim()} role="dialog" aria-label="歌单详情">
+              <div className={`home-playlist-drawer-backdrop phase-${homePlaylistPhase}`.trim()} onClick={closeHomePlaylistPanel} />
+              <aside className={`home-playlist-drawer phase-${homePlaylistPhase}`.trim()} onClick={(event) => event.stopPropagation()}>
                 <header className="home-playlist-drawer-head">
                   <div className="home-playlist-drawer-cover" style={{ backgroundImage: `url(${homePlaylistPanel.coverUrl ?? DEFAULT_COVER_URL})` }} />
                   <div className="home-playlist-drawer-meta">
-                    <span>{homePlaylistPanel.sourceType === "toplist" ? "热播榜单" : "推荐歌单"}</span>
+                    <span>
+                      {homePlaylistPanel.sourceType === "toplist"
+                        ? "热播榜单"
+                        : homePlaylistPanel.sourceType === "imported"
+                          ? "我的歌单"
+                          : "推荐歌单"}
+                    </span>
                     <h3>{homePlaylistPanel.title}</h3>
-                    <p>{visibleSubtitle(homePlaylistPanel.subtitle, "点击歌曲开始播放，或先加入播放队列。")}</p>
+                    <p>{visibleSubtitle(homePlaylistPanel.subtitle, isMobileUi ? "点击歌曲即可立即切换并播放。" : "点击歌曲开始播放，或先加入播放队列。")}</p>
                   </div>
                 </header>
 
@@ -1627,16 +2306,28 @@ export function PlayerApp() {
                   <button type="button" onClick={playHomePlaylistAll} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
                     播放全部
                   </button>
-                  <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
-                    全部加入队列
-                  </button>
+                  {!isMobileUi ? (
+                    <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
+                      全部加入队列
+                    </button>
+                  ) : null}
                   <button type="button" className="ghost" onClick={closeHomePlaylistPanel}>
                     关闭
                   </button>
                 </div>
 
                 <div className="home-playlist-drawer-list">
-                  {homePlaylistPanel.loading ? <p className="spotify-empty">歌单加载中...</p> : null}
+                  {homePlaylistPanel.loading ? (
+                    <div className="home-playlist-skeleton-list" aria-hidden="true">
+                      {Array.from({ length: 8 }).map((_, index) => (
+                        <div className="home-playlist-skeleton-row" key={`playlist-skeleton-${index}`}>
+                          <div />
+                          <div />
+                          <div />
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   {homePlaylistPanel.error ? <p className="error error-inline">{homePlaylistPanel.error}</p> : null}
                   {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
                     <p className="spotify-empty">该歌单暂时没有可播放歌曲。</p>
@@ -1644,21 +2335,24 @@ export function PlayerApp() {
                   {!homePlaylistPanel.loading && !homePlaylistPanel.error
                     ? homePlaylistPanel.tracks.map((track, index) => (
                         <article className="home-playlist-track-row" key={`panel-${track.id}-${index}`}>
+                          <div className="home-playlist-track-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
                           <button
                             type="button"
                             className="home-playlist-track-play"
-                            onClick={() => playHomePlaylistTrack(track)}
+                            onClick={() => playHomePlaylistTrackAt(index)}
                           >
                             <span>{`${index + 1}. ${track.name}`}</span>
                             <small>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</small>
                           </button>
-                          <button
-                            type="button"
-                            className="home-playlist-track-queue"
-                            onClick={() => player.addToQueue(track, true)}
-                          >
-                            加入队列
-                          </button>
+                          {!isMobileUi ? (
+                            <button
+                              type="button"
+                              className="home-playlist-track-queue"
+                              onClick={() => player.addToQueue(track, true)}
+                            >
+                              加入队列
+                            </button>
+                          ) : null}
                         </article>
                       ))
                     : null}
@@ -1692,7 +2386,7 @@ export function PlayerApp() {
             <div className="detail-stage">
               <section className="detail-stage-left">
                 <div className="detail-turntable-wrap">
-                  <div className={`detail-turntable ${player.isPlaying ? "spinning" : ""}`}>
+                  <div className={`detail-turntable spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
                     <div className="detail-turntable-cover-mask">
                       <div className="detail-turntable-cover" style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }} />
                     </div>
@@ -1701,6 +2395,14 @@ export function PlayerApp() {
                 <div className="detail-bottom-meta">
                   <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
                   <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
+                </div>
+                <div className="detail-tab-row">
+                  <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
+                    歌词
+                  </button>
+                  <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
+                    歌曲信息
+                  </button>
                 </div>
               </section>
 
@@ -1712,15 +2414,6 @@ export function PlayerApp() {
                   </p>
                 </div>
 
-                <div className="detail-tab-row">
-                  <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
-                    歌词
-                  </button>
-                  <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
-                    歌曲信息
-                  </button>
-                </div>
-
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list">
                     <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
@@ -1728,10 +2421,18 @@ export function PlayerApp() {
                     {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
                     {trackInsight?.creators.length ? (
                       <p>
-                        创作者：{trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
+                        创作者：
+                        {isMobileUi
+                          ? trackInsight.creators
+                              .slice(0, 2)
+                              .map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`)
+                              .join(" / ")
+                          : trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
                       </p>
                     ) : null}
-                    {trackInsight?.wikiSummary ? <p>百科：{trackInsight.wikiSummary}</p> : null}
+                    {trackInsight?.wikiSummary ? (
+                      <p>百科：{isMobileUi ? `${trackInsight.wikiSummary.slice(0, 56)}...` : trackInsight.wikiSummary}</p>
+                    ) : null}
                     {trackInsight?.chorusStartMs ? (
                       <button
                         type="button"
@@ -1755,32 +2456,34 @@ export function PlayerApp() {
                         播放替代版本：{trackInsight.alternatives[0].name}
                       </button>
                     ) : null}
-                    <div className="download-row">
-                      <label htmlFor="download-level">下载音质</label>
-                      <select
-                        id="download-level"
-                        value={downloadState.level}
-                        onChange={(event) =>
-                          setDownloadState((previous) => ({
-                            ...previous,
-                            level: event.target.value
-                          }))
-                        }
-                      >
-                        <option value="standard">standard</option>
-                        <option value="exhigh">exhigh</option>
-                        <option value="lossless">lossless</option>
-                        <option value="hires">hires</option>
-                      </select>
-                      <button
-                        type="button"
-                        className="meta-action-btn"
-                        disabled={downloadState.loading || !currentTrack}
-                        onClick={() => void handleDownloadTrack()}
-                      >
-                        {downloadState.loading ? "获取中..." : "获取下载链接"}
-                      </button>
-                    </div>
+                    {!isMobileUi ? (
+                      <div className="download-row">
+                        <label htmlFor="download-level">下载音质</label>
+                        <select
+                          id="download-level"
+                          value={downloadState.level}
+                          onChange={(event) =>
+                            setDownloadState((previous) => ({
+                              ...previous,
+                              level: event.target.value
+                            }))
+                          }
+                        >
+                          <option value="standard">standard</option>
+                          <option value="exhigh">exhigh</option>
+                          <option value="lossless">lossless</option>
+                          <option value="hires">hires</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="meta-action-btn"
+                          disabled={downloadState.loading || !currentTrack}
+                          onClick={() => void handleDownloadTrack()}
+                        >
+                          {downloadState.loading ? "获取中..." : "获取下载链接"}
+                        </button>
+                      </div>
+                    ) : null}
                     {downloadState.message ? <p>{downloadState.message}</p> : null}
                   </div>
                 ) : (
@@ -1810,15 +2513,26 @@ export function PlayerApp() {
                         逐字
                       </button>
                     </div>
-                    <div className="detail-lyric-scroll polished" ref={detailLyricRef}>
+                    <div
+                      className="detail-lyric-scroll polished"
+                      ref={detailLyricRef}
+                    >
                       {!activeDetailLyricLines.length ? (
                         <p className="detail-empty">暂无该版本歌词</p>
                       ) : (
-                        activeDetailLyricLines.map((line, index) => (
-                          <p key={`${line.timeMs}-${index}`} className={`detail-lyric-line ${index === controller.lyricIndex ? "active" : ""}`}>
-                            {line.text}
-                          </p>
-                        ))
+                        <>
+                          <div className="detail-lyric-spacer" aria-hidden="true" />
+                          {activeDetailLyricLines.map((line, index) => (
+                            <p
+                              key={`${line.timeMs}-${index}`}
+                              ref={bindLyricLineRef(index)}
+                              className={`detail-lyric-line ${index === activeDetailLyricIndex ? "active" : ""}`}
+                            >
+                              {line.text}
+                            </p>
+                          ))}
+                          <div className="detail-lyric-spacer" aria-hidden="true" />
+                        </>
                       )}
                     </div>
                   </div>
@@ -1868,28 +2582,30 @@ export function PlayerApp() {
                   </IconButton>
                 </div>
 
-                <div className="detail-dock-volume">
-                  <IconButton
-                    ariaLabel={isMuted ? "取消静音" : "静音"}
-                    title={isMuted ? "取消静音" : "静音"}
-                    onClick={toggleMute}
-                    className={isMuted ? "warn" : "ghost"}
-                  >
-                    <VolumeIcon muted={isMuted} />
-                  </IconButton>
-                  <input
-                    className="range-slider range-volume"
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={player.volume}
-                    style={{
-                      background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${volumePercent}%, rgba(255,255,255,0.22) ${volumePercent}%, rgba(255,255,255,0.22) 100%)`
-                    }}
-                    onChange={(event) => player.setVolume(Number(event.target.value))}
-                  />
-                </div>
+                {!isMobileUi ? (
+                  <div className="detail-dock-volume">
+                    <IconButton
+                      ariaLabel={isMuted ? "取消静音" : "静音"}
+                      title={isMuted ? "取消静音" : "静音"}
+                      onClick={toggleMute}
+                      className={isMuted ? "warn" : "ghost"}
+                    >
+                      <VolumeIcon muted={isMuted} />
+                    </IconButton>
+                    <input
+                      className="range-slider range-volume"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={player.volume}
+                      style={{
+                        background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${volumePercent}%, rgba(255,255,255,0.22) ${volumePercent}%, rgba(255,255,255,0.22) 100%)`
+                      }}
+                      onChange={(event) => player.setVolume(Number(event.target.value))}
+                    />
+                  </div>
+                ) : null}
               </div>
             </footer>
           </article>

@@ -13,6 +13,14 @@ type CachedPlaySource = {
   cachedAt: number;
 };
 
+type CachedAudioBlob = {
+  trackId: string;
+  sourceUrl: string;
+  blobUrl: string;
+  size: number;
+  cachedAt: number;
+};
+
 type ControllerState = {
   currentTrack: Track | null;
   currentSource: PlaySource | null;
@@ -29,6 +37,10 @@ type ControllerState = {
 
 const CROSSFADE_MS = 350;
 const PREFETCH_EXPIRE_BUFFER_MS = 8000;
+const FULL_AUDIO_CACHE_LIMIT = 3;
+const RECOVERY_COOLDOWN_MS = 1200;
+const RECOVERY_WINDOW_MS = 25000;
+const RECOVERY_MAX_ATTEMPTS = 3;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -81,7 +93,15 @@ export function usePlayerController(): ControllerState {
   const renewTimerRef = useRef<number | null>(null);
   const transitionTokenRef = useRef(0);
   const prefetchedSourceRef = useRef<Map<string, CachedPlaySource>>(new Map());
+  const fullAudioCacheRef = useRef<Map<string, CachedAudioBlob>>(new Map());
+  const fullAudioFetchControllerRef = useRef<Map<string, AbortController>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
+  const recoveryRef = useRef<{ attempts: number; windowStartedAt: number; lastRecoverAt: number }>({
+    attempts: 0,
+    windowStartedAt: 0,
+    lastRecoverAt: 0
+  });
+  const resumeAfterSourceSwitchRef = useRef<number | null>(null);
   const isPlayingRef = useRef(isPlaying);
   const volumeRef = useRef(volume);
   const currentSourceRef = useRef<PlaySource | null>(null);
@@ -97,6 +117,15 @@ export function usePlayerController(): ControllerState {
   useEffect(() => {
     currentSourceRef.current = source;
   }, [source]);
+
+  useEffect(() => {
+    recoveryRef.current = {
+      attempts: 0,
+      windowStartedAt: Date.now(),
+      lastRecoverAt: 0
+    };
+    resumeAfterSourceSwitchRef.current = null;
+  }, [currentTrackId]);
 
   const applyGain = useCallback((nextVolume: number, smoothMs = 80) => {
     const audio = audioRef.current;
@@ -154,6 +183,72 @@ export function usePlayerController(): ControllerState {
       await wait(Math.round(CROSSFADE_MS / steps));
     }
   }, []);
+
+  const revokeCachedBlob = useCallback((trackId: string) => {
+    const cached = fullAudioCacheRef.current.get(trackId);
+    if (!cached) return;
+    URL.revokeObjectURL(cached.blobUrl);
+    fullAudioCacheRef.current.delete(trackId);
+  }, []);
+
+  const ensureAudioCacheLimit = useCallback((keepTrackId?: string) => {
+    const entries = Array.from(fullAudioCacheRef.current.values()).sort((a, b) => b.cachedAt - a.cachedAt);
+    const keptTrackId = keepTrackId ?? currentTrackId ?? undefined;
+    let keptCount = 0;
+    for (const entry of entries) {
+      if (keptTrackId && entry.trackId === keptTrackId) {
+        continue;
+      }
+      if (keptCount < FULL_AUDIO_CACHE_LIMIT - 1) {
+        keptCount += 1;
+        continue;
+      }
+      revokeCachedBlob(entry.trackId);
+    }
+  }, [currentTrackId, revokeCachedBlob]);
+
+  const cacheTrackAudioBlob = useCallback(async (trackId: string, sourceUrl: string) => {
+    if (!sourceUrl) return;
+    const existing = fullAudioCacheRef.current.get(trackId);
+    if (existing?.sourceUrl === sourceUrl) return;
+    const previousController = fullAudioFetchControllerRef.current.get(trackId);
+    if (previousController) {
+      previousController.abort();
+    }
+
+    const controller = new AbortController();
+    fullAudioFetchControllerRef.current.set(trackId, controller);
+    try {
+      const response = await fetch(sourceUrl, {
+        method: "GET",
+        cache: "no-store",
+        signal: controller.signal
+      });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      if (controller.signal.aborted) return;
+      const blobUrl = URL.createObjectURL(blob);
+      const previous = fullAudioCacheRef.current.get(trackId);
+      if (previous) {
+        URL.revokeObjectURL(previous.blobUrl);
+      }
+      fullAudioCacheRef.current.set(trackId, {
+        trackId,
+        sourceUrl,
+        blobUrl,
+        size: blob.size,
+        cachedAt: Date.now()
+      });
+      ensureAudioCacheLimit(trackId);
+    } catch {
+      // 缓存失败不影响主播放链路。
+    } finally {
+      const activeController = fullAudioFetchControllerRef.current.get(trackId);
+      if (activeController === controller) {
+        fullAudioFetchControllerRef.current.delete(trackId);
+      }
+    }
+  }, [ensureAudioCacheLimit]);
 
   useEffect(() => {
     if (!queueTrack) {
@@ -218,9 +313,17 @@ export function usePlayerController(): ControllerState {
       setErrorText(null);
       setLoadingSource(true);
 
+      const cachedAudio = fullAudioCacheRef.current.get(queueTrack.id);
       const cached = prefetchedSourceRef.current.get(queueTrack.id);
       const validCached = isCachedSourceUsable(cached);
-      const playSourcePromise = validCached && cached ? Promise.resolve(cached.source) : getTrackPlaySource(queueTrack.id);
+      const playSourcePromise = cachedAudio
+        ? Promise.resolve<PlaySource>({
+            trackId: queueTrack.id,
+            url: cachedAudio.blobUrl
+          })
+        : validCached && cached
+          ? Promise.resolve(cached.source)
+          : getTrackPlaySource(queueTrack.id);
 
       setTransitionPhase("fadingOut");
       await fadeOutAudio(token);
@@ -245,7 +348,9 @@ export function usePlayerController(): ControllerState {
         const playSource = await playSourcePromise;
         if (!active || token !== transitionTokenRef.current) return;
         setSource(playSource);
-        prefetchedSourceRef.current.set(queueTrack.id, { source: playSource, cachedAt: Date.now() });
+        if (!playSource.url.startsWith("blob:")) {
+          prefetchedSourceRef.current.set(queueTrack.id, { source: playSource, cachedAt: Date.now() });
+        }
       } catch (error) {
         if (!active || token !== transitionTokenRef.current) return;
         const errorMessage = (error as Error).message || "播放地址获取失败";
@@ -301,6 +406,17 @@ export function usePlayerController(): ControllerState {
 
     if (audio.src !== source.url) {
       audio.pause();
+      const resumeMs = resumeAfterSourceSwitchRef.current;
+      if (typeof resumeMs === "number" && resumeMs >= 0) {
+        const onLoaded = () => {
+          const maxSecond = Number.isFinite(audio.duration) ? Math.max(0, audio.duration - 0.24) : Number.MAX_SAFE_INTEGER;
+          const targetSecond = Math.max(0, Math.min(resumeMs / 1000, maxSecond));
+          audio.currentTime = targetSecond;
+          setCurrentTimeMs(Math.floor(targetSecond * 1000));
+          resumeAfterSourceSwitchRef.current = null;
+        };
+        audio.addEventListener("loadedmetadata", onLoaded, { once: true });
+      }
       audio.src = source.url;
       audio.load();
     }
@@ -328,7 +444,7 @@ export function usePlayerController(): ControllerState {
       setErrorText("浏览器阻止了自动播放，请手动点击播放");
       setTransitionPhase("idle");
     });
-  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume, applyGain, fadeInAudio]);
+  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume, applyGain, fadeInAudio, setCurrentTimeMs]);
 
   useEffect(() => {
     if (transitionPhase === "fadingIn" || transitionPhase === "fadingOut") return;
@@ -336,25 +452,61 @@ export function usePlayerController(): ControllerState {
   }, [volume, transitionPhase, applyGain]);
 
   useEffect(() => {
+    if (!currentTrackId || !source?.url) return;
+    if (source.url.startsWith("blob:")) return;
+    void cacheTrackAudioBlob(currentTrackId, source.url);
+  }, [cacheTrackAudioBlob, currentTrackId, source?.url]);
+
+  useEffect(() => {
     if (!audioRef.current) return;
     const audio = audioRef.current;
+    const resetRecoveryWindow = () => {
+      recoveryRef.current = {
+        attempts: 0,
+        windowStartedAt: Date.now(),
+        lastRecoverAt: recoveryRef.current.lastRecoverAt
+      };
+    };
 
-    const onTimeUpdate = () => {
-      setCurrentTimeMs(Math.floor(audio.currentTime * 1000));
-    };
-    const onLoadedMetadata = () => {
-      setDurationMs(Math.floor(audio.duration * 1000) || 0);
-    };
-    const onEnded = () => {
-      nextTrack();
-    };
-    const onError = async () => {
+    const recoverPlayback = async (reason: "waiting" | "stalled" | "suspend" | "error") => {
       if (!queueTrack) return;
+      const currentAudio = audioRef.current;
+      if (!currentAudio) return;
+
+      const now = Date.now();
+      const snapshot = recoveryRef.current;
+      if (now - snapshot.lastRecoverAt < RECOVERY_COOLDOWN_MS) return;
+      if (!snapshot.windowStartedAt || now - snapshot.windowStartedAt > RECOVERY_WINDOW_MS) {
+        recoveryRef.current.windowStartedAt = now;
+        recoveryRef.current.attempts = 0;
+      }
+      recoveryRef.current.lastRecoverAt = now;
+      recoveryRef.current.attempts += 1;
+      if (recoveryRef.current.attempts > RECOVERY_MAX_ATTEMPTS) {
+        setErrorText("网络不稳定，已多次尝试恢复播放");
+        return;
+      }
+
+      const resumeMs = Math.floor(currentAudio.currentTime * 1000);
+      const cachedAudio = fullAudioCacheRef.current.get(queueTrack.id);
+      if (cachedAudio && currentAudio.src !== cachedAudio.blobUrl) {
+        resumeAfterSourceSwitchRef.current = resumeMs;
+        setSource({
+          trackId: queueTrack.id,
+          url: cachedAudio.blobUrl,
+          bitrate: currentSourceRef.current?.bitrate
+        });
+        setErrorText("网络波动，已切换缓存继续播放");
+        return;
+      }
+
       try {
         const renewed = await getTrackPlaySource(queueTrack.id);
-        setSource(renewed);
         prefetchedSourceRef.current.set(queueTrack.id, { source: renewed, cachedAt: Date.now() });
-        setErrorText("播放地址已刷新");
+        resumeAfterSourceSwitchRef.current = resumeMs;
+        setSource(renewed);
+        void cacheTrackAudioBlob(queueTrack.id, renewed.url);
+        setErrorText(reason === "error" ? "播放链路已刷新" : "网络波动，已刷新播放链路");
       } catch (error) {
         const message = (error as Error).message || "音频播放失败";
         try {
@@ -372,18 +524,56 @@ export function usePlayerController(): ControllerState {
       }
     };
 
+    const onTimeUpdate = () => {
+      setCurrentTimeMs(Math.floor(audio.currentTime * 1000));
+    };
+    const onLoadedMetadata = () => {
+      setDurationMs(Math.floor(audio.duration * 1000) || 0);
+    };
+    const onEnded = () => {
+      resetRecoveryWindow();
+      nextTrack();
+    };
+    const onError = () => {
+      void recoverPlayback("error");
+    };
+    const onPlaying = () => {
+      resetRecoveryWindow();
+    };
+    const onWaiting = () => {
+      if (!isPlayingRef.current || audio.paused || audio.ended) return;
+      void recoverPlayback("waiting");
+    };
+    const onStalled = () => {
+      if (!isPlayingRef.current || audio.paused || audio.ended) return;
+      void recoverPlayback("stalled");
+    };
+    const onSuspend = () => {
+      if (!isPlayingRef.current || audio.paused || audio.ended) return;
+      if (audio.readyState >= 3) return;
+      void recoverPlayback("suspend");
+    };
+
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
     audio.addEventListener("ended", onEnded);
+    audio.addEventListener("playing", onPlaying);
+    audio.addEventListener("waiting", onWaiting);
+    audio.addEventListener("stalled", onStalled);
+    audio.addEventListener("suspend", onSuspend);
     audio.addEventListener("error", onError);
 
     return () => {
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
       audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("playing", onPlaying);
+      audio.removeEventListener("waiting", onWaiting);
+      audio.removeEventListener("stalled", onStalled);
+      audio.removeEventListener("suspend", onSuspend);
       audio.removeEventListener("error", onError);
     };
-  }, [queueTrack, currentTrackId, nextTrack, playTrackNow, setCurrentTimeMs, setDurationMs]);
+  }, [cacheTrackAudioBlob, queueTrack, currentTrackId, nextTrack, playTrackNow, setCurrentTimeMs, setDurationMs]);
 
   useEffect(() => {
     if (renewTimerRef.current) {
@@ -399,8 +589,18 @@ export function usePlayerController(): ControllerState {
     renewTimerRef.current = window.setTimeout(async () => {
       try {
         const renewed = await getTrackPlaySource(queueTrack.id);
-        setSource(renewed);
         prefetchedSourceRef.current.set(queueTrack.id, { source: renewed, cachedAt: Date.now() });
+        if (source?.trackId === queueTrack.id && source?.url === renewed.url) {
+          setSource((previous) => {
+            if (!previous || previous.trackId !== renewed.trackId) return previous;
+            return {
+              ...previous,
+              ttlSeconds: renewed.ttlSeconds,
+              expiresAt: renewed.expiresAt,
+              bitrate: renewed.bitrate
+            };
+          });
+        }
       } catch {
         setErrorText("播放链接续签失败，可能会中断播放");
       }
@@ -431,6 +631,19 @@ export function usePlayerController(): ControllerState {
         prefetchingRef.current.delete(target.id);
       });
   }, [queue, currentIndex, mode, currentTrackId]);
+
+  useEffect(() => {
+    const fetchControllerMap = fullAudioFetchControllerRef.current;
+    const audioCacheMap = fullAudioCacheRef.current;
+    return () => {
+      fetchControllerMap.forEach((controller) => controller.abort());
+      fetchControllerMap.clear();
+      audioCacheMap.forEach((entry) => {
+        URL.revokeObjectURL(entry.blobUrl);
+      });
+      audioCacheMap.clear();
+    };
+  }, []);
 
   const lyricIndex = useMemo(() => locateCurrentLyricIndex(lyricLines, currentTimeMs), [lyricLines, currentTimeMs]);
 

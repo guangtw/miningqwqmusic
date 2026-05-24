@@ -1,11 +1,13 @@
 import { CircuitBreaker } from "@/src/lib/circuit-breaker";
 import { AppError } from "@/src/lib/errors";
+import type { ArtistSearchInput } from "@/src/lib/music/adapter";
 import type { MusicSourceAdapter } from "@/src/lib/music/adapter";
 import type { TrackSearchInput } from "@/src/lib/music/adapter";
 import { createMockMusicAdapter } from "@/src/lib/music/providers/mock";
 import { createNeteaseLikeAdapterFromEnv } from "@/src/lib/music/providers/netease-like";
 import type {
   AlbumDetail,
+  ArtistSearchItem,
   ArtistDetail,
   DiscoverData,
   DownloadSource,
@@ -58,6 +60,18 @@ export async function searchTracks(input: TrackSearchInput): Promise<PagedResult
 
     adapter = createMockMusicAdapter();
     return adapter.searchTracks(input);
+  }
+}
+
+export async function searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>> {
+  try {
+    return await breaker.execute(() => getAdapter().searchArtists(input));
+  } catch (error) {
+    const fallbackToMock = envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false);
+    if (!fallbackToMock) throw error;
+
+    adapter = createMockMusicAdapter();
+    return adapter.searchArtists(input);
   }
 }
 

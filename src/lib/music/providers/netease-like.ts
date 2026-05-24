@@ -63,6 +63,7 @@ type AdapterConfig = {
   enableScene: boolean;
   pathPlayUrlUnblock?: string;
   unblockSource?: string;
+  unblockSources?: string[];
   pathSearch: string;
   pathTrackDetail: string;
   pathPlayUrl: string;
@@ -126,6 +127,14 @@ function asNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+function parseCsvList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => Boolean(item));
 }
 
 function normalizePath(path: string): string {
@@ -224,6 +233,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       enableScene: config.enableScene ?? true,
       pathPlayUrlUnblock: config.pathPlayUrlUnblock,
       unblockSource: config.unblockSource,
+      unblockSources: config.unblockSources ?? [],
       pathSearch: config.pathSearch ?? "/search",
       pathTrackDetail: config.pathTrackDetail ?? "/song/detail",
       pathPlayUrl: config.pathPlayUrl ?? "/song/url/v1",
@@ -285,17 +295,41 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private extractPlayData(raw: unknown): PlayData | null {
     const payload = asObject(raw);
-    const data = payload.data;
-    if (Array.isArray(data)) {
-      return asObject(data[0]) as PlayData;
-    }
-    if (data && typeof data === "object") {
-      return data as PlayData;
-    }
+    const pickFromCandidate = (value: unknown): PlayData | null => {
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const entry = asObject(item) as PlayData;
+          if (Object.keys(entry).length) {
+            return entry;
+          }
+        }
+        return null;
+      }
+      if (value && typeof value === "object") {
+        return value as PlayData;
+      }
+      return null;
+    };
+
+    const topData = pickFromCandidate(payload.data);
+    if (topData) return topData;
+
+    const nestedResultData = pickFromCandidate(asObject(payload.result).data);
+    if (nestedResultData) return nestedResultData;
+
     if (typeof payload.url === "string") {
-      return { url: payload.url };
+      return {
+        url: payload.url,
+        br: asNumber(payload.br),
+        time: asNumber(payload.time),
+        expi: asNumber(payload.expi)
+      };
     }
     return null;
+  }
+
+  private isVipPreview(data: PlayData): boolean {
+    return Boolean(data.time && data.time > 0 && data.time <= this.config.vipPreviewMaxMs);
   }
 
   private toPlaySource(trackId: string, data: PlayData): PlaySource {
@@ -351,28 +385,33 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
 
-    const isVipPreview = Boolean(data.time && data.time > 0 && data.time <= this.config.vipPreviewMaxMs);
+    const isVipPreview = this.isVipPreview(data);
     if (!isVipPreview || !this.config.pathPlayUrlUnblock) {
       return this.toPlaySource(trackId, data);
     }
 
-    try {
-      const unblockRaw = await this.request<{ data?: unknown; url?: string }>(this.config.pathPlayUrlUnblock, {
-        id: trackId,
-        level: this.config.playLevel,
-        ...(this.config.unblockSource ? { source: this.config.unblockSource } : {})
-      });
-      const unblockData = this.extractPlayData(unblockRaw);
-      if (unblockData?.url) {
-        const isStillPreview = Boolean(
-          unblockData.time && unblockData.time > 0 && unblockData.time <= this.config.vipPreviewMaxMs
-        );
-        if (!isStillPreview) {
+    const sourceCandidates = this.config.unblockSources?.length
+      ? this.config.unblockSources
+      : this.config.unblockSource
+        ? [this.config.unblockSource]
+        : [""];
+
+    for (const source of sourceCandidates) {
+      try {
+        const unblockRaw = await this.requestSafe<{ data?: unknown; url?: string }>(this.config.pathPlayUrlUnblock, {
+          id: trackId,
+          level: this.config.playLevel,
+          ...(source ? { source } : {})
+        });
+        if (!unblockRaw) continue;
+        const unblockData = this.extractPlayData(unblockRaw);
+        if (!unblockData?.url) continue;
+        if (!this.isVipPreview(unblockData)) {
           return this.toPlaySource(trackId, unblockData);
         }
+      } catch {
+        // 当前解灰 source 不可用时自动尝试下一个 source。
       }
-    } catch {
-      // 解灰失败时回退默认链接。
     }
 
     return this.toPlaySource(trackId, data);
@@ -478,7 +517,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       .map((item, index) => ({
         id: String(item.targetId ?? item.encodeId ?? `banner-${index}`),
         title: asString(item.typeTitle) ?? "推荐内容",
-        subtitle: asString(item.url),
+        subtitle: asString(item.copywriter) ?? asString(item.typeTitle) ?? "精选内容推荐",
         coverUrl: asString(item.imageUrl) ?? asString(item.pic),
         type: "banner" as const,
         targetId: asString(item.targetId)
@@ -739,6 +778,9 @@ export function createNeteaseLikeAdapterFromEnv() {
     return ["1", "true", "yes", "on"].includes(value.toLowerCase());
   };
 
+  const unblockSources = parseCsvList(process.env.MUSIC_SOURCE_UNBLOCK_SOURCES);
+  const unblockSourceLegacy = process.env.MUSIC_SOURCE_UNBLOCK_SOURCE ?? "";
+
   return new NeteaseLikeAdapter({
     baseUrl,
     apiKey: apiKey || undefined,
@@ -750,8 +792,9 @@ export function createNeteaseLikeAdapterFromEnv() {
     lyricPreferNew: envEnabled("MUSIC_SOURCE_LYRIC_PREFER_NEW", true),
     enableDiscover: envEnabled("MUSIC_SOURCE_ENABLE_DISCOVER", true),
     enableScene: envEnabled("MUSIC_SOURCE_ENABLE_SCENE", true),
-    pathPlayUrlUnblock: process.env.MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK ?? "",
-    unblockSource: process.env.MUSIC_SOURCE_UNBLOCK_SOURCE ?? "",
+    pathPlayUrlUnblock: process.env.MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK ?? "/song/url/match",
+    unblockSource: unblockSourceLegacy,
+    unblockSources: unblockSources.length ? unblockSources : parseCsvList(unblockSourceLegacy),
     pathSearch: process.env.MUSIC_SOURCE_PATH_SEARCH ?? "/search",
     pathTrackDetail: process.env.MUSIC_SOURCE_PATH_TRACK_DETAIL ?? "/song/detail",
     pathPlayUrl: process.env.MUSIC_SOURCE_PATH_PLAY_URL ?? "/song/url/v1",

@@ -39,8 +39,9 @@ MUSIC_SOURCE_TIMEOUT_MS=6000
 MUSIC_SOURCE_RETRY_TIMES=2
 MUSIC_SOURCE_PLAY_LEVEL=standard
 MUSIC_SOURCE_VIP_PREVIEW_MAX_MS=60000
-MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK=
+MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK=/song/url/match
 MUSIC_SOURCE_UNBLOCK_SOURCE=
+MUSIC_SOURCE_UNBLOCK_SOURCES=kuwo,kugou,migu
 MUSIC_SOURCE_MOCK_ENABLED=false
 MUSIC_SOURCE_MOCK_FALLBACK=false
 MUSIC_SOURCE_PATH_SEARCH=/search
@@ -55,8 +56,9 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - 你的上游如果暂时无 API Key，可保持 `MUSIC_SOURCE_API_KEY=` 为空
 - `MUSIC_SOURCE_PLAY_LEVEL` 用于透传到 `/song/url/v1` 的 `level` 参数（例如 `standard`、`exhigh`）
 - `MUSIC_SOURCE_VIP_PREVIEW_MAX_MS`：判定试听直链阈值（默认 `60000`）
-- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：可选的“备用播放地址接口路径”；当默认播放地址被判定为试听链接时自动尝试该接口
-- `MUSIC_SOURCE_UNBLOCK_SOURCE`：可选，透传到解灰接口的 `source` 参数（例如 `kugou`、`kuwo`、`qq`）
+- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
+- `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `kuwo,kugou,migu`）
+- `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
 
 ## 接口约定（站内 BFF）
 

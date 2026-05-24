@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getTrackDetail, getTrackInsight, getTrackLyric, getTrackPlaySource } from "@/src/lib/client-api";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
@@ -65,6 +65,18 @@ function isCachedSourceUsable(entry?: CachedPlaySource): boolean {
   return Date.now() - entry.cachedAt < Math.max(1000, ttlMs - PREFETCH_EXPIRE_BUFFER_MS);
 }
 
+async function tryResumeContext(context: AudioContext | null): Promise<boolean> {
+  if (!context) return false;
+  if (context.state === "running") return true;
+  if (context.state === "closed") return false;
+  try {
+    await context.resume();
+    return (context.state as string) === "running";
+  } catch {
+    return false;
+  }
+}
+
 export function usePlayerController(): ControllerState {
   const audioRef = useRef<HTMLAudioElement>(null);
   const queue = usePlayerStore((state) => state.queue);
@@ -113,7 +125,7 @@ export function usePlayerController(): ControllerState {
     currentSourceRef.current = source;
   }, [source]);
 
-  const ensureAudioGraph = (): boolean => {
+  const ensureAudioGraph = useCallback((): boolean => {
     const audio = audioRef.current;
     if (!audio || typeof window === "undefined") return false;
     const ContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -136,9 +148,15 @@ export function usePlayerController(): ControllerState {
     } catch {
       return false;
     }
-  };
+  }, []);
 
-  const applyGain = (nextVolume: number, smoothMs = 80) => {
+  const ensureAudioReady = useCallback(async (): Promise<boolean> => {
+    if (!ensureAudioGraph()) return false;
+    return tryResumeContext(audioContextRef.current);
+  }, [ensureAudioGraph]);
+
+  const applyGain = useCallback(
+    (nextVolume: number, smoothMs = 80) => {
     const audio = audioRef.current;
     if (!audio) return;
     if (!ensureAudioGraph() || !gainNodeRef.current || !audioContextRef.current) {
@@ -155,9 +173,11 @@ export function usePlayerController(): ControllerState {
     gainNodeRef.current.gain.cancelScheduledValues(now);
     gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
     gainNodeRef.current.gain.linearRampToValueAtTime(target, now + smoothMs / 1000);
-  };
+    },
+    [ensureAudioGraph]
+  );
 
-  const fadeOutAudio = async (token: number) => {
+  const fadeOutAudio = useCallback(async (token: number) => {
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -168,10 +188,7 @@ export function usePlayerController(): ControllerState {
       return;
     }
 
-    if (ensureAudioGraph() && gainNodeRef.current && audioContextRef.current) {
-      if (audioContextRef.current.state === "suspended") {
-        await audioContextRef.current.resume().catch(() => undefined);
-      }
+    if ((await ensureAudioReady()) && gainNodeRef.current && audioContextRef.current) {
       const now = audioContextRef.current.currentTime;
       gainNodeRef.current.gain.cancelScheduledValues(now);
       gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
@@ -184,17 +201,14 @@ export function usePlayerController(): ControllerState {
 
     if (token !== transitionTokenRef.current) return;
     audio.pause();
-  };
+  }, [ensureAudioReady]);
 
-  const fadeInAudio = async (token: number) => {
+  const fadeInAudio = useCallback(async (token: number) => {
     const audio = audioRef.current;
     if (!audio || token !== transitionTokenRef.current) return;
     const targetVolume = volumeRef.current;
 
-    if (ensureAudioGraph() && gainNodeRef.current && audioContextRef.current) {
-      if (audioContextRef.current.state === "suspended") {
-        await audioContextRef.current.resume().catch(() => undefined);
-      }
+    if ((await ensureAudioReady()) && gainNodeRef.current && audioContextRef.current) {
       const now = audioContextRef.current.currentTime;
       const target = resolveBoostedGain(targetVolume);
       gainNodeRef.current.gain.cancelScheduledValues(now);
@@ -210,7 +224,7 @@ export function usePlayerController(): ControllerState {
         await wait(Math.round(CROSSFADE_MS / steps));
       }
     }
-  };
+  }, [ensureAudioReady]);
 
   useEffect(() => {
     if (!queueTrack) {
@@ -247,6 +261,18 @@ export function usePlayerController(): ControllerState {
       active = false;
     };
   }, [queueTrack?.id, queueTrack?.coverUrl, queueTrack]);
+
+  useEffect(() => {
+    const primeAudioContext = () => {
+      void ensureAudioReady();
+    };
+    window.addEventListener("pointerdown", primeAudioContext, { passive: true });
+    window.addEventListener("keydown", primeAudioContext);
+    return () => {
+      window.removeEventListener("pointerdown", primeAudioContext);
+      window.removeEventListener("keydown", primeAudioContext);
+    };
+  }, [ensureAudioReady]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -343,7 +369,7 @@ export function usePlayerController(): ControllerState {
     return () => {
       active = false;
     };
-  }, [queueTrack, currentTrackId, playTrackNow, rememberTrack, setCurrentTimeMs, setDurationMs]);
+  }, [queueTrack, currentTrackId, playTrackNow, rememberTrack, setCurrentTimeMs, setDurationMs, applyGain, fadeOutAudio]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -382,6 +408,7 @@ export function usePlayerController(): ControllerState {
         audio.volume = 0;
       }
 
+      audio.muted = false;
       await audio.play();
       await fadeInAudio(token);
       if (token === transitionTokenRef.current) {
@@ -393,12 +420,12 @@ export function usePlayerController(): ControllerState {
       setErrorText("浏览器阻止了自动播放，请手动点击播放");
       setTransitionPhase("idle");
     });
-  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume]);
+  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume, applyGain, fadeInAudio, ensureAudioGraph]);
 
   useEffect(() => {
     if (transitionPhase === "fadingIn" || transitionPhase === "fadingOut") return;
     applyGain(volume, 70);
-  }, [volume, transitionPhase]);
+  }, [volume, transitionPhase, applyGain]);
 
   useEffect(() => {
     if (!audioRef.current) return;

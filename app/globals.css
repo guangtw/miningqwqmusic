@@ -625,9 +625,7 @@ input:focus-visible {
   position: fixed;
   inset: 0;
   z-index: 86;
-  display: grid;
-  place-items: center;
-  padding: clamp(8px, 1.6vw, 18px);
+  overflow: hidden;
 }
 
 .home-playlist-drawer-backdrop {
@@ -638,12 +636,15 @@ input:focus-visible {
 }
 
 .home-playlist-drawer {
-  position: relative;
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 10px));
+  transform: translate3d(-50%, 108%, 0);
   z-index: 1;
-  width: min(980px, 100%);
-  max-height: min(82vh, 880px);
+  width: min(980px, calc(100vw - 20px));
+  max-height: min(72vh, 760px);
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: 18px 18px 14px 14px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background:
     linear-gradient(160deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
@@ -651,6 +652,7 @@ input:focus-visible {
   box-shadow: var(--shadow-high);
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
+  animation: home-playlist-sheet-up 0.26s var(--ease) forwards;
 }
 
 .home-playlist-drawer-head {
@@ -2291,6 +2293,15 @@ input:focus-visible {
   }
 }
 
+@keyframes home-playlist-sheet-up {
+  from {
+    transform: translate3d(-50%, 108%, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
 @media (max-width: 1359px) and (min-width: 1100px) {
   .spotify-layout {
     grid-template-columns: clamp(13rem, 19vw, 16rem) minmax(0, 1fr);
@@ -2608,7 +2619,8 @@ input:focus-visible {
   }
 
   .home-playlist-drawer {
-    max-height: min(84vh, 760px);
+    width: min(920px, calc(100vw - 16px));
+    max-height: min(74vh, 700px);
   }
 
   .home-playlist-drawer-head {
@@ -2871,12 +2883,14 @@ input:focus-visible {
   }
 
   .home-playlist-drawer-overlay {
-    padding: 6px;
+    z-index: 88;
   }
 
   .home-playlist-drawer {
-    max-height: 88vh;
-    border-radius: 12px;
+    bottom: max(6px, calc(env(safe-area-inset-bottom, 0px) + 6px));
+    width: calc(100vw - 10px);
+    max-height: min(68vh, 620px);
+    border-radius: 14px 14px 12px 12px;
   }
 
   .home-playlist-drawer-head {

@@ -111,6 +111,52 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(unblockSecondUrl.searchParams.get("source")).toBe("kugou");
   });
 
+  it("attempts unblock when default source url is empty", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo", "kugou"]
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ id: 108485, url: null, code: 200 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/unblock-kuwo.mp3", time: 198000 }]
+      })
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/unblock-kuwo.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/match");
+  });
+
+  it("attempts unblock when default source has restriction signal without preview time", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["migu"]
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        code: 200,
+        data: [{ url: "https://cdn.test/restricted.mp3", code: 404, time: 220000 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/unblock-migu.mp3", time: 220000 }]
+      })
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/unblock-migu.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to default preview source when all unblock attempts fail", async () => {
     const adapter = createAdapter({
       pathPlayUrlUnblock: "/song/url/match",

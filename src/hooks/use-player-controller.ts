@@ -28,24 +28,12 @@ type ControllerState = {
 };
 
 const CROSSFADE_MS = 350;
-const BASE_GAIN_BOOST = 1.2;
-const MAX_GAIN = 1.8;
 const PREFETCH_EXPIRE_BUFFER_MS = 8000;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
-}
-
-function resolveBoostedGain(volume: number): number {
-  if (volume <= 0) return 0;
-  if (volume <= 0.8) {
-    return Math.min(MAX_GAIN, volume * BASE_GAIN_BOOST);
-  }
-  const lowPoint = 0.8 * BASE_GAIN_BOOST;
-  const ratio = (volume - 0.8) / 0.2;
-  return Math.min(MAX_GAIN, lowPoint + ratio * (MAX_GAIN - lowPoint));
 }
 
 function selectPrefetchTarget(queue: Track[], currentIndex: number, mode: PlaybackMode): Track | null {
@@ -63,18 +51,6 @@ function isCachedSourceUsable(entry?: CachedPlaySource): boolean {
   const ttlMs = entry.source.ttlSeconds ? entry.source.ttlSeconds * 1000 : 0;
   if (ttlMs <= 0) return true;
   return Date.now() - entry.cachedAt < Math.max(1000, ttlMs - PREFETCH_EXPIRE_BUFFER_MS);
-}
-
-async function tryResumeContext(context: AudioContext | null): Promise<boolean> {
-  if (!context) return false;
-  if (context.state === "running") return true;
-  if (context.state === "closed") return false;
-  try {
-    await context.resume();
-    return (context.state as string) === "running";
-  } catch {
-    return false;
-  }
 }
 
 export function usePlayerController(): ControllerState {
@@ -104,9 +80,6 @@ export function usePlayerController(): ControllerState {
 
   const renewTimerRef = useRef<number | null>(null);
   const transitionTokenRef = useRef(0);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const gainNodeRef = useRef<GainNode | null>(null);
-  const mediaSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const prefetchedSourceRef = useRef<Map<string, CachedPlaySource>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
   const isPlayingRef = useRef(isPlaying);
@@ -125,57 +98,24 @@ export function usePlayerController(): ControllerState {
     currentSourceRef.current = source;
   }, [source]);
 
-  const ensureAudioGraph = useCallback((): boolean => {
-    const audio = audioRef.current;
-    if (!audio || typeof window === "undefined") return false;
-    const ContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!ContextCtor) return false;
-
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new ContextCtor();
-      }
-      if (!mediaSourceRef.current) {
-        mediaSourceRef.current = audioContextRef.current.createMediaElementSource(audio);
-      }
-      if (!gainNodeRef.current) {
-        gainNodeRef.current = audioContextRef.current.createGain();
-        mediaSourceRef.current.connect(gainNodeRef.current);
-        gainNodeRef.current.connect(audioContextRef.current.destination);
-      }
-      audio.volume = 1;
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const ensureAudioReady = useCallback(async (): Promise<boolean> => {
-    if (!ensureAudioGraph()) return false;
-    return tryResumeContext(audioContextRef.current);
-  }, [ensureAudioGraph]);
-
-  const applyGain = useCallback(
-    (nextVolume: number, smoothMs = 80) => {
+  const applyGain = useCallback((nextVolume: number, smoothMs = 80) => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (!ensureAudioGraph() || !gainNodeRef.current || !audioContextRef.current) {
-      audio.volume = Math.min(1, Math.max(0, nextVolume));
+    const target = Math.min(1, Math.max(0, nextVolume));
+    if (smoothMs <= 0) {
+      audio.volume = target;
       return;
     }
-
-    if (audioContextRef.current.state === "suspended") {
-      void audioContextRef.current.resume().catch(() => undefined);
+    const from = Math.min(1, Math.max(0, audio.volume));
+    const steps = Math.max(2, Math.min(12, Math.round(smoothMs / 28)));
+    for (let step = 1; step <= steps; step += 1) {
+      window.setTimeout(() => {
+        if (!audioRef.current || audioRef.current !== audio) return;
+        const ratio = step / steps;
+        audio.volume = from + (target - from) * ratio;
+      }, Math.round((smoothMs / steps) * step));
     }
-
-    const now = audioContextRef.current.currentTime;
-    const target = resolveBoostedGain(nextVolume);
-    gainNodeRef.current.gain.cancelScheduledValues(now);
-    gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
-    gainNodeRef.current.gain.linearRampToValueAtTime(target, now + smoothMs / 1000);
-    },
-    [ensureAudioGraph]
-  );
+  }, []);
 
   const fadeOutAudio = useCallback(async (token: number) => {
     const audio = audioRef.current;
@@ -188,43 +128,32 @@ export function usePlayerController(): ControllerState {
       return;
     }
 
-    if ((await ensureAudioReady()) && gainNodeRef.current && audioContextRef.current) {
-      const now = audioContextRef.current.currentTime;
-      gainNodeRef.current.gain.cancelScheduledValues(now);
-      gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
-      gainNodeRef.current.gain.linearRampToValueAtTime(0, now + CROSSFADE_MS / 1000);
-      await wait(CROSSFADE_MS);
-    } else {
-      audio.volume = 0;
-      await wait(CROSSFADE_MS);
+    audio.volume = Math.min(1, Math.max(0, volumeRef.current));
+    const from = audio.volume;
+    const steps = 8;
+    for (let step = 1; step <= steps; step += 1) {
+      if (token !== transitionTokenRef.current) return;
+      const ratio = step / steps;
+      audio.volume = from * (1 - ratio);
+      await wait(Math.round(CROSSFADE_MS / steps));
     }
-
     if (token !== transitionTokenRef.current) return;
     audio.pause();
-  }, [ensureAudioReady]);
+  }, []);
 
   const fadeInAudio = useCallback(async (token: number) => {
     const audio = audioRef.current;
     if (!audio || token !== transitionTokenRef.current) return;
     const targetVolume = volumeRef.current;
 
-    if ((await ensureAudioReady()) && gainNodeRef.current && audioContextRef.current) {
-      const now = audioContextRef.current.currentTime;
-      const target = resolveBoostedGain(targetVolume);
-      gainNodeRef.current.gain.cancelScheduledValues(now);
-      gainNodeRef.current.gain.setValueAtTime(0, now);
-      gainNodeRef.current.gain.linearRampToValueAtTime(target, now + CROSSFADE_MS / 1000);
-      await wait(CROSSFADE_MS);
-    } else {
-      audio.volume = 0;
-      const steps = 8;
-      for (let index = 1; index <= steps; index += 1) {
-        if (token !== transitionTokenRef.current) return;
-        audio.volume = Math.min(1, (targetVolume * index) / steps);
-        await wait(Math.round(CROSSFADE_MS / steps));
-      }
+    audio.volume = 0;
+    const steps = 8;
+    for (let index = 1; index <= steps; index += 1) {
+      if (token !== transitionTokenRef.current) return;
+      audio.volume = Math.min(1, (targetVolume * index) / steps);
+      await wait(Math.round(CROSSFADE_MS / steps));
     }
-  }, [ensureAudioReady]);
+  }, []);
 
   useEffect(() => {
     if (!queueTrack) {
@@ -261,18 +190,6 @@ export function usePlayerController(): ControllerState {
       active = false;
     };
   }, [queueTrack?.id, queueTrack?.coverUrl, queueTrack]);
-
-  useEffect(() => {
-    const primeAudioContext = () => {
-      void ensureAudioReady();
-    };
-    window.addEventListener("pointerdown", primeAudioContext, { passive: true });
-    window.addEventListener("keydown", primeAudioContext);
-    return () => {
-      window.removeEventListener("pointerdown", primeAudioContext);
-      window.removeEventListener("keydown", primeAudioContext);
-    };
-  }, [ensureAudioReady]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -398,16 +315,7 @@ export function usePlayerController(): ControllerState {
     const token = transitionTokenRef.current;
     const run = async () => {
       setTransitionPhase("fadingIn");
-      if (ensureAudioGraph() && gainNodeRef.current && audioContextRef.current) {
-        if (audioContextRef.current.state === "suspended") {
-          await audioContextRef.current.resume().catch(() => undefined);
-        }
-        gainNodeRef.current.gain.cancelScheduledValues(audioContextRef.current.currentTime);
-        gainNodeRef.current.gain.setValueAtTime(0, audioContextRef.current.currentTime);
-      } else {
-        audio.volume = 0;
-      }
-
+      audio.volume = 0;
       audio.muted = false;
       await audio.play();
       await fadeInAudio(token);
@@ -420,7 +328,7 @@ export function usePlayerController(): ControllerState {
       setErrorText("浏览器阻止了自动播放，请手动点击播放");
       setTransitionPhase("idle");
     });
-  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume, applyGain, fadeInAudio, ensureAudioGraph]);
+  }, [source, source?.url, source?.trackId, isPlaying, currentTrackId, volume, applyGain, fadeInAudio]);
 
   useEffect(() => {
     if (transitionPhase === "fadingIn" || transitionPhase === "fadingOut") return;

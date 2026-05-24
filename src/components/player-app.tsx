@@ -43,7 +43,7 @@ type HomePlaylistPanelState = {
   loading: boolean;
   error: string | null;
 };
-type HistoryGuardLayer = "detail" | "tab";
+type HistoryGuardLayer = "detail" | "playlist" | "tab";
 type HistoryGuardState = {
   __mqmGuard?: {
     layer: HistoryGuardLayer;
@@ -341,6 +341,7 @@ export function PlayerApp() {
   const activeTabRef = useRef<NavTab>("home");
   const detailPhaseRef = useRef<DetailModalPhase>("closed");
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null);
+  const [playlistPortalTarget, setPlaylistPortalTarget] = useState<HTMLElement | null>(null);
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
@@ -458,9 +459,18 @@ export function PlayerApp() {
     };
   }, [currentTrackId]);
 
-  const closeHomePlaylistPanel = useCallback(() => {
+  const closeHomePlaylistPanelDirectly = useCallback(() => {
     setHomePlaylistPanel(null);
   }, []);
+
+  const closeHomePlaylistPanel = useCallback(() => {
+    const guard = readHistoryGuardState();
+    if (!popstateHandlingRef.current && guard?.layer === "playlist") {
+      window.history.back();
+      return;
+    }
+    closeHomePlaylistPanelDirectly();
+  }, [closeHomePlaylistPanelDirectly]);
 
   const restoreHomeTab = useCallback(() => {
     setActiveTab("home");
@@ -474,7 +484,7 @@ export function PlayerApp() {
     }
     setActiveTab(tab);
     if (tab !== "home") {
-      closeHomePlaylistPanel();
+      closeHomePlaylistPanelDirectly();
     }
     if (tab === "library" && nextLibraryView) {
       setLibraryView(nextLibraryView);
@@ -491,6 +501,9 @@ export function PlayerApp() {
     if (!targetId) return;
     const sourceType = item.type === "toplist" ? "toplist" : "playlist";
     const requestId = ++homePlaylistRequestIdRef.current;
+    if (!popstateHandlingRef.current) {
+      pushHistoryGuardState("playlist", activeTabRef.current);
+    }
     setHomePlaylistPanel({
       id: targetId,
       sourceType,
@@ -856,6 +869,10 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
+    setPlaylistPortalTarget(document.body);
+  }, []);
+
+  useEffect(() => {
     if (!playerDockRef.current) return;
     const root = document.documentElement;
     const updateDockHeight = () => {
@@ -903,13 +920,14 @@ export function PlayerApp() {
   }, [isDetailMounted, detailTab, detailLyricMode, controller.lyricIndex, currentTrack?.id, activeDetailLyricLines.length]);
 
   useEffect(() => {
-    if (!isDetailMounted) return;
+    const shouldLockBody = isDetailMounted || Boolean(homePlaylistPanel);
+    if (!shouldLockBody) return;
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = originalOverflow;
     };
-  }, [isDetailMounted]);
+  }, [isDetailMounted, homePlaylistPanel]);
 
   useEffect(() => {
     if (!currentTrackId) {
@@ -1320,62 +1338,6 @@ export function PlayerApp() {
                 {discoverError ? <p className="error error-inline">{discoverError}</p> : null}
               </section>
 
-              {homePlaylistPanel ? (
-                <section className="home-playlist-drawer-overlay" role="dialog" aria-label="歌单详情">
-                  <div className="home-playlist-drawer-backdrop" onClick={closeHomePlaylistPanel} />
-                  <aside className="home-playlist-drawer" onClick={(event) => event.stopPropagation()}>
-                    <header className="home-playlist-drawer-head">
-                      <div className="home-playlist-drawer-cover" style={{ backgroundImage: `url(${homePlaylistPanel.coverUrl ?? DEFAULT_COVER_URL})` }} />
-                      <div className="home-playlist-drawer-meta">
-                        <span>{homePlaylistPanel.sourceType === "toplist" ? "热播榜单" : "推荐歌单"}</span>
-                        <h3>{homePlaylistPanel.title}</h3>
-                        <p>{visibleSubtitle(homePlaylistPanel.subtitle, "点击歌曲开始播放，或先加入播放队列。")}</p>
-                      </div>
-                    </header>
-
-                    <div className="home-playlist-drawer-actions">
-                      <button type="button" onClick={playHomePlaylistAll} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
-                        播放全部
-                      </button>
-                      <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
-                        全部加入队列
-                      </button>
-                      <button type="button" className="ghost" onClick={closeHomePlaylistPanel}>
-                        关闭
-                      </button>
-                    </div>
-
-                    <div className="home-playlist-drawer-list">
-                      {homePlaylistPanel.loading ? <p className="spotify-empty">歌单加载中...</p> : null}
-                      {homePlaylistPanel.error ? <p className="error error-inline">{homePlaylistPanel.error}</p> : null}
-                      {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
-                        <p className="spotify-empty">该歌单暂时没有可播放歌曲。</p>
-                      ) : null}
-                      {!homePlaylistPanel.loading && !homePlaylistPanel.error
-                        ? homePlaylistPanel.tracks.map((track, index) => (
-                            <article className="home-playlist-track-row" key={`panel-${track.id}-${index}`}>
-                              <button
-                                type="button"
-                                className="home-playlist-track-play"
-                                onClick={() => playHomePlaylistTrack(track)}
-                              >
-                                <span>{`${index + 1}. ${track.name}`}</span>
-                                <small>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</small>
-                              </button>
-                              <button
-                                type="button"
-                                className="home-playlist-track-queue"
-                                onClick={() => player.addToQueue(track, true)}
-                              >
-                                加入队列
-                              </button>
-                            </article>
-                          ))
-                        : null}
-                    </div>
-                  </aside>
-                </section>
-              ) : null}
             </>
           ) : null}
 
@@ -1646,6 +1608,66 @@ export function PlayerApp() {
       </section>
 
       {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
+
+      {playlistPortalTarget && homePlaylistPanel
+        ? createPortal(
+            <section className="home-playlist-drawer-overlay" role="dialog" aria-label="歌单详情">
+              <div className="home-playlist-drawer-backdrop" onClick={closeHomePlaylistPanel} />
+              <aside className="home-playlist-drawer" onClick={(event) => event.stopPropagation()}>
+                <header className="home-playlist-drawer-head">
+                  <div className="home-playlist-drawer-cover" style={{ backgroundImage: `url(${homePlaylistPanel.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                  <div className="home-playlist-drawer-meta">
+                    <span>{homePlaylistPanel.sourceType === "toplist" ? "热播榜单" : "推荐歌单"}</span>
+                    <h3>{homePlaylistPanel.title}</h3>
+                    <p>{visibleSubtitle(homePlaylistPanel.subtitle, "点击歌曲开始播放，或先加入播放队列。")}</p>
+                  </div>
+                </header>
+
+                <div className="home-playlist-drawer-actions">
+                  <button type="button" onClick={playHomePlaylistAll} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
+                    播放全部
+                  </button>
+                  <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
+                    全部加入队列
+                  </button>
+                  <button type="button" className="ghost" onClick={closeHomePlaylistPanel}>
+                    关闭
+                  </button>
+                </div>
+
+                <div className="home-playlist-drawer-list">
+                  {homePlaylistPanel.loading ? <p className="spotify-empty">歌单加载中...</p> : null}
+                  {homePlaylistPanel.error ? <p className="error error-inline">{homePlaylistPanel.error}</p> : null}
+                  {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
+                    <p className="spotify-empty">该歌单暂时没有可播放歌曲。</p>
+                  ) : null}
+                  {!homePlaylistPanel.loading && !homePlaylistPanel.error
+                    ? homePlaylistPanel.tracks.map((track, index) => (
+                        <article className="home-playlist-track-row" key={`panel-${track.id}-${index}`}>
+                          <button
+                            type="button"
+                            className="home-playlist-track-play"
+                            onClick={() => playHomePlaylistTrack(track)}
+                          >
+                            <span>{`${index + 1}. ${track.name}`}</span>
+                            <small>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</small>
+                          </button>
+                          <button
+                            type="button"
+                            className="home-playlist-track-queue"
+                            onClick={() => player.addToQueue(track, true)}
+                          >
+                            加入队列
+                          </button>
+                        </article>
+                      ))
+                    : null}
+                </div>
+              </aside>
+            </section>,
+            playlistPortalTarget
+          )
+        : null}
 
       {isDetailMounted ? (
         <section className="player-detail-overlay" role="dialog" aria-label="播放详情">

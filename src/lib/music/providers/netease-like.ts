@@ -104,6 +104,11 @@ type PlayData = {
   expiresAt?: string;
   level?: string | null;
   type?: string | null;
+  message?: string | null;
+  msg?: string | null;
+  freeTrialInfo?: Record<string, unknown> | null;
+  freeTrialPrivilege?: Record<string, unknown> | null;
+  freeTimeTrialPrivilege?: Record<string, unknown> | null;
 };
 
 type AnyRecord = Record<string, unknown>;
@@ -332,6 +337,52 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return Boolean(data.time && data.time > 0 && data.time <= this.config.vipPreviewMaxMs);
   }
 
+  private hasPlayableUrl(data: PlayData | null | undefined): data is PlayData & { url: string } {
+    return Boolean(asString(data?.url));
+  }
+
+  private hasTrialRestrictionSignal(data: PlayData | null | undefined): boolean {
+    if (!data) return false;
+    if (typeof data.code === "number" && data.code !== 200) return true;
+
+    const freeTrialInfo = asObject(data.freeTrialInfo);
+    if (Object.keys(freeTrialInfo).length) return true;
+
+    const freeTrialPrivilege = asObject(data.freeTrialPrivilege);
+    if (
+      freeTrialPrivilege.resConsumable === true ||
+      freeTrialPrivilege.userConsumable === true ||
+      freeTrialPrivilege.cannotListenReason != null ||
+      freeTrialPrivilege.playReason != null
+    ) {
+      return true;
+    }
+
+    const freeTimeTrialPrivilege = asObject(data.freeTimeTrialPrivilege);
+    const remainTime = asNumber(freeTimeTrialPrivilege.remainTime) ?? 0;
+    const trialType = asNumber(freeTimeTrialPrivilege.type) ?? 0;
+    if (remainTime > 0 || trialType > 0) {
+      return true;
+    }
+
+    const restrictionMessage = (asString(data.message) ?? asString(data.msg) ?? "").toLowerCase();
+    return Boolean(restrictionMessage && /(trial|preview|vip|copyright|无版权|试听|付费)/i.test(restrictionMessage));
+  }
+
+  private shouldAttemptUnblock(raw: unknown, data: PlayData | null): boolean {
+    if (!this.hasPlayableUrl(data)) return true;
+    if (data && this.isVipPreview(data)) return true;
+    if (this.hasTrialRestrictionSignal(data)) return true;
+
+    const payload = asObject(raw);
+    const topLevelCode = asNumber(payload.code);
+    if (typeof topLevelCode === "number" && topLevelCode !== 200) {
+      return true;
+    }
+    const topLevelMessage = (asString(payload.message) ?? asString(payload.msg) ?? "").toLowerCase();
+    return Boolean(topLevelMessage && /(trial|preview|vip|copyright|无版权|试听|付费)/i.test(topLevelMessage));
+  }
+
   private toPlaySource(trackId: string, data: PlayData): PlaySource {
     return {
       trackId,
@@ -376,19 +427,22 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   async getPlaySource(trackId: string): Promise<PlaySource> {
-    const raw = await this.request<{ data?: unknown; url?: string }>(this.config.pathPlayUrl, {
+    const raw = await this.request<AnyRecord>(this.config.pathPlayUrl, {
       id: trackId,
       level: this.config.playLevel
     });
     const data = this.extractPlayData(raw);
-    if (!data?.url) {
+    const unblockPath = this.config.pathPlayUrlUnblock;
+    const shouldTryUnblock = this.shouldAttemptUnblock(raw, data);
+
+    if (!unblockPath || !shouldTryUnblock) {
+      if (this.hasPlayableUrl(data)) {
+        return this.toPlaySource(trackId, data);
+      }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
 
-    const isVipPreview = this.isVipPreview(data);
-    if (!isVipPreview || !this.config.pathPlayUrlUnblock) {
-      return this.toPlaySource(trackId, data);
-    }
+    let bestCandidate: PlayData | null = this.hasPlayableUrl(data) ? data : null;
 
     const sourceCandidates = this.config.unblockSources?.length
       ? this.config.unblockSources
@@ -398,14 +452,17 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     for (const source of sourceCandidates) {
       try {
-        const unblockRaw = await this.requestSafe<{ data?: unknown; url?: string }>(this.config.pathPlayUrlUnblock, {
+        const unblockRaw = await this.requestSafe<AnyRecord>(unblockPath, {
           id: trackId,
           level: this.config.playLevel,
           ...(source ? { source } : {})
         });
         if (!unblockRaw) continue;
         const unblockData = this.extractPlayData(unblockRaw);
-        if (!unblockData?.url) continue;
+        if (!this.hasPlayableUrl(unblockData)) continue;
+        if (!bestCandidate) {
+          bestCandidate = unblockData;
+        }
         if (!this.isVipPreview(unblockData)) {
           return this.toPlaySource(trackId, unblockData);
         }
@@ -414,7 +471,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       }
     }
 
-    return this.toPlaySource(trackId, data);
+    if (bestCandidate) {
+      return this.toPlaySource(trackId, bestCandidate);
+    }
+
+    throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
   }
 
   async getTrackLyric(trackId: string): Promise<TrackLyric> {

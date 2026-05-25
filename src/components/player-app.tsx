@@ -20,9 +20,11 @@ import {
 } from "@/src/lib/client-api";
 import { computeHomeGridPlan } from "@/src/lib/home-grid";
 import { extractPlaylistId } from "@/src/lib/playlist-import";
+import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransition, type DetailForegroundTone } from "@/src/lib/detail-palette-transition";
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import { heroActionLabel, nextVolumeAfterMuteToggle } from "@/src/lib/player-ui";
+import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
 import type {
@@ -52,6 +54,7 @@ type DetailPalette = {
   bgB: string;
   glow: string;
 };
+type AppTheme = "dark" | "light";
 type HomePlaylistPanelState = {
   id: string;
   sourceType: "playlist" | "toplist" | "imported";
@@ -73,14 +76,15 @@ type HistoryGuardState = {
 
 const DETAIL_ANIMATION_MS = 260;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
+const PALETTE_TRANSITION_MS = 960;
 const HOME_GRID_GAP = 12;
 const HOME_CHANNEL_MIN_CARD_WIDTH = 196;
 const HOME_PLAYLIST_MIN_CARD_WIDTH = 152;
 const HOME_EVENT_MIN_CARD_WIDTH = 152;
 const THEME_DETAIL_FALLBACK_PALETTE: DetailPalette = {
-  bgA: "var(--detail-fallback-a)",
-  bgB: "var(--detail-fallback-b)",
-  glow: "var(--detail-fallback-glow)"
+  bgA: "rgb(26, 33, 42)",
+  bgB: "rgb(11, 15, 22)",
+  glow: "rgba(82, 108, 138, 0.24)"
 };
 
 const NEUTRAL_DETAIL_PALETTE: DetailPalette = {
@@ -88,6 +92,8 @@ const NEUTRAL_DETAIL_PALETTE: DetailPalette = {
   bgB: "rgb(14, 16, 22)",
   glow: "var(--detail-fallback-glow)"
 };
+
+const DARK_DETAIL_FOREGROUND = deriveDetailForegroundTone({ red: 28, green: 36, blue: 52 });
 
 const DEFAULT_COVER_URL = "/assets/default-cover.svg";
 
@@ -235,8 +241,38 @@ function RepeatOneIcon() {
 function ShuffleIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M16.9 4H21v4.1h-1.7V6.7h-2.4c-1.3 0-2.5.7-3.2 1.8l-.7 1.2a6 6 0 0 1-5.1 2.9H3V11h4.9c1.3 0 2.5-.7 3.2-1.8l.7-1.2A6 6 0 0 1 16.9 4zm0 16H21v-4.1h-1.7v1.4h-2.4c-1.3 0-2.5-.7-3.2-1.8l-.7-1.2a6 6 0 0 0-5.1-2.9H3V13h4.9c1.3 0 2.5.7 3.2 1.8l.7 1.2a6 6 0 0 0 5.1 2.9z" fill="currentColor" />
-      <path d="M3 4h4.2a6 6 0 0 1 5.1 2.9l.4.7-1.4 1-.4-.7c-.7-1.1-1.9-1.8-3.2-1.8H3V4zm17.8 8.5L21 13.8h-4.1a6 6 0 0 0-5.1 2.9l-.4.7-1.4-1 .4-.7a6 6 0 0 1 5.1-2.9h4.1l-.2 1.3z" fill="currentColor" />
+      <path d="M17.8 4H21v3.2h-1.8V6h-1.4c-1.9 0-3.6.9-4.7 2.4l-1.7 2.4a7.7 7.7 0 0 1-6.2 3.2H3v-2h2.2c1.9 0 3.6-.9 4.7-2.4l1.7-2.4A7.7 7.7 0 0 1 17.8 4z" fill="currentColor" />
+      <path d="M19.2 16.9V15H21v5h-5v-1.8h2.4l-1.8-2.1 1.4-1.2 1.2 1.4zM3 6V4h5.2v1.8H5.8l3.1 3.5-1.3 1.3L3 6zm0 14v-2h2.2c1.9 0 3.6-.9 4.7-2.4l1.7-2.4A7.7 7.7 0 0 1 17.8 10H21v2h-3.2c-1.9 0-3.6.9-4.7 2.4l-1.7 2.4A7.7 7.7 0 0 1 5.2 20H3z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M12 2.8v2.3M12 18.9v2.3M2.8 12h2.3M18.9 12h2.3M5.5 5.5l1.6 1.6M16.9 16.9l1.6 1.6M18.5 5.5l-1.6 1.6M7.1 16.9l-1.6 1.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M19.2 15.8a8.6 8.6 0 1 1-10.9-11 6.7 6.7 0 0 0 10.9 11z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -372,7 +408,11 @@ export function PlayerApp() {
   const [detailPhase, setDetailPhase] = useState<DetailModalPhase>("closed");
   const [detailTab, setDetailTab] = useState<DetailViewTab>("lyric");
   const [detailLyricMode, setDetailLyricMode] = useState<DetailLyricMode>("origin");
-  const [detailPalette, setDetailPalette] = useState<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
+  const [currentPalette, setCurrentPalette] = useState<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
+  const [previousPalette, setPreviousPalette] = useState<DetailPalette | null>(null);
+  const [isPaletteTransitioning, setIsPaletteTransitioning] = useState(false);
+  const [detailForeground, setDetailForeground] = useState<DetailForegroundTone>(DARK_DETAIL_FOREGROUND);
+  const [theme, setTheme] = useState<AppTheme>("dark");
   const [keyword, setKeyword] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("track");
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
@@ -419,6 +459,7 @@ export function PlayerApp() {
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
   const previousVolumeRef = useRef(0.8);
   const detailCloseTimerRef = useRef<number | null>(null);
+  const paletteTransitionTimerRef = useRef<number | null>(null);
   const homePlaylistCloseTimerRef = useRef<number | null>(null);
   const homePlaylistRequestIdRef = useRef(0);
   const pendingArtworkRef = useRef<Set<string>>(new Set());
@@ -441,6 +482,7 @@ export function PlayerApp() {
   const lyricLineRefsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
   const lyricUserScrollLockUntilRef = useRef(0);
   const lyricUserLockTimerRef = useRef<number | null>(null);
+  const currentPaletteRef = useRef<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -461,6 +503,22 @@ export function PlayerApp() {
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
+
+  useEffect(() => {
+    currentPaletteRef.current = currentPalette;
+  }, [currentPalette]);
+
+  useEffect(() => {
+    const storedTheme = readThemePreference(window.localStorage);
+    const initialTheme = resolveInitialTheme(storedTheme, "dark");
+    setTheme(initialTheme);
+    document.documentElement.dataset.theme = initialTheme;
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    writeThemePreference(theme, window.localStorage);
+  }, [theme]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 899px), (pointer: coarse), (hover: none)");
@@ -980,6 +1038,10 @@ export function PlayerApp() {
     player.setVolume(next.volume);
   };
 
+  const toggleTheme = useCallback(() => {
+    setTheme((previous) => nextTheme(previous));
+  }, []);
+
   const isMuted = player.volume <= 0;
   const hasTrack = Boolean(currentTrack ?? queueTrack);
   const controlDisabled = player.queue.length === 0;
@@ -988,6 +1050,9 @@ export function PlayerApp() {
     player.durationMs > 0 ? Math.min(100, Math.max(0, (player.currentTimeMs / player.durationMs) * 100)) : 0;
   const volumePercent = Math.min(100, Math.max(0, player.volume * 100));
   const activeDetailLyricLines = useMemo(() => {
+    if (isMobileUi) {
+      return controller.lyricLines;
+    }
     if (detailLyricMode === "translated" && controller.lyricTranslatedLines.length) {
       return controller.lyricTranslatedLines;
     }
@@ -995,7 +1060,7 @@ export function PlayerApp() {
       return controller.lyricKaraokeLines;
     }
     return controller.lyricLines;
-  }, [controller.lyricKaraokeLines, controller.lyricLines, controller.lyricTranslatedLines, detailLyricMode]);
+  }, [controller.lyricKaraokeLines, controller.lyricLines, controller.lyricTranslatedLines, detailLyricMode, isMobileUi]);
   const activeDetailLyricIndex = useMemo(
     () => locateCurrentLyricIndex(activeDetailLyricLines, player.currentTimeMs),
     [activeDetailLyricLines, player.currentTimeMs]
@@ -1307,9 +1372,40 @@ export function PlayerApp() {
   }, [dockPortalTarget]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const updateViewportBottomOffset = () => {
+      const viewport = window.visualViewport;
+      if (!viewport) {
+        root.style.setProperty("--viewport-bottom-offset", "0px");
+        return;
+      }
+      const layoutHeight = window.innerHeight;
+      const visibleBottom = viewport.offsetTop + viewport.height;
+      const occludedBottom = Math.max(0, Math.ceil(layoutHeight - visibleBottom));
+      root.style.setProperty("--viewport-bottom-offset", `${occludedBottom}px`);
+    };
+
+    updateViewportBottomOffset();
+    window.addEventListener("resize", updateViewportBottomOffset);
+    window.addEventListener("orientationchange", updateViewportBottomOffset);
+    window.visualViewport?.addEventListener("resize", updateViewportBottomOffset);
+    window.visualViewport?.addEventListener("scroll", updateViewportBottomOffset);
+
+    return () => {
+      window.removeEventListener("resize", updateViewportBottomOffset);
+      window.removeEventListener("orientationchange", updateViewportBottomOffset);
+      window.visualViewport?.removeEventListener("resize", updateViewportBottomOffset);
+      window.visualViewport?.removeEventListener("scroll", updateViewportBottomOffset);
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       if (detailCloseTimerRef.current) {
         window.clearTimeout(detailCloseTimerRef.current);
+      }
+      if (paletteTransitionTimerRef.current) {
+        window.clearTimeout(paletteTransitionTimerRef.current);
       }
       if (homePlaylistCloseTimerRef.current) {
         window.clearTimeout(homePlaylistCloseTimerRef.current);
@@ -1443,13 +1539,36 @@ export function PlayerApp() {
   }, [isDetailMounted, homePlaylistPanel]);
 
   useEffect(() => {
+    const applyNextPalette = (nextPalette: DetailPalette, nextForeground: DetailForegroundTone) => {
+      const nextState = beginPaletteTransition(currentPaletteRef.current, nextPalette);
+      currentPaletteRef.current = nextState.currentPalette;
+      setCurrentPalette(nextState.currentPalette);
+      setPreviousPalette(nextState.previousPalette);
+      setIsPaletteTransitioning(nextState.isTransitioning);
+      setDetailForeground(nextForeground);
+      if (paletteTransitionTimerRef.current) {
+        window.clearTimeout(paletteTransitionTimerRef.current);
+      }
+      if (!nextState.isTransitioning) return;
+      paletteTransitionTimerRef.current = window.setTimeout(() => {
+        const finished = finishPaletteTransition({
+          currentPalette: currentPaletteRef.current,
+          previousPalette: nextState.previousPalette,
+          isTransitioning: true
+        });
+        setPreviousPalette(finished.previousPalette);
+        setIsPaletteTransitioning(finished.isTransitioning);
+        paletteTransitionTimerRef.current = null;
+      }, PALETTE_TRANSITION_MS);
+    };
+
     if (!currentTrackId) {
-      setDetailPalette(NEUTRAL_DETAIL_PALETTE);
+      applyNextPalette(NEUTRAL_DETAIL_PALETTE, DARK_DETAIL_FOREGROUND);
       return;
     }
 
     if (!currentCoverUrl || currentCoverUrl === DEFAULT_COVER_URL) {
-      setDetailPalette(THEME_DETAIL_FALLBACK_PALETTE);
+      applyNextPalette(THEME_DETAIL_FALLBACK_PALETTE, DARK_DETAIL_FOREGROUND);
       return;
     }
 
@@ -1466,7 +1585,7 @@ export function PlayerApp() {
         const canvas = document.createElement("canvas");
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) {
-          setDetailPalette(THEME_DETAIL_FALLBACK_PALETTE);
+          applyNextPalette(THEME_DETAIL_FALLBACK_PALETTE, DARK_DETAIL_FOREGROUND);
           return;
         }
         canvas.width = 32;
@@ -1487,25 +1606,29 @@ export function PlayerApp() {
           count += 1;
         }
         if (!count) {
-          setDetailPalette(THEME_DETAIL_FALLBACK_PALETTE);
+          applyNextPalette(THEME_DETAIL_FALLBACK_PALETTE, DARK_DETAIL_FOREGROUND);
           return;
         }
         const avgR = red / count;
         const avgG = green / count;
         const avgB = blue / count;
 
-        const bgA = `rgb(${clampColor(avgR * 0.78 + 20)}, ${clampColor(avgG * 0.74 + 18)}, ${clampColor(avgB * 0.72 + 20)})`;
-        const bgB = `rgb(${clampColor(avgR * 0.28 + 8)}, ${clampColor(avgG * 0.26 + 8)}, ${clampColor(avgB * 0.28 + 10)})`;
-        const glow = `rgba(${clampColor(avgR)}, ${clampColor(avgG)}, ${clampColor(avgB)}, 0.33)`;
-        setDetailPalette({ bgA, bgB, glow });
+        // Always keep detail screen in a dark visual language; cover color only adds subtle tint.
+        const tintR = Math.min(avgR, 176);
+        const tintG = Math.min(avgG, 176);
+        const tintB = Math.min(avgB, 176);
+        const bgA = `rgb(${clampColor(tintR * 0.34 + 16)}, ${clampColor(tintG * 0.32 + 15)}, ${clampColor(tintB * 0.34 + 18)})`;
+        const bgB = `rgb(${clampColor(tintR * 0.16 + 6)}, ${clampColor(tintG * 0.14 + 6)}, ${clampColor(tintB * 0.16 + 8)})`;
+        const glow = `rgba(${clampColor(tintR)}, ${clampColor(tintG)}, ${clampColor(tintB)}, 0.2)`;
+        applyNextPalette({ bgA, bgB, glow }, DARK_DETAIL_FOREGROUND);
       } catch {
-        setDetailPalette(THEME_DETAIL_FALLBACK_PALETTE);
+        applyNextPalette(THEME_DETAIL_FALLBACK_PALETTE, DARK_DETAIL_FOREGROUND);
       }
     };
 
     image.onerror = () => {
       if (!cancelled) {
-        setDetailPalette(THEME_DETAIL_FALLBACK_PALETTE);
+        applyNextPalette(THEME_DETAIL_FALLBACK_PALETTE, DARK_DETAIL_FOREGROUND);
       }
     };
 
@@ -1584,6 +1707,26 @@ export function PlayerApp() {
     </footer>
   );
 
+  const themeSwitchControl = (
+    <button
+      type="button"
+      className={`theme-switch ${theme === "light" ? "is-light" : "is-dark"}`.trim()}
+      aria-label={theme === "dark" ? "切换到明亮主题" : "切换到暗色主题"}
+      aria-pressed={theme === "light"}
+      onClick={toggleTheme}
+    >
+      <span className="theme-switch-icon sun" aria-hidden="true">
+        <SunIcon />
+      </span>
+      <span className="theme-switch-icon moon" aria-hidden="true">
+        <MoonIcon />
+      </span>
+      <span className="theme-switch-thumb" aria-hidden="true">
+        <span className="theme-switch-thumb-icon">{theme === "light" ? <SunIcon /> : <MoonIcon />}</span>
+      </span>
+    </button>
+  );
+
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
@@ -1591,23 +1734,26 @@ export function PlayerApp() {
       <section className="spotify-layout">
         <aside className="spotify-sidebar">
           <div className="spotify-logo">MiningQwQ Music</div>
-          <nav className="spotify-nav">
-            <button
-              className={activeTab === "home" ? "active" : ""}
-              onClick={() => {
-                setHomePlaylistView("featured");
-                goTab("home");
-              }}
-            >
-              主页
-            </button>
-            <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
-              搜索
-            </button>
-            <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-overview")}>
-              你的音乐库
-            </button>
-          </nav>
+          <div className="spotify-nav-row">
+            <nav className="spotify-nav">
+              <button
+                className={activeTab === "home" ? "active" : ""}
+                onClick={() => {
+                  setHomePlaylistView("featured");
+                  goTab("home");
+                }}
+              >
+                主页
+              </button>
+              <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
+                搜索
+              </button>
+              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-overview")}>
+                你的音乐库
+              </button>
+            </nav>
+            {isMobileUi ? <div className="theme-switch-mobile">{themeSwitchControl}</div> : null}
+          </div>
 
           <section className="spotify-collections">
             <h3>我的音乐</h3>
@@ -1645,6 +1791,12 @@ export function PlayerApp() {
                 <em>›</em>
               </button>
             </div>
+            {!isMobileUi ? (
+              <div className="theme-switch-card">
+                <span>网页主题</span>
+                {themeSwitchControl}
+              </div>
+            ) : null}
           </section>
         </aside>
 
@@ -2371,12 +2523,45 @@ export function PlayerApp() {
             style={
               {
                 "--detail-cover": currentCoverUrl ? `url(${currentCoverUrl})` : "none",
-                "--detail-bg-a": detailPalette.bgA,
-                "--detail-bg-b": detailPalette.bgB,
-                "--detail-glow": detailPalette.glow
+                "--detail-bg-a": currentPalette.bgA,
+                "--detail-bg-b": currentPalette.bgB,
+                "--detail-glow": currentPalette.glow,
+                "--detail-fg-main": detailForeground.main,
+                "--detail-fg-sub": detailForeground.sub,
+                "--detail-fg-soft": detailForeground.soft,
+                "--detail-control-bg": detailForeground.controlBg,
+                "--detail-control-border": detailForeground.controlBorder,
+                "--detail-control-hover": detailForeground.controlHover,
+                "--detail-control-active": detailForeground.controlActive,
+                "--detail-overlay": detailForeground.overlay,
+                "--detail-dock-bg": detailForeground.dockBg,
+                "--detail-range-inactive": detailForeground.rangeInactive,
+                "--detail-palette-transition-ms": `${PALETTE_TRANSITION_MS}ms`
               } as CSSProperties
             }
           >
+            <div
+              className={`detail-bg-layer current ${isPaletteTransitioning ? "transitioning" : ""}`.trim()}
+              style={
+                {
+                  "--detail-layer-bg-a": currentPalette.bgA,
+                  "--detail-layer-bg-b": currentPalette.bgB,
+                  "--detail-layer-glow": currentPalette.glow
+                } as CSSProperties
+              }
+            />
+            {previousPalette ? (
+              <div
+                className={`detail-bg-layer previous ${isPaletteTransitioning ? "fading" : ""}`.trim()}
+                style={
+                  {
+                    "--detail-layer-bg-a": previousPalette.bgA,
+                    "--detail-layer-bg-b": previousPalette.bgB,
+                    "--detail-layer-glow": previousPalette.glow
+                  } as CSSProperties
+                }
+              />
+            ) : null}
             <header className="detail-topbar">
               <button className="detail-collapse-btn" onClick={closeDetail} aria-label="收起播放器">
                 <CollapseIcon />
@@ -2396,14 +2581,16 @@ export function PlayerApp() {
                   <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
                   <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
                 </div>
-                <div className="detail-tab-row">
-                  <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
-                    歌词
-                  </button>
-                  <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
-                    歌曲信息
-                  </button>
-                </div>
+                {!isMobileUi ? (
+                  <div className="detail-tab-row">
+                    <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
+                      歌词
+                    </button>
+                    <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
+                      歌曲信息
+                    </button>
+                  </div>
+                ) : null}
               </section>
 
               <section className="detail-stage-right">
@@ -2413,6 +2600,16 @@ export function PlayerApp() {
                     专辑：{currentTrack?.album?.name ?? "未知专辑"}　歌手：{currentTrack?.artists.map((item) => item.name).join(" / ") || "未知歌手"}
                   </p>
                 </div>
+                {isMobileUi ? (
+                  <div className="detail-tab-row detail-tab-row-mobile">
+                    <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")} type="button">
+                      歌词
+                    </button>
+                    <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")} type="button">
+                      歌曲信息
+                    </button>
+                  </div>
+                ) : null}
 
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list">
@@ -2488,31 +2685,33 @@ export function PlayerApp() {
                   </div>
                 ) : (
                   <div className="detail-lyric-shell">
-                    <div className="detail-lyric-mode-row">
-                      <button
-                        className={detailLyricMode === "origin" ? "active" : ""}
-                        onClick={() => setDetailLyricMode("origin")}
-                        type="button"
-                      >
-                        原文
-                      </button>
-                      <button
-                        className={detailLyricMode === "translated" ? "active" : ""}
-                        onClick={() => setDetailLyricMode("translated")}
-                        disabled={!controller.lyricTranslatedLines.length}
-                        type="button"
-                      >
-                        翻译
-                      </button>
-                      <button
-                        className={detailLyricMode === "karaoke" ? "active" : ""}
-                        onClick={() => setDetailLyricMode("karaoke")}
-                        disabled={!controller.lyricKaraokeLines.length}
-                        type="button"
-                      >
-                        逐字
-                      </button>
-                    </div>
+                    {!isMobileUi ? (
+                      <div className="detail-lyric-mode-row">
+                        <button
+                          className={detailLyricMode === "origin" ? "active" : ""}
+                          onClick={() => setDetailLyricMode("origin")}
+                          type="button"
+                        >
+                          原文
+                        </button>
+                        <button
+                          className={detailLyricMode === "translated" ? "active" : ""}
+                          onClick={() => setDetailLyricMode("translated")}
+                          disabled={!controller.lyricTranslatedLines.length}
+                          type="button"
+                        >
+                          翻译
+                        </button>
+                        <button
+                          className={detailLyricMode === "karaoke" ? "active" : ""}
+                          onClick={() => setDetailLyricMode("karaoke")}
+                          disabled={!controller.lyricKaraokeLines.length}
+                          type="button"
+                        >
+                          逐字
+                        </button>
+                      </div>
+                    ) : null}
                     <div
                       className="detail-lyric-scroll polished"
                       ref={detailLyricRef}
@@ -2549,17 +2748,19 @@ export function PlayerApp() {
                   max={Math.max(player.durationMs, 1)}
                   value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
                   style={{
-                    background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%, rgba(255,255,255,0.22) 100%)`
+                    background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${progressPercent}%, var(--detail-range-inactive) ${progressPercent}%, var(--detail-range-inactive) 100%)`
                   }}
                   onChange={(event) => controller.seekTo(Number(event.target.value))}
                 />
               </div>
 
               <div className="detail-dock-row">
-                <div className="detail-dock-song">
-                  <b>{currentTrack?.name ?? "未播放"}</b>
-                  <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
-                </div>
+                {!isMobileUi ? (
+                  <div className="detail-dock-song">
+                    <b>{currentTrack?.name ?? "未播放"}</b>
+                    <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
+                  </div>
+                ) : null}
 
                 <div className="detail-dock-controls">
                   <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
@@ -2600,7 +2801,7 @@ export function PlayerApp() {
                       step={0.01}
                       value={player.volume}
                       style={{
-                        background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${volumePercent}%, rgba(255,255,255,0.22) ${volumePercent}%, rgba(255,255,255,0.22) 100%)`
+                        background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${volumePercent}%, var(--detail-range-inactive) ${volumePercent}%, var(--detail-range-inactive) 100%)`
                       }}
                       onChange={(event) => player.setVolume(Number(event.target.value))}
                     />

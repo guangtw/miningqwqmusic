@@ -592,6 +592,7 @@ export function usePlayerController(): ControllerState {
 
     const recoverPlayback = async (reason: "waiting" | "stalled" | "suspend" | "error") => {
       const trackId = currentTrackIdRef.current;
+      if (!trackId) return;
       if (!canRecoverTargetTrack(trackId)) return;
       const currentAudio = audioRef.current;
       if (!currentAudio) return;

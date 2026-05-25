@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { canStartRecovery, isSessionValid, shouldReloadTrack, shouldStartPlayback } from "@/src/lib/playback-guard";
+import {
+  canStartRecovery,
+  isSessionValid,
+  shouldReloadTrack,
+  shouldReplaceAudioSource,
+  shouldStartPlayback
+} from "@/src/lib/playback-guard";
 
 describe("playback guard helpers", () => {
   it("does not reload when queue changes but current track id is unchanged", () => {
@@ -30,5 +36,38 @@ describe("playback guard helpers", () => {
     expect(canStartRecovery({ inFlight: true, now, lastRecoverAt: 9_000, cooldownMs: 1200 })).toBe(false);
     expect(canStartRecovery({ inFlight: false, now, lastRecoverAt: 9_100, cooldownMs: 1200 })).toBe(false);
     expect(canStartRecovery({ inFlight: false, now, lastRecoverAt: 8_000, cooldownMs: 1200 })).toBe(true);
+  });
+
+  it("replaces audio source when switching to a different track id even if url is the same", () => {
+    expect(
+      shouldReplaceAudioSource({
+        appliedTrackId: "track-1",
+        appliedSourceUrl: "https://cdn.example/audio.mp3",
+        nextTrackId: "track-2",
+        nextSourceUrl: "https://cdn.example/audio.mp3"
+      })
+    ).toBe(true);
+  });
+
+  it("replaces audio source when source url changes on the same track id", () => {
+    expect(
+      shouldReplaceAudioSource({
+        appliedTrackId: "track-1",
+        appliedSourceUrl: "https://cdn.example/audio-v1.mp3",
+        nextTrackId: "track-1",
+        nextSourceUrl: "https://cdn.example/audio-v2.mp3"
+      })
+    ).toBe(true);
+  });
+
+  it("does not replace audio source when track id and source url are unchanged", () => {
+    expect(
+      shouldReplaceAudioSource({
+        appliedTrackId: "track-1",
+        appliedSourceUrl: "https://cdn.example/audio.mp3",
+        nextTrackId: "track-1",
+        nextSourceUrl: "https://cdn.example/audio.mp3"
+      })
+    ).toBe(false);
   });
 });

@@ -1,0 +1,82 @@
+"filename", "language", "TypeScript", "JSON", "JSON with Comments", "Markdown", "TypeScript JSX", "JavaScript", "PostCSS", "XML", "comment", "blank", "total"
+"c:\MiningQwQMusic\.eslintrc.json", "JSON with Comments", 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 4
+"c:\MiningQwQMusic\README.md", "Markdown", 0, 0, 0, 127, 0, 0, 0, 0, 0, 47, 174
+"c:\MiningQwQMusic\app\api\music\album\[id]\route.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 4, 13
+"c:\MiningQwQMusic\app\api\music\artist\[id]\route.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 4, 13
+"c:\MiningQwQMusic\app\api\music\discover\default-keyword\route.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 0, 0, 3, 13
+"c:\MiningQwQMusic\app\api\music\discover\home\route.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 0, 0, 3, 8
+"c:\MiningQwQMusic\app\api\music\discover\hot\route.ts", "TypeScript", 10, 0, 0, 0, 0, 0, 0, 0, 0, 3, 13
+"c:\MiningQwQMusic\app\api\music\discover\search-assist\route.ts", "TypeScript", 7, 0, 0, 0, 0, 0, 0, 0, 0, 2, 9
+"c:\MiningQwQMusic\app\api\music\discover\suggest\route.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 0, 0, 0, 3, 26
+"c:\MiningQwQMusic\app\api\music\playlist\[id]\route.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 3, 27
+"c:\MiningQwQMusic\app\api\music\scene\sati\route.ts", "TypeScript", 7, 0, 0, 0, 0, 0, 0, 0, 0, 3, 10
+"c:\MiningQwQMusic\app\api\music\scene\sport\route.ts", "TypeScript", 8, 0, 0, 0, 0, 0, 0, 0, 0, 3, 11
+"c:\MiningQwQMusic\app\api\music\search\artists\route.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 0, 4, 41
+"c:\MiningQwQMusic\app\api\music\search\route.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 0, 4, 41
+"c:\MiningQwQMusic\app\api\music\toplist\[id]\route.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 4, 13
+"c:\MiningQwQMusic\app\api\music\toplist\route.ts", "TypeScript", 5, 0, 0, 0, 0, 0, 0, 0, 0, 3, 8
+"c:\MiningQwQMusic\app\api\music\track\[id]\download-url\route.ts", "TypeScript", 11, 0, 0, 0, 0, 0, 0, 0, 0, 4, 15
+"c:\MiningQwQMusic\app\api\music\track\[id]\insight\route.ts", "TypeScript", 9, 0, 0, 0, 0, 0, 0, 0, 0, 4, 13
+"c:\MiningQwQMusic\app\api\music\track\[id]\lyric\route.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 3, 27
+"c:\MiningQwQMusic\app\api\music\track\[id]\play-url\route.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 3, 27
+"c:\MiningQwQMusic\app\api\music\track\[id]\route.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 3, 27
+"c:\MiningQwQMusic\app\globals.css", "PostCSS", 0, 0, 0, 0, 0, 0, 3370, 0, 0, 589, 3959
+"c:\MiningQwQMusic\app\layout.tsx", "TypeScript JSX", 0, 0, 0, 0, 21, 0, 0, 0, 0, 4, 25
+"c:\MiningQwQMusic\app\offline\page.tsx", "TypeScript JSX", 0, 0, 0, 0, 19, 0, 0, 0, 0, 1, 20
+"c:\MiningQwQMusic\app\page.tsx", "TypeScript JSX", 0, 0, 0, 0, 4, 0, 0, 0, 0, 2, 6
+"c:\MiningQwQMusic\docs\upstream-contract.md", "Markdown", 0, 0, 0, 36, 0, 0, 0, 0, 0, 14, 50
+"c:\MiningQwQMusic\next-env.d.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 0, 0, 5, 2, 7
+"c:\MiningQwQMusic\next.config.mjs", "JavaScript", 0, 0, 0, 0, 0, 17, 0, 0, 1, 2, 20
+"c:\MiningQwQMusic\package-lock.json", "JSON", 0, 8531, 0, 0, 0, 0, 0, 0, 0, 1, 8532
+"c:\MiningQwQMusic\package.json", "JSON", 0, 38, 0, 0, 0, 0, 0, 0, 0, 1, 39
+"c:\MiningQwQMusic\playwright.config.ts", "TypeScript", 25, 0, 0, 0, 0, 0, 0, 0, 0, 2, 27
+"c:\MiningQwQMusic\public\assets\default-cover.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 17, 0, 1, 18
+"c:\MiningQwQMusic\public\icons\icon-192.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 11, 0, 1, 12
+"c:\MiningQwQMusic\public\icons\icon-512.svg", "XML", 0, 0, 0, 0, 0, 0, 0, 11, 0, 1, 12
+"c:\MiningQwQMusic\public\manifest.webmanifest", "JSON", 0, 22, 0, 0, 0, 0, 0, 0, 0, 1, 23
+"c:\MiningQwQMusic\public\sw.js", "JavaScript", 0, 0, 0, 0, 0, 53, 0, 0, 2, 8, 63
+"c:\MiningQwQMusic\src\components\player-app.tsx", "TypeScript JSX", 0, 0, 0, 0, 2649, 0, 0, 0, 3, 166, 2818
+"c:\MiningQwQMusic\src\components\sw-register.tsx", "TypeScript JSX", 0, 0, 0, 0, 16, 0, 0, 0, 1, 5, 22
+"c:\MiningQwQMusic\src\hooks\use-player-controller.ts", "TypeScript", 767, 0, 0, 0, 0, 0, 0, 0, 5, 71, 843
+"c:\MiningQwQMusic\src\lib\api-response.ts", "TypeScript", 26, 0, 0, 0, 0, 0, 0, 0, 0, 3, 29
+"c:\MiningQwQMusic\src\lib\api-route.ts", "TypeScript", 19, 0, 0, 0, 0, 0, 0, 0, 0, 2, 21
+"c:\MiningQwQMusic\src\lib\circuit-breaker.ts", "TypeScript", 42, 0, 0, 0, 0, 0, 0, 0, 0, 7, 49
+"c:\MiningQwQMusic\src\lib\client-api.ts", "TypeScript", 131, 0, 0, 0, 0, 0, 0, 0, 0, 21, 152
+"c:\MiningQwQMusic\src\lib\detail-palette-transition.ts", "TypeScript", 103, 0, 0, 0, 0, 0, 0, 0, 0, 13, 116
+"c:\MiningQwQMusic\src\lib\discover-action.ts", "TypeScript", 37, 0, 0, 0, 0, 0, 0, 0, 0, 9, 46
+"c:\MiningQwQMusic\src\lib\errors.ts", "TypeScript", 19, 0, 0, 0, 0, 0, 0, 0, 0, 3, 22
+"c:\MiningQwQMusic\src\lib\home-grid.ts", "TypeScript", 33, 0, 0, 0, 0, 0, 0, 0, 0, 6, 39
+"c:\MiningQwQMusic\src\lib\http.ts", "TypeScript", 63, 0, 0, 0, 0, 0, 0, 0, 0, 9, 72
+"c:\MiningQwQMusic\src\lib\lyrics.ts", "TypeScript", 30, 0, 0, 0, 0, 0, 0, 0, 0, 6, 36
+"c:\MiningQwQMusic\src\lib\music\adapter.ts", "TypeScript", 43, 0, 0, 0, 0, 0, 0, 0, 0, 4, 47
+"c:\MiningQwQMusic\src\lib\music\providers\mock.ts", "TypeScript", 260, 0, 0, 0, 0, 0, 0, 0, 0, 22, 282
+"c:\MiningQwQMusic\src\lib\music\providers\netease-like.ts", "TypeScript", 869, 0, 0, 0, 0, 0, 0, 0, 1, 92, 962
+"c:\MiningQwQMusic\src\lib\music\service.ts", "TypeScript", 185, 0, 0, 0, 0, 0, 0, 0, 0, 22, 207
+"c:\MiningQwQMusic\src\lib\playback-guard.ts", "TypeScript", 50, 0, 0, 0, 0, 0, 0, 0, 0, 9, 59
+"c:\MiningQwQMusic\src\lib\player-ui.ts", "TypeScript", 16, 0, 0, 0, 0, 0, 0, 0, 0, 2, 18
+"c:\MiningQwQMusic\src\lib\playlist-import.ts", "TypeScript", 17, 0, 0, 0, 0, 0, 0, 0, 0, 2, 19
+"c:\MiningQwQMusic\src\lib\theme-preference.ts", "TypeScript", 20, 0, 0, 0, 0, 0, 0, 0, 0, 7, 27
+"c:\MiningQwQMusic\src\lib\trace.ts", "TypeScript", 3, 0, 0, 0, 0, 0, 0, 0, 0, 1, 4
+"c:\MiningQwQMusic\src\store\player-store.ts", "TypeScript", 218, 0, 0, 0, 0, 0, 0, 0, 0, 13, 231
+"c:\MiningQwQMusic\src\types\music.ts", "TypeScript", 175, 0, 0, 0, 0, 0, 0, 0, 0, 28, 203
+"c:\MiningQwQMusic\tests\e2e\home.spec.ts", "TypeScript", 188, 0, 0, 0, 0, 0, 0, 0, 0, 21, 209
+"c:\MiningQwQMusic\tests\integration\music-discover-routes.test.ts", "TypeScript", 36, 0, 0, 0, 0, 0, 0, 0, 0, 6, 42
+"c:\MiningQwQMusic\tests\integration\music-search-artists-route.test.ts", "TypeScript", 27, 0, 0, 0, 0, 0, 0, 0, 0, 5, 32
+"c:\MiningQwQMusic\tests\integration\music-search-route.test.ts", "TypeScript", 27, 0, 0, 0, 0, 0, 0, 0, 0, 5, 32
+"c:\MiningQwQMusic\tests\integration\music-track-insight-route.test.ts", "TypeScript", 24, 0, 0, 0, 0, 0, 0, 0, 0, 5, 29
+"c:\MiningQwQMusic\tests\unit\detail-palette-transition.test.ts", "TypeScript", 62, 0, 0, 0, 0, 0, 0, 0, 0, 11, 73
+"c:\MiningQwQMusic\tests\unit\discover-action.test.ts", "TypeScript", 53, 0, 0, 0, 0, 0, 0, 0, 0, 4, 57
+"c:\MiningQwQMusic\tests\unit\home-grid.test.ts", "TypeScript", 19, 0, 0, 0, 0, 0, 0, 0, 0, 4, 23
+"c:\MiningQwQMusic\tests\unit\lyrics.test.ts", "TypeScript", 18, 0, 0, 0, 0, 0, 0, 0, 0, 3, 21
+"c:\MiningQwQMusic\tests\unit\mock-adapter.test.ts", "TypeScript", 18, 0, 0, 0, 0, 0, 0, 0, 0, 4, 22
+"c:\MiningQwQMusic\tests\unit\netease-adapter.test.ts", "TypeScript", 326, 0, 0, 0, 0, 0, 0, 0, 0, 30, 356
+"c:\MiningQwQMusic\tests\unit\playback-guard.test.ts", "TypeScript", 66, 0, 0, 0, 0, 0, 0, 0, 0, 8, 74
+"c:\MiningQwQMusic\tests\unit\player-controller-regression.test.tsx", "TypeScript JSX", 0, 0, 0, 0, 118, 0, 0, 0, 0, 23, 141
+"c:\MiningQwQMusic\tests\unit\player-store.test.ts", "TypeScript", 94, 0, 0, 0, 0, 0, 0, 0, 0, 11, 105
+"c:\MiningQwQMusic\tests\unit\player-ui.test.ts", "TypeScript", 16, 0, 0, 0, 0, 0, 0, 0, 0, 4, 20
+"c:\MiningQwQMusic\tests\unit\playlist-import.test.ts", "TypeScript", 15, 0, 0, 0, 0, 0, 0, 0, 0, 3, 18
+"c:\MiningQwQMusic\tests\unit\theme-preference.test.ts", "TypeScript", 31, 0, 0, 0, 0, 0, 0, 0, 0, 5, 36
+"c:\MiningQwQMusic\tsconfig.json", "JSON with Comments", 0, 0, 45, 0, 0, 0, 0, 0, 0, 1, 46
+"c:\MiningQwQMusic\vitest.config.ts", "TypeScript", 17, 0, 0, 0, 0, 0, 0, 0, 0, 2, 19
+"c:\MiningQwQMusic\vitest.setup.ts", "TypeScript", 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2
+"Total", "-", 4481, 8591, 48, 163, 2827, 70, 3370, 39, 18, 1420, 21027

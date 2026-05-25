@@ -3218,8 +3218,10 @@ input:focus-visible {
   }
 
   .spotify-layout {
-    height: auto;
+    height: 100%;
+    min-height: 0;
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .spotify-sidebar {
@@ -3280,6 +3282,9 @@ input:focus-visible {
   .spotify-main {
     padding: 12px;
     gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     overflow-x: hidden;
   }
 
@@ -3324,6 +3329,12 @@ input:focus-visible {
   .library-track-list {
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  .library-track-list {
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
   }
 
   .spotify-right {

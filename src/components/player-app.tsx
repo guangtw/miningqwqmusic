@@ -23,7 +23,12 @@ import { extractPlaylistId } from "@/src/lib/playlist-import";
 import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransition, type DetailForegroundTone } from "@/src/lib/detail-palette-transition";
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
-import { heroActionLabel, nextVolumeAfterMuteToggle } from "@/src/lib/player-ui";
+import {
+  countUniqueLibraryTracks,
+  heroActionLabel,
+  nextVolumeAfterMuteToggle,
+  shouldTogglePlaybackBySpace
+} from "@/src/lib/player-ui";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
@@ -1088,6 +1093,10 @@ export function PlayerApp() {
     () => Object.values(player.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt),
     [player.importedPlaylists]
   );
+  const libraryTrackCount = useMemo(
+    () => countUniqueLibraryTracks(player.favorites, player.recent),
+    [player.favorites, player.recent]
+  );
   const discoverBlocks = useMemo(() => {
     const blockMap = new Map<string, DiscoverItem[]>();
     discoverData?.blocks.forEach((block) => {
@@ -1265,6 +1274,24 @@ export function PlayerApp() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        shouldTogglePlaybackBySpace({
+          key: event.key,
+          code: event.code,
+          repeat: event.repeat,
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          altKey: event.altKey,
+          shiftKey: event.shiftKey,
+          target: event.target
+        })
+      ) {
+        if (controlDisabled) return;
+        event.preventDefault();
+        player.togglePlay();
+        return;
+      }
+
       if (event.key !== "Escape") return;
       const currentDetailPhase = detailPhaseRef.current;
       const detailOpen = currentDetailPhase === "open" || currentDetailPhase === "opening";
@@ -1284,7 +1311,7 @@ export function PlayerApp() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [homePlaylistPanel, closeDetail, closeHomePlaylistPanel, restoreHomeTab]);
+  }, [homePlaylistPanel, closeDetail, closeHomePlaylistPanel, restoreHomeTab, controlDisabled, player]);
 
   useEffect(() => {
     let createdNode: HTMLElement | null = null;
@@ -1763,7 +1790,7 @@ export function PlayerApp() {
                 onClick={() => goTab("library", "library-overview")}
               >
                 <span>你的音乐库</span>
-                <small>{player.queue.length + player.recent.length} 首</small>
+                <small>{libraryTrackCount} 首</small>
                 <em>›</em>
               </button>
               <button

@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getTrackDetail, getTrackInsight, getTrackLyric, getTrackPlaySource } from "@/src/lib/client-api";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
-import { canStartRecovery, isSessionValid, shouldReloadTrack, shouldStartPlayback } from "@/src/lib/playback-guard";
+import {
+  canStartRecovery,
+  isSessionValid,
+  shouldReloadTrack,
+  shouldReplaceAudioSource,
+  shouldStartPlayback
+} from "@/src/lib/playback-guard";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import type { LyricLine, PlaySource, PlaybackMode, Track } from "@/src/types/music";
 
@@ -108,6 +114,9 @@ export function usePlayerController(): ControllerState {
   const currentSourceRef = useRef<PlaySource | null>(null);
   const currentTrackIdRef = useRef<string | null>(currentTrackId);
   const queueTrackRef = useRef<Track | null>(queueTrack);
+  const appliedTrackIdRef = useRef<string | null>(null);
+  const appliedSourceUrlRef = useRef<string | null>(null);
+  const transitionPhaseRef = useRef<TransitionPhase>("idle");
   const playbackSessionRef = useRef(0);
   const lastLoadedTrackIdRef = useRef<string | null>(null);
   const recoveryInFlightRef = useRef(false);
@@ -132,6 +141,10 @@ export function usePlayerController(): ControllerState {
   useEffect(() => {
     queueTrackRef.current = queueTrack;
   }, [queueTrack]);
+
+  useEffect(() => {
+    transitionPhaseRef.current = transitionPhase;
+  }, [transitionPhase]);
 
   useEffect(() => {
     recoveryRef.current = {
@@ -310,6 +323,8 @@ export function usePlayerController(): ControllerState {
       lastLoadedTrackIdRef.current = null;
       transitionTokenRef.current += 1;
       playbackSessionRef.current += 1;
+      appliedTrackIdRef.current = null;
+      appliedSourceUrlRef.current = null;
       if (audio) {
         audio.pause();
         audio.removeAttribute("src");
@@ -384,6 +399,8 @@ export function usePlayerController(): ControllerState {
         audio.pause();
         audio.removeAttribute("src");
         audio.load();
+        appliedTrackIdRef.current = null;
+        appliedSourceUrlRef.current = null;
       }
 
       try {
@@ -440,16 +457,49 @@ export function usePlayerController(): ControllerState {
     const audio = audioRef.current;
     if (!audio) return;
     const sourceReady = Boolean(source?.url && currentTrackId && source.trackId === currentTrackId);
+    const sourceTrackId = source?.trackId ?? null;
+    const sourceUrl = source?.url ?? null;
+    const sessionSnapshot = {
+      sessionId: playbackSessionRef.current,
+      trackId: currentTrackId,
+      token: transitionTokenRef.current
+    };
+    const isCurrentSession = () =>
+      isSessionValid(
+        sessionSnapshot,
+        playbackSessionRef.current,
+        currentTrackIdRef.current,
+        transitionTokenRef.current
+      );
+    const hardClearAudio = () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      appliedTrackIdRef.current = null;
+      appliedSourceUrlRef.current = null;
+    };
 
     if (!sourceReady || !source) {
-      audio.pause();
+      if (appliedTrackIdRef.current && appliedTrackIdRef.current !== currentTrackId) {
+        hardClearAudio();
+      } else {
+        audio.pause();
+      }
       setTransitionPhase((previous) => (previous === "idle" ? "idle" : "switching"));
       return;
     }
 
-    const sourceChanged = audio.src !== source.url;
-    if (sourceChanged) {
-      audio.pause();
+    const sourceChangedByIdentity = shouldReplaceAudioSource({
+      appliedTrackId: appliedTrackIdRef.current,
+      appliedSourceUrl: appliedSourceUrlRef.current,
+      nextTrackId: sourceTrackId,
+      nextSourceUrl: sourceUrl
+    });
+    const domBoundToNextSource = sourceUrl ? (audio.currentSrc || audio.src) === sourceUrl : false;
+    const sourceChanged = sourceChangedByIdentity || !domBoundToNextSource;
+
+    if (sourceChanged && sourceUrl) {
+      hardClearAudio();
       const resumeMs = resumeAfterSourceSwitchRef.current;
       if (typeof resumeMs === "number" && resumeMs >= 0) {
         const onLoaded = () => {
@@ -461,8 +511,13 @@ export function usePlayerController(): ControllerState {
         };
         audio.addEventListener("loadedmetadata", onLoaded, { once: true });
       }
-      audio.src = source.url;
+      audio.src = sourceUrl;
       audio.load();
+      appliedTrackIdRef.current = sourceTrackId;
+      appliedSourceUrlRef.current = sourceUrl;
+    } else if (!sourceChanged) {
+      appliedTrackIdRef.current = sourceTrackId;
+      appliedSourceUrlRef.current = sourceUrl;
     }
 
     if (!isPlaying) {
@@ -478,17 +533,24 @@ export function usePlayerController(): ControllerState {
 
     const token = transitionTokenRef.current;
     const run = async () => {
+      if (!isCurrentSession()) return;
       setTransitionPhase("fadingIn");
       audio.volume = 0;
       audio.muted = false;
       await audio.play();
+      if (!isCurrentSession()) {
+        audio.pause();
+        return;
+      }
       await fadeInAudio(token);
+      if (!isCurrentSession()) return;
       if (token === transitionTokenRef.current) {
         setTransitionPhase("idle");
       }
     };
 
     void run().catch(() => {
+      if (!isCurrentSession()) return;
       setErrorText("浏览器阻止了自动播放，请手动点击播放");
       setTransitionPhase("idle");
     });
@@ -508,6 +570,18 @@ export function usePlayerController(): ControllerState {
   useEffect(() => {
     if (!audioRef.current) return;
     const audio = audioRef.current;
+    const canRecoverTargetTrack = (trackId: string | null) => {
+      if (!trackId) return false;
+      if (transitionPhaseRef.current !== "idle") return false;
+      if (appliedTrackIdRef.current !== trackId) return false;
+      if (currentSourceRef.current?.trackId && currentSourceRef.current.trackId !== trackId) return false;
+      return true;
+    };
+    const isCurrentMediaSession = () => {
+      const currentTrackId = currentTrackIdRef.current;
+      if (!currentTrackId) return false;
+      return canRecoverTargetTrack(currentTrackId);
+    };
     const resetRecoveryWindow = () => {
       recoveryRef.current = {
         attempts: 0,
@@ -518,7 +592,7 @@ export function usePlayerController(): ControllerState {
 
     const recoverPlayback = async (reason: "waiting" | "stalled" | "suspend" | "error") => {
       const trackId = currentTrackIdRef.current;
-      if (!trackId) return;
+      if (!canRecoverTargetTrack(trackId)) return;
       const currentAudio = audioRef.current;
       if (!currentAudio) return;
 
@@ -544,6 +618,7 @@ export function usePlayerController(): ControllerState {
         setErrorText("网络不稳定，已多次尝试恢复播放");
         return;
       }
+      if (!canRecoverTargetTrack(trackId)) return;
 
       const sessionSnapshot = {
         sessionId: playbackSessionRef.current,
@@ -562,7 +637,7 @@ export function usePlayerController(): ControllerState {
       try {
         const cachedAudio = fullAudioCacheRef.current.get(trackId);
         if (cachedAudio && currentAudio.src !== cachedAudio.blobUrl) {
-          if (!isCurrentSession()) return;
+          if (!isCurrentSession() || !canRecoverTargetTrack(trackId)) return;
           resumeAfterSourceSwitchRef.current = resumeMs;
           setSource({
             trackId,
@@ -574,18 +649,18 @@ export function usePlayerController(): ControllerState {
         }
 
         const renewed = await getTrackPlaySource(trackId);
-        if (!isCurrentSession()) return;
+        if (!isCurrentSession() || !canRecoverTargetTrack(trackId) || renewed.trackId !== trackId) return;
         prefetchedSourceRef.current.set(trackId, { source: renewed, cachedAt: Date.now() });
         resumeAfterSourceSwitchRef.current = resumeMs;
         setSource(renewed);
         void cacheTrackAudioBlob(trackId, renewed.url);
         setErrorText(reason === "error" ? "播放链路已刷新" : "网络波动，已刷新播放链路");
       } catch (error) {
-        if (!isCurrentSession()) return;
+        if (!isCurrentSession() || !canRecoverTargetTrack(trackId)) return;
         const message = (error as Error).message || "音频播放失败";
         try {
           const insight = await getTrackInsight(trackId);
-          if (!isCurrentSession()) return;
+          if (!isCurrentSession() || !canRecoverTargetTrack(trackId)) return;
           const fallbackTrack = insight.alternatives.find((item) => item.id && item.id !== trackId);
           if (fallbackTrack) {
             setErrorText(`当前歌曲受限，已切换到可播放版本：${fallbackTrack.name}`);
@@ -608,6 +683,8 @@ export function usePlayerController(): ControllerState {
       setDurationMs(Math.floor(audio.duration * 1000) || 0);
     };
     const onEnded = () => {
+      if (!isCurrentMediaSession()) return;
+      if (transitionPhaseRef.current !== "idle") return;
       const now = Date.now();
       if (now - lastEndedAtRef.current < 240) return;
       lastEndedAtRef.current = now;
@@ -615,20 +692,24 @@ export function usePlayerController(): ControllerState {
       nextTrack();
     };
     const onError = () => {
+      if (!isCurrentMediaSession()) return;
       void recoverPlayback("error");
     };
     const onPlaying = () => {
       resetRecoveryWindow();
     };
     const onWaiting = () => {
+      if (!isCurrentMediaSession()) return;
       if (!isPlayingRef.current || audio.paused || audio.ended) return;
       void recoverPlayback("waiting");
     };
     const onStalled = () => {
+      if (!isCurrentMediaSession()) return;
       if (!isPlayingRef.current || audio.paused || audio.ended) return;
       void recoverPlayback("stalled");
     };
     const onSuspend = () => {
+      if (!isCurrentMediaSession()) return;
       if (!isPlayingRef.current || audio.paused || audio.ended) return;
       if (audio.readyState >= 3) return;
       void recoverPlayback("suspend");

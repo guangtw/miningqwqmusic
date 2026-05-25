@@ -10,6 +10,13 @@ type PlaybackStartArgs = {
   audioPaused: boolean;
 };
 
+type ReplaceAudioSourceArgs = {
+  appliedTrackId: string | null;
+  appliedSourceUrl: string | null;
+  nextTrackId: string | null;
+  nextSourceUrl: string | null;
+};
+
 type RecoveryGateArgs = {
   inFlight: boolean;
   now: number;
@@ -37,6 +44,12 @@ export function isSessionValid(
 export function shouldStartPlayback(args: PlaybackStartArgs): boolean {
   if (!args.isPlaying) return false;
   return args.sourceChanged || args.audioPaused;
+}
+
+export function shouldReplaceAudioSource(args: ReplaceAudioSourceArgs): boolean {
+  if (!args.nextTrackId || !args.nextSourceUrl) return false;
+  if (args.appliedTrackId !== args.nextTrackId) return true;
+  return args.appliedSourceUrl !== args.nextSourceUrl;
 }
 
 export function canStartRecovery(args: RecoveryGateArgs): boolean {

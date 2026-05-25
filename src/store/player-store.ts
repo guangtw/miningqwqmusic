@@ -10,6 +10,7 @@ type PlayerState = {
   queue: PersistTrack[];
   currentIndex: number;
   mode: PlaybackMode;
+  shuffleHistoryTrackIds: string[];
   isPlaying: boolean;
   currentTimeMs: number;
   durationMs: number;
@@ -50,6 +51,7 @@ export const usePlayerStore = create<PlayerStore>()(
       queue: [],
       currentIndex: -1,
       mode: "sequence",
+      shuffleHistoryTrackIds: [],
       isPlaying: false,
       currentTimeMs: 0,
       durationMs: 0,
@@ -64,6 +66,7 @@ export const usePlayerStore = create<PlayerStore>()(
         set({
           queue: tracks,
           currentIndex: safeIndex,
+          shuffleHistoryTrackIds: [],
           isPlaying: safeIndex >= 0,
           currentTimeMs: 0
         });
@@ -113,17 +116,18 @@ export const usePlayerStore = create<PlayerStore>()(
         set({
           queue,
           currentIndex: queue.length ? Math.max(0, currentIndex) : -1,
+          shuffleHistoryTrackIds: state.shuffleHistoryTrackIds.filter((id) => id !== trackId),
           isPlaying: queue.length ? state.isPlaying : false
         });
       },
       togglePlay: () => set((state) => ({ isPlaying: !state.isPlaying })),
       setPlaying: (isPlaying) => set({ isPlaying }),
-      setPlaybackMode: (mode) => set({ mode }),
+      setPlaybackMode: (mode) => set({ mode, shuffleHistoryTrackIds: [] }),
       nextMode: () =>
         set((state) => {
-          if (state.mode === "sequence") return { mode: "loop-one" as PlaybackMode };
-          if (state.mode === "loop-one") return { mode: "shuffle" as PlaybackMode };
-          return { mode: "sequence" as PlaybackMode };
+          if (state.mode === "sequence") return { mode: "loop-one" as PlaybackMode, shuffleHistoryTrackIds: [] };
+          if (state.mode === "loop-one") return { mode: "shuffle" as PlaybackMode, shuffleHistoryTrackIds: [] };
+          return { mode: "sequence" as PlaybackMode, shuffleHistoryTrackIds: [] };
         }),
       nextTrack: () =>
         set((state) => {
@@ -131,11 +135,20 @@ export const usePlayerStore = create<PlayerStore>()(
           if (state.mode === "loop-one") return { currentTimeMs: 0, isPlaying: true };
           if (state.mode === "shuffle") {
             if (state.queue.length === 1) return { currentTimeMs: 0, isPlaying: true };
+            const currentTrackId = state.queue[state.currentIndex]?.id;
             let randomIndex = state.currentIndex;
             while (randomIndex === state.currentIndex) {
               randomIndex = Math.floor(Math.random() * state.queue.length);
             }
-            return { currentIndex: randomIndex, currentTimeMs: 0, isPlaying: true };
+            const history = currentTrackId
+              ? [...state.shuffleHistoryTrackIds, currentTrackId].slice(-200)
+              : state.shuffleHistoryTrackIds;
+            return {
+              currentIndex: randomIndex,
+              shuffleHistoryTrackIds: history,
+              currentTimeMs: 0,
+              isPlaying: true
+            };
           }
           const nextIndex = state.currentIndex + 1;
           if (nextIndex >= state.queue.length) return { currentIndex: 0, currentTimeMs: 0, isPlaying: true };
@@ -145,6 +158,22 @@ export const usePlayerStore = create<PlayerStore>()(
         set((state) => {
           if (!state.queue.length) return { currentIndex: -1, isPlaying: false };
           if (state.mode === "loop-one") return { currentTimeMs: 0, isPlaying: true };
+          if (state.mode === "shuffle") {
+            const history = [...state.shuffleHistoryTrackIds];
+            while (history.length) {
+              const previousTrackId = history.pop();
+              if (!previousTrackId) continue;
+              const previousIndex = state.queue.findIndex((item) => item.id === previousTrackId);
+              if (previousIndex >= 0 && previousIndex !== state.currentIndex) {
+                return {
+                  currentIndex: previousIndex,
+                  shuffleHistoryTrackIds: history,
+                  currentTimeMs: 0,
+                  isPlaying: true
+                };
+              }
+            }
+          }
           const previousIndex = state.currentIndex - 1;
           if (previousIndex < 0) return { currentIndex: state.queue.length - 1, currentTimeMs: 0, isPlaying: true };
           return { currentIndex: previousIndex, currentTimeMs: 0, isPlaying: true };

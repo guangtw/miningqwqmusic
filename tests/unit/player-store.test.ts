@@ -15,6 +15,7 @@ describe("player store state machine", () => {
       queue: [],
       currentIndex: -1,
       mode: "sequence",
+      shuffleHistoryTrackIds: [],
       isPlaying: false,
       currentTimeMs: 0,
       durationMs: 0,
@@ -44,6 +45,70 @@ describe("player store state machine", () => {
     const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.8);
     usePlayerStore.getState().nextTrack();
     expect(usePlayerStore.getState().currentIndex).toBe(2);
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual(["1"]);
+    randomSpy.mockRestore();
+  });
+
+  it("uses real playback history for previousTrack in shuffle mode", () => {
+    const tracks = [mockTrack("1"), mockTrack("2"), mockTrack("3")];
+    usePlayerStore.getState().setQueue(tracks, 0);
+    usePlayerStore.getState().setPlaybackMode("shuffle");
+
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValueOnce(0.8).mockReturnValueOnce(0.0);
+    usePlayerStore.getState().nextTrack();
+    usePlayerStore.getState().nextTrack();
+
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual(["1", "3"]);
+
+    usePlayerStore.getState().previousTrack();
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual(["1"]);
+
+    usePlayerStore.getState().previousTrack();
+    expect(usePlayerStore.getState().currentIndex).toBe(0);
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual([]);
+    expect(randomSpy).toHaveBeenCalledTimes(2);
+
+    randomSpy.mockRestore();
+  });
+
+  it("does not randomize previousTrack in shuffle mode", () => {
+    const tracks = [mockTrack("1"), mockTrack("2"), mockTrack("3")];
+    usePlayerStore.getState().setQueue(tracks, 0);
+    usePlayerStore.getState().setPlaybackMode("shuffle");
+
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.8);
+    usePlayerStore.getState().nextTrack();
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+
+    usePlayerStore.getState().previousTrack();
+    expect(randomSpy).toHaveBeenCalledTimes(1);
+
+    randomSpy.mockRestore();
+  });
+
+  it("clears shuffle history when queue changes, track removed, or mode changes", () => {
+    const tracks = [mockTrack("1"), mockTrack("2"), mockTrack("3")];
+    usePlayerStore.getState().setQueue(tracks, 0);
+    usePlayerStore.getState().setPlaybackMode("shuffle");
+
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.8);
+    usePlayerStore.getState().nextTrack();
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual(["1"]);
+
+    usePlayerStore.getState().removeFromQueue("1");
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual([]);
+
+    usePlayerStore.getState().setQueue(tracks, 0);
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual([]);
+
+    usePlayerStore.getState().nextTrack();
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual(["1"]);
+
+    usePlayerStore.getState().setPlaybackMode("sequence");
+    expect(usePlayerStore.getState().shuffleHistoryTrackIds).toEqual([]);
+
     randomSpy.mockRestore();
   });
 

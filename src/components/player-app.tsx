@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -26,7 +26,6 @@ import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import {
   countItemsWithinRows,
-  countUniqueLibraryTracks,
   heroActionLabel,
   nextVolumeAfterMuteToggle,
   shouldTogglePlaybackBySpace
@@ -50,7 +49,7 @@ import type {
 type NavTab = "home" | "search" | "library";
 type SearchStatus = "idle" | "loading" | "success" | "empty" | "error";
 type SearchMode = "track" | "artist";
-type LibraryView = "library-overview" | "library-favorites" | "library-recent" | "library-playlists";
+type LibraryView = "library-favorites" | "library-recent" | "library-playlists";
 type HomePlaylistView = "featured" | "more";
 type DetailViewTab = "lyric" | "meta";
 type DetailLyricMode = "origin" | "translated" | "karaoke";
@@ -72,6 +71,7 @@ type HomePlaylistPanelState = {
   loading: boolean;
   error: string | null;
 };
+type LibraryContentTransitionPhase = "idle" | "leaving" | "entering";
 type HistoryGuardLayer = "detail" | "playlist" | "tab";
 type HistoryGuardState = {
   __mqmGuard?: {
@@ -84,6 +84,8 @@ type HistoryGuardState = {
 const DETAIL_ANIMATION_MS = 260;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
+const LIBRARY_CONTENT_LEAVE_MS = 140;
+const LIBRARY_CONTENT_ENTER_MS = 220;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
@@ -447,6 +449,12 @@ const MODE_META: Record<PlaybackMode, { label: string; icon: ReactNode }> = {
   shuffle: { label: "随机播放", icon: <ShuffleIcon /> }
 };
 
+const LIBRARY_VIEW_OPTIONS: Array<{ value: LibraryView; label: string }> = [
+  { value: "library-favorites", label: "收藏" },
+  { value: "library-recent", label: "最近" },
+  { value: "library-playlists", label: "我的" }
+];
+
 function TrackRow({
   track,
   liked,
@@ -524,7 +532,7 @@ export function PlayerApp() {
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("home");
-  const [libraryView, setLibraryView] = useState<LibraryView>("library-overview");
+  const [libraryView, setLibraryView] = useState<LibraryView>("library-favorites");
   const [detailPhase, setDetailPhase] = useState<DetailModalPhase>("closed");
   const [detailTab, setDetailTab] = useState<DetailViewTab>("lyric");
   const [detailLyricMode, setDetailLyricMode] = useState<DetailLyricMode>("origin");
@@ -546,6 +554,7 @@ export function PlayerApp() {
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [homePlaylistPanel, setHomePlaylistPanel] = useState<HomePlaylistPanelState | null>(null);
   const [homePlaylistPhase, setHomePlaylistPhase] = useState<PlaylistPanelPhase>("closed");
+  const [pendingQueueOpenAfterDetail, setPendingQueueOpenAfterDetail] = useState(false);
   const [homePlaylistView, setHomePlaylistView] = useState<HomePlaylistView>("featured");
   const [playlistSummaryExpanded, setPlaylistSummaryExpanded] = useState(false);
   const [playlistSummaryOverflowing, setPlaylistSummaryOverflowing] = useState(false);
@@ -579,8 +588,19 @@ export function PlayerApp() {
   const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
   const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
   const [isMobileUi, setIsMobileUi] = useState(false);
+  const [displayedLibraryView, setDisplayedLibraryView] = useState<LibraryView>("library-favorites");
+  const [libraryContentTransitionPhase, setLibraryContentTransitionPhase] = useState<LibraryContentTransitionPhase>("idle");
+  const [librarySegmentedThumb, setLibrarySegmentedThumb] = useState<{ x: number; width: number; ready: boolean }>({
+    x: 0,
+    width: 0,
+    ready: false
+  });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
+  const librarySegmentedRef = useRef<HTMLDivElement>(null);
+  const displayedLibraryViewRef = useRef<LibraryView>("library-favorites");
+  const libraryContentTransitionTokenRef = useRef(0);
+  const libraryContentTransitionTimerRef = useRef<number | null>(null);
   const previousVolumeRef = useRef(0.8);
   const detailCloseTimerRef = useRef<number | null>(null);
   const paletteTransitionTimerRef = useRef<number | null>(null);
@@ -645,6 +665,10 @@ export function PlayerApp() {
   }, [activeTab]);
 
   useEffect(() => {
+    displayedLibraryViewRef.current = displayedLibraryView;
+  }, [displayedLibraryView]);
+
+  useEffect(() => {
     currentPaletteRef.current = currentPalette;
   }, [currentPalette]);
 
@@ -669,6 +693,106 @@ export function PlayerApp() {
       mediaQuery.removeEventListener("change", update);
     };
   }, []);
+
+  useLayoutEffect(() => {
+    const root = librarySegmentedRef.current;
+    if (!root) return;
+
+    const updateThumb = () => {
+      const rootRect = root.getBoundingClientRect();
+      if (rootRect.width <= 0 || root.offsetParent === null) return;
+      const activeIndex = LIBRARY_VIEW_OPTIONS.findIndex((item) => item.value === libraryView);
+      if (activeIndex < 0) return;
+      const slotCount = LIBRARY_VIEW_OPTIONS.length;
+      if (!slotCount) return;
+      const slotWidth = rootRect.width / slotCount;
+      if (slotWidth <= 0) return;
+
+      const activeButton = root.querySelector<HTMLButtonElement>(`button[data-library-view="${libraryView}"]`);
+      const labelNode = activeButton?.querySelector<HTMLSpanElement>(".library-segmented-pill-label");
+      const labelWidth = labelNode?.getBoundingClientRect().width ?? slotWidth * 0.7;
+      const computedStyle = window.getComputedStyle(root);
+      const thumbInsetRaw = Number.parseFloat(computedStyle.getPropertyValue("--lib-seg-inset"));
+      const thumbInset = Number.isFinite(thumbInsetRaw) ? thumbInsetRaw : 4;
+      const horizontalTextPadding = 28;
+      const maxThumbWidth = Math.max(1, slotWidth - thumbInset * 2);
+      const preferredWidth = Math.max(1, Math.min(maxThumbWidth, labelWidth + horizontalTextPadding));
+      const centeredX = slotWidth * activeIndex + slotWidth / 2 - preferredWidth / 2;
+      const minX = thumbInset;
+      const maxX = Math.max(minX, rootRect.width - preferredWidth - thumbInset);
+      const nextX = Math.round(Math.min(maxX, Math.max(minX, centeredX)));
+      const nextWidth = Math.round(preferredWidth);
+
+      setLibrarySegmentedThumb((previous) => {
+        if (previous.ready && previous.x === nextX && previous.width === nextWidth) {
+          return previous;
+        }
+        return {
+          x: nextX,
+          width: nextWidth,
+          ready: true
+        };
+      });
+    };
+
+    const rafId = window.requestAnimationFrame(updateThumb);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateThumb) : null;
+    if (observer) {
+      observer.observe(root);
+      LIBRARY_VIEW_OPTIONS.forEach((option) => {
+        const button = root.querySelector<HTMLButtonElement>(`button[data-library-view="${option.value}"]`);
+        if (button) observer.observe(button);
+      });
+    }
+
+    window.addEventListener("resize", updateThumb);
+    window.addEventListener("orientationchange", updateThumb);
+    window.visualViewport?.addEventListener("resize", updateThumb);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      observer?.disconnect();
+      window.removeEventListener("resize", updateThumb);
+      window.removeEventListener("orientationchange", updateThumb);
+      window.visualViewport?.removeEventListener("resize", updateThumb);
+    };
+  }, [libraryView, isMobileUi]);
+
+  useEffect(() => {
+    if (libraryContentTransitionTimerRef.current) {
+      window.clearTimeout(libraryContentTransitionTimerRef.current);
+      libraryContentTransitionTimerRef.current = null;
+    }
+
+    if (activeTab !== "library") {
+      libraryContentTransitionTokenRef.current += 1;
+      displayedLibraryViewRef.current = libraryView;
+      setDisplayedLibraryView(libraryView);
+      setLibraryContentTransitionPhase("idle");
+      return;
+    }
+
+    if (displayedLibraryViewRef.current === libraryView) {
+      setLibraryContentTransitionPhase("idle");
+      return;
+    }
+
+    const token = libraryContentTransitionTokenRef.current + 1;
+    libraryContentTransitionTokenRef.current = token;
+    setLibraryContentTransitionPhase("leaving");
+
+    libraryContentTransitionTimerRef.current = window.setTimeout(() => {
+      if (libraryContentTransitionTokenRef.current !== token) return;
+      displayedLibraryViewRef.current = libraryView;
+      setDisplayedLibraryView(libraryView);
+      setLibraryContentTransitionPhase("entering");
+      libraryContentTransitionTimerRef.current = window.setTimeout(() => {
+        if (libraryContentTransitionTokenRef.current !== token) return;
+        setLibraryContentTransitionPhase("idle");
+        libraryContentTransitionTimerRef.current = null;
+      }, LIBRARY_CONTENT_ENTER_MS);
+    }, LIBRARY_CONTENT_LEAVE_MS);
+  }, [activeTab, libraryView]);
 
   useEffect(() => {
     detailPhaseRef.current = detailPhase;
@@ -881,7 +1005,7 @@ export function PlayerApp() {
 
   const restoreHomeTab = useCallback(() => {
     setActiveTab("home");
-    setLibraryView("library-overview");
+    setLibraryView("library-favorites");
   }, []);
 
   const goTab = (tab: NavTab, nextLibraryView?: LibraryView) => {
@@ -972,7 +1096,7 @@ export function PlayerApp() {
     openHomePlaylistPanelWithAnimation();
   };
 
-  const openQueuePanel = () => {
+  const openQueuePanel = useCallback(() => {
     const panelVisible = homePlaylistPhaseRef.current !== "closed";
     if (!popstateHandlingRef.current && !panelVisible) {
       pushHistoryGuardState("playlist", activeTabRef.current);
@@ -988,7 +1112,7 @@ export function PlayerApp() {
       error: null
     });
     openHomePlaylistPanelWithAnimation();
-  };
+  }, [player.queue, currentCoverUrl, openHomePlaylistPanelWithAnimation]);
 
   const importPlaylistFromInput = async () => {
     const raw = importPlaylistInput.trim();
@@ -1290,10 +1414,6 @@ export function PlayerApp() {
     () => Object.values(player.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt),
     [player.importedPlaylists]
   );
-  const libraryTrackCount = useMemo(
-    () => countUniqueLibraryTracks(player.favorites, player.recent),
-    [player.favorites, player.recent]
-  );
   const discoverBlocks = useMemo(() => {
     const blockMap = new Map<string, DiscoverItem[]>();
     discoverData?.blocks.forEach((block) => {
@@ -1443,6 +1563,11 @@ export function PlayerApp() {
       closeDetailWithAnimation();
     }
   }, [closeDetailWithAnimation]);
+
+  const openQueuePanelFromDetail = () => {
+    setPendingQueueOpenAfterDetail(true);
+    closeDetail();
+  };
 
   useEffect(() => {
     const handlePopState = () => {
@@ -1643,6 +1768,9 @@ export function PlayerApp() {
       if (lyricUserLockTimerRef.current) {
         window.clearTimeout(lyricUserLockTimerRef.current);
       }
+      if (libraryContentTransitionTimerRef.current) {
+        window.clearTimeout(libraryContentTransitionTimerRef.current);
+      }
     };
   }, []);
 
@@ -1761,6 +1889,12 @@ export function PlayerApp() {
       document.body.style.overflow = originalOverflow;
     };
   }, [isDetailMounted, homePlaylistPanel]);
+
+  useEffect(() => {
+    if (!pendingQueueOpenAfterDetail || detailPhase !== "closed") return;
+    openQueuePanel();
+    setPendingQueueOpenAfterDetail(false);
+  }, [pendingQueueOpenAfterDetail, detailPhase, openQueuePanel]);
 
   useEffect(() => {
     setHomePlaylistPanel((previous) => {
@@ -1994,6 +2128,12 @@ export function PlayerApp() {
     </button>
   );
 
+  const librarySegmentedPillStyle = {
+    "--lib-seg-thumb-x": `${librarySegmentedThumb.x}px`,
+    "--lib-seg-thumb-w": `${librarySegmentedThumb.width}px`,
+    "--lib-seg-count": LIBRARY_VIEW_OPTIONS.length
+  } as CSSProperties;
+
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
@@ -2015,7 +2155,7 @@ export function PlayerApp() {
               <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
                 搜索
               </button>
-              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-overview")}>
+              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
                 你的音乐库
               </button>
             </nav>
@@ -2025,14 +2165,6 @@ export function PlayerApp() {
           <section className="spotify-collections">
             <h3>我的音乐</h3>
             <div className="sidebar-entry-list">
-              <button
-                className={`sidebar-entry ${activeTab === "library" && libraryView === "library-overview" ? "active" : ""}`.trim()}
-                onClick={() => goTab("library", "library-overview")}
-              >
-                <span>你的音乐库</span>
-                <small>{libraryTrackCount} 首</small>
-                <em>›</em>
-              </button>
               <button
                 className={`sidebar-entry ${activeTab === "library" && libraryView === "library-favorites" ? "active" : ""}`.trim()}
                 onClick={() => goTab("library", "library-favorites")}
@@ -2068,56 +2200,58 @@ export function PlayerApp() {
         </aside>
 
         <section className="spotify-main">
-          <section className="now-playing-merged glass-surface">
-            <div className="now-playing-merged-main">
-              <div className="now-playing-merged-cover">
-                <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
-                  <div
-                    className="vinyl-cover"
-                    role="img"
-                    aria-label={currentTrack?.name ?? "默认封套"}
-                    style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
-                  />
+          {!(isMobileUi && activeTab === "library") ? (
+            <section className="now-playing-merged glass-surface">
+              <div className="now-playing-merged-main">
+                <div className="now-playing-merged-cover">
+                  <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
+                    <div
+                      className="vinyl-cover"
+                      role="img"
+                      aria-label={currentTrack?.name ?? "默认封套"}
+                      style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
+                    />
+                  </div>
+                </div>
+                <div className="now-playing-merged-meta">
+                  <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
+                  <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先搜索并播放歌曲"}</p>
+                  <div className="now-state-row">
+                    <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
+                    <span className="status-pill">{modeMeta.label}</span>
+                  </div>
                 </div>
               </div>
-              <div className="now-playing-merged-meta">
-                <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
-                <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先搜索并播放歌曲"}</p>
-                <div className="now-state-row">
-                  <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
-                  <span className="status-pill">{modeMeta.label}</span>
+              <div className="now-playing-merged-actions">
+                <div className="spotify-player-controls compact">
+                  <IconButton
+                    ariaLabel={modeMeta.label}
+                    title={modeMeta.label}
+                    disabled={controlDisabled}
+                    onClick={() => player.nextMode()}
+                    className="ghost"
+                  >
+                    {modeMeta.icon}
+                  </IconButton>
+                  <IconButton
+                    ariaLabel={player.isPlaying ? "暂停" : "播放"}
+                    title={player.isPlaying ? "暂停" : "播放"}
+                    className="play-main"
+                    disabled={controlDisabled}
+                    onClick={() => player.togglePlay()}
+                  >
+                    {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
+                  </IconButton>
+                  <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
+                    <NextIcon />
+                  </IconButton>
                 </div>
+                <button className="now-playing-merged-detail-btn" onClick={openDetail}>
+                  展开详情
+                </button>
               </div>
-            </div>
-            <div className="now-playing-merged-actions">
-              <div className="spotify-player-controls compact">
-                <IconButton
-                  ariaLabel={modeMeta.label}
-                  title={modeMeta.label}
-                  disabled={controlDisabled}
-                  onClick={() => player.nextMode()}
-                  className="ghost"
-                >
-                  {modeMeta.icon}
-                </IconButton>
-                <IconButton
-                  ariaLabel={player.isPlaying ? "暂停" : "播放"}
-                  title={player.isPlaying ? "暂停" : "播放"}
-                  className="play-main"
-                  disabled={controlDisabled}
-                  onClick={() => player.togglePlay()}
-                >
-                  {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-                </IconButton>
-                <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-                  <NextIcon />
-                </IconButton>
-              </div>
-              <button className="now-playing-merged-detail-btn" onClick={openDetail}>
-                展开详情
-              </button>
-            </div>
-          </section>
+            </section>
+          ) : null}
 
           {activeTab === "home" ? (
             <>
@@ -2484,154 +2618,144 @@ export function PlayerApp() {
                   <h2>你的音乐库</h2>
                   <p>把收藏与最近播放整理到更清晰的二级页面中。</p>
                 </div>
-                <div className="library-segmented">
-                  <button className={libraryView === "library-overview" ? "active" : ""} onClick={() => setLibraryView("library-overview")}>
-                    概览
-                  </button>
-                  <button className={libraryView === "library-favorites" ? "active" : ""} onClick={() => setLibraryView("library-favorites")}>
-                    收藏
-                  </button>
-                  <button className={libraryView === "library-recent" ? "active" : ""} onClick={() => setLibraryView("library-recent")}>
-                    最近播放
-                  </button>
-                  <button className={libraryView === "library-playlists" ? "active" : ""} onClick={() => setLibraryView("library-playlists")}>
-                    我的歌单
-                  </button>
+                <div
+                  className={`library-segmented-pill ${librarySegmentedThumb.ready ? "ready" : ""}`.trim()}
+                  ref={librarySegmentedRef}
+                  style={librarySegmentedPillStyle}
+                  role="tablist"
+                  aria-label="音乐库分类切换"
+                >
+                  <span className="library-segmented-pill-thumb" aria-hidden="true" />
+                  {LIBRARY_VIEW_OPTIONS.map((option) => {
+                    const active = libraryView === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`library-segmented-pill-btn ${active ? "active" : ""}`.trim()}
+                        data-library-view={option.value}
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => setLibraryView(option.value)}
+                      >
+                        <span className="library-segmented-pill-label">{option.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </header>
 
-              {libraryView === "library-overview" ? (
-                <section className="library-overview-grid">
-                  <article className="library-overview-card">
-                    <p className="library-overview-label">收藏歌曲</p>
-                    <h3>{Object.keys(player.favorites).length} 首</h3>
-                    <p>把喜欢的歌曲集中管理，随时一键播放。</p>
-                    <button onClick={() => setLibraryView("library-favorites")}>查看收藏列表</button>
-                  </article>
-                  <article className="library-overview-card">
-                    <p className="library-overview-label">最近播放</p>
-                    <h3>{player.recent.length} 首</h3>
-                    <p>继续上次的播放进度，快速回到熟悉旋律。</p>
-                    <button onClick={() => setLibraryView("library-recent")}>查看最近播放</button>
-                  </article>
-                  <article className="library-overview-card">
-                    <p className="library-overview-label">我的歌单</p>
-                    <h3>{importedPlaylists.length} 个</h3>
-                    <p>支持导入网易云歌单链接，统一沉淀到你的音乐库。</p>
-                    <button onClick={() => setLibraryView("library-playlists")}>管理我的歌单</button>
-                  </article>
-                </section>
-              ) : null}
+              <div className={`library-content-switcher phase-${libraryContentTransitionPhase}`.trim()}>
+                {displayedLibraryView === "library-favorites" ? (
+                  <section className="library-list-block">
+                    <div className="library-list-head">
+                      <h3>收藏歌曲</h3>
+                      <span>{Object.keys(player.favorites).length} 首</span>
+                    </div>
+                    <div className="spotify-track-list library-track-list">
+                      {Object.values(player.favorites).map((track) => (
+                        <TrackRow
+                          key={`fav-${track.id}`}
+                          track={track}
+                          liked={Boolean(favoriteSet[track.id])}
+                          currentTrackId={currentTrackId}
+                          isPlaying={player.isPlaying}
+                          onPlay={(item) => {
+                            player.playTrackNow(item);
+                            player.setPlaying(true);
+                          }}
+                          onToggleFavorite={(item) => player.toggleFavorite(item)}
+                        />
+                      ))}
+                      {Object.keys(player.favorites).length === 0 ? <p className="spotify-empty">你还没有收藏歌曲。</p> : null}
+                    </div>
+                  </section>
+                ) : null}
 
-              {libraryView === "library-favorites" ? (
-                <section className="library-list-block">
-                  <div className="library-list-head">
-                    <h3>收藏歌曲</h3>
-                    <span>{Object.keys(player.favorites).length} 首</span>
-                  </div>
-                  <div className="spotify-track-list library-track-list">
-                    {Object.values(player.favorites).map((track) => (
-                      <TrackRow
-                        key={`fav-${track.id}`}
-                        track={track}
-                        liked={Boolean(favoriteSet[track.id])}
-                        currentTrackId={currentTrackId}
-                        isPlaying={player.isPlaying}
-                        onPlay={(item) => {
-                          player.playTrackNow(item);
-                          player.setPlaying(true);
+                {displayedLibraryView === "library-recent" ? (
+                  <section className="library-list-block">
+                    <div className="library-list-head">
+                      <h3>最近播放</h3>
+                      <span>{player.recent.length} 首</span>
+                    </div>
+                    <div className="spotify-track-list library-track-list">
+                      {player.recent.map((track) => (
+                        <TrackRow
+                          key={`recent-${track.id}`}
+                          track={track}
+                          liked={Boolean(favoriteSet[track.id])}
+                          currentTrackId={currentTrackId}
+                          isPlaying={player.isPlaying}
+                          onPlay={(item) => {
+                            player.playTrackNow(item);
+                            player.setPlaying(true);
+                          }}
+                          onToggleFavorite={(item) => player.toggleFavorite(item)}
+                        />
+                      ))}
+                      {player.recent.length === 0 ? <p className="spotify-empty">你还没有播放记录。</p> : null}
+                    </div>
+                  </section>
+                ) : null}
+
+                {displayedLibraryView === "library-playlists" ? (
+                  <section className="library-list-block">
+                    <div className="library-list-head">
+                      <h3>我的歌单</h3>
+                      <span>{importedPlaylists.length} 个</span>
+                    </div>
+                    <div className="library-import-row">
+                      <input
+                        ref={importPlaylistInputRef}
+                        value={importPlaylistInput}
+                        onChange={(event) => setImportPlaylistInput(event.target.value)}
+                        placeholder="粘贴网易云歌单链接、分享文案或歌单 ID"
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            void importPlaylistFromInput();
+                          }
                         }}
-                        onToggleFavorite={(item) => player.toggleFavorite(item)}
                       />
-                    ))}
-                    {Object.keys(player.favorites).length === 0 ? <p className="spotify-empty">你还没有收藏歌曲。</p> : null}
-                  </div>
-                </section>
-              ) : null}
-
-              {libraryView === "library-recent" ? (
-                <section className="library-list-block">
-                  <div className="library-list-head">
-                    <h3>最近播放</h3>
-                    <span>{player.recent.length} 首</span>
-                  </div>
-                  <div className="spotify-track-list library-track-list">
-                    {player.recent.map((track) => (
-                      <TrackRow
-                        key={`recent-${track.id}`}
-                        track={track}
-                        liked={Boolean(favoriteSet[track.id])}
-                        currentTrackId={currentTrackId}
-                        isPlaying={player.isPlaying}
-                        onPlay={(item) => {
-                          player.playTrackNow(item);
-                          player.setPlaying(true);
-                        }}
-                        onToggleFavorite={(item) => player.toggleFavorite(item)}
-                      />
-                    ))}
-                    {player.recent.length === 0 ? <p className="spotify-empty">你还没有播放记录。</p> : null}
-                  </div>
-                </section>
-              ) : null}
-
-              {libraryView === "library-playlists" ? (
-                <section className="library-list-block">
-                  <div className="library-list-head">
-                    <h3>我的歌单</h3>
-                    <span>{importedPlaylists.length} 个</span>
-                  </div>
-                  <div className="library-import-row">
-                    <input
-                      ref={importPlaylistInputRef}
-                      value={importPlaylistInput}
-                      onChange={(event) => setImportPlaylistInput(event.target.value)}
-                      placeholder="粘贴网易云歌单链接、分享文案或歌单 ID"
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          void importPlaylistFromInput();
-                        }
-                      }}
-                    />
-                    <button type="button" disabled={importPlaylistState.loading} onClick={() => void importPlaylistFromInput()}>
-                      {importPlaylistState.loading ? "导入中..." : "导入歌单"}
-                    </button>
-                  </div>
-                  {importPlaylistState.message ? <p className="library-import-message success">{importPlaylistState.message}</p> : null}
-                  {importPlaylistState.error ? <p className="library-import-message error">{importPlaylistState.error}</p> : null}
-                  <div className="library-imported-list">
-                    {importedPlaylists.map((playlist) => (
-                      <article className="library-imported-item" key={`imported-${playlist.id}`}>
-                        <div className="library-imported-cover" style={{ backgroundImage: `url(${playlist.coverUrl ?? DEFAULT_COVER_URL})` }} />
-                        <div className="library-imported-meta">
-                          <h4>{playlist.name}</h4>
-                          <p>{visibleSubtitle(playlist.description, "已导入歌单")}</p>
-                          <small>{playlist.tracks.length} 首 · 更新于 {new Date(playlist.updatedAt).toLocaleString()}</small>
-                        </div>
-                        <div className="library-imported-actions">
-                          <button type="button" onClick={() => openImportedPlaylistPanel(playlist)}>
-                            打开
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!playlist.tracks.length) return;
-                              player.setQueue(playlist.tracks, 0);
-                              player.setPlaying(true);
-                            }}
-                          >
-                            播放
-                          </button>
-                          <button type="button" className="danger" onClick={() => player.removeImportedPlaylist(playlist.id)}>
-                            删除
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                    {!importedPlaylists.length ? <p className="spotify-empty">还没有导入歌单，先粘贴一个网易云分享链接试试。</p> : null}
-                  </div>
-                </section>
-              ) : null}
+                      <button type="button" disabled={importPlaylistState.loading} onClick={() => void importPlaylistFromInput()}>
+                        {importPlaylistState.loading ? "导入中..." : "导入歌单"}
+                      </button>
+                    </div>
+                    {importPlaylistState.message ? <p className="library-import-message success">{importPlaylistState.message}</p> : null}
+                    {importPlaylistState.error ? <p className="library-import-message error">{importPlaylistState.error}</p> : null}
+                    <div className="library-imported-list">
+                      {importedPlaylists.map((playlist) => (
+                        <article className="library-imported-item" key={`imported-${playlist.id}`}>
+                          <div className="library-imported-cover" style={{ backgroundImage: `url(${playlist.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <div className="library-imported-meta">
+                            <h4>{playlist.name}</h4>
+                            <p>{visibleSubtitle(playlist.description, "已导入歌单")}</p>
+                            <small>{playlist.tracks.length} 首 · 更新于 {new Date(playlist.updatedAt).toLocaleString()}</small>
+                          </div>
+                          <div className="library-imported-actions">
+                            <button type="button" onClick={() => openImportedPlaylistPanel(playlist)}>
+                              打开
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!playlist.tracks.length) return;
+                                player.setQueue(playlist.tracks, 0);
+                                player.setPlaying(true);
+                              }}
+                            >
+                              播放
+                            </button>
+                            <button type="button" className="danger" onClick={() => player.removeImportedPlaylist(playlist.id)}>
+                              删除
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                      {!importedPlaylists.length ? <p className="spotify-empty">还没有导入歌单，先粘贴一个网易云分享链接试试。</p> : null}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
             </section>
           ) : null}
         </section>
@@ -3071,7 +3195,7 @@ export function PlayerApp() {
                 ) : null}
 
                 <div className="detail-dock-controls">
-                  <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
+                  <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
                     <QueueIcon />
                   </IconButton>
                   <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">

@@ -178,6 +178,40 @@ test("mobile library does not introduce page-level horizontal scrolling", async 
 
 });
 
+test("library segmented pill keeps thumb in bounds and fades content on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await expect(page.locator(".library-segmented-pill")).toBeVisible();
+  await expect(page.locator(".library-content-switcher")).toHaveClass(/phase-idle/);
+
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
+  await expect(page.locator(".library-content-switcher")).toHaveClass(/phase-(leaving|entering|idle)/);
+  await expect(page.getByPlaceholder("粘贴网易云歌单链接、分享文案或歌单 ID")).toBeVisible();
+  await expect(page.locator(".library-content-switcher")).toHaveClass(/phase-idle/);
+
+  const bounds = await page.locator(".library-segmented-pill").evaluate((root) => {
+    const thumb = root.querySelector(".library-segmented-pill-thumb") as HTMLElement | null;
+    if (!thumb) return null;
+    const rootRect = root.getBoundingClientRect();
+    const thumbRect = thumb.getBoundingClientRect();
+    return {
+      left: thumbRect.left - rootRect.left,
+      right: thumbRect.right - rootRect.left,
+      width: rootRect.width
+    };
+  });
+  expect(bounds).not.toBeNull();
+  if (bounds) {
+    expect(bounds.left).toBeGreaterThanOrEqual(-1);
+    expect(bounds.right).toBeLessThanOrEqual(bounds.width + 1);
+  }
+
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-favorites']").click();
+  await expect(page.locator(".library-content-switcher")).toHaveClass(/phase-idle/);
+  await expect(page.getByRole("heading", { name: "收藏歌曲" })).toBeVisible();
+});
+
 test("can import a playlist link into library and open it", async ({ page }) => {
   await page.route("**/api/music/playlist/123456789", async (route) => {
     await route.fulfill({
@@ -208,7 +242,7 @@ test("can import a playlist link into library and open it", async ({ page }) => 
 
   await page.goto("/");
   await page.getByRole("button", { name: "你的音乐库" }).first().click();
-  await page.getByRole("button", { name: "我的歌单" }).first().click();
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
   await expect(page.locator(".library-import-row input")).toBeVisible();
   await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=123456789");
   await page.getByRole("button", { name: "导入歌单" }).click();
@@ -342,7 +376,7 @@ test("playlist summary supports expand collapse and shows active playing row ind
 
   await page.goto("/");
   await page.getByRole("button", { name: "你的音乐库" }).first().click();
-  await page.getByRole("button", { name: "我的歌单" }).first().click();
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
   await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=555666777");
   await page.getByRole("button", { name: "导入歌单" }).click();
   await page.getByRole("button", { name: "打开" }).first().click();
@@ -373,4 +407,35 @@ test("playlist summary supports expand collapse and shows active playing row ind
   }
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
   await expect(page.locator(".detail-bottom-meta .marquee-text")).toContainClass("is-overflow");
+});
+
+test("mobile library tab hides merged now-playing module to free vertical space", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证库页空间策略。");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  await expect(page.locator(".now-playing-merged")).toBeVisible();
+  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await expect(page.locator(".now-playing-merged")).toHaveCount(0);
+  await page.getByRole("button", { name: "主页" }).first().click();
+  await expect(page.locator(".now-playing-merged")).toBeVisible();
+});
+
+test("detail queue button closes detail first then opens queue drawer", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证详情到队列顺序。");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+
+  const expandDetailButton = page.getByRole("button", { name: "展开详情" }).first();
+  await expect(expandDetailButton).toBeVisible();
+  await expandDetailButton.click();
+  await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
+
+  await page.locator(".detail-dock-controls").getByRole("button", { name: "打开播放队列" }).click();
+  await expect(page.getByRole("dialog", { name: "播放详情" })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "播放队列" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: "播放队列" })).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "播放详情" })).toBeHidden();
 });

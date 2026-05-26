@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractPlaylistId } from "@/src/lib/playlist-import";
+import { extractFirstHttpUrl, extractPlaylistId } from "@/src/lib/playlist-import";
 
 describe("extractPlaylistId", () => {
   it("extracts playlist id from common netease share inputs", () => {
@@ -13,5 +13,13 @@ describe("extractPlaylistId", () => {
     expect(extractPlaylistId("")).toBeNull();
     expect(extractPlaylistId("https://music.163.com/song?id=12345")).toBeNull();
     expect(extractPlaylistId("this is not a playlist link")).toBeNull();
+  });
+
+  it("extracts first http url from text", () => {
+    expect(extractFirstHttpUrl("短链：https://163cn.tv/abcXYZ")).toBe("https://163cn.tv/abcXYZ");
+    expect(extractFirstHttpUrl("打开链接 https://music.163.com/#/playlist?id=123456789。")).toBe(
+      "https://music.163.com/#/playlist?id=123456789"
+    );
+    expect(extractFirstHttpUrl("no url here")).toBeNull();
   });
 });

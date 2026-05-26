@@ -38,6 +38,21 @@ describe("player store state machine", () => {
     expect(usePlayerStore.getState().currentIndex).toBe(0);
   });
 
+  it("keeps loop-one for auto ended next, while manual skip follows queue order", () => {
+    const tracks = [mockTrack("1"), mockTrack("2"), mockTrack("3")];
+    usePlayerStore.getState().setQueue(tracks, 1);
+    usePlayerStore.getState().setPlaybackMode("loop-one");
+
+    usePlayerStore.getState().nextTrack();
+    expect(usePlayerStore.getState().currentIndex).toBe(1);
+
+    usePlayerStore.getState().nextTrackByUser();
+    expect(usePlayerStore.getState().currentIndex).toBe(2);
+
+    usePlayerStore.getState().previousTrackByUser();
+    expect(usePlayerStore.getState().currentIndex).toBe(1);
+  });
+
   it("supports shuffle mode", () => {
     const tracks = [mockTrack("1"), mockTrack("2"), mockTrack("3")];
     usePlayerStore.getState().setQueue(tracks, 0);

@@ -33,6 +33,8 @@ type PlayerActions = {
   nextMode: () => void;
   nextTrack: () => void;
   previousTrack: () => void;
+  nextTrackByUser: () => void;
+  previousTrackByUser: () => void;
   setCurrentTimeMs: (value: number) => void;
   setDurationMs: (value: number) => void;
   setVolume: (value: number) => void;
@@ -158,6 +160,53 @@ export const usePlayerStore = create<PlayerStore>()(
         set((state) => {
           if (!state.queue.length) return { currentIndex: -1, isPlaying: false };
           if (state.mode === "loop-one") return { currentTimeMs: 0, isPlaying: true };
+          if (state.mode === "shuffle") {
+            const history = [...state.shuffleHistoryTrackIds];
+            while (history.length) {
+              const previousTrackId = history.pop();
+              if (!previousTrackId) continue;
+              const previousIndex = state.queue.findIndex((item) => item.id === previousTrackId);
+              if (previousIndex >= 0 && previousIndex !== state.currentIndex) {
+                return {
+                  currentIndex: previousIndex,
+                  shuffleHistoryTrackIds: history,
+                  currentTimeMs: 0,
+                  isPlaying: true
+                };
+              }
+            }
+          }
+          const previousIndex = state.currentIndex - 1;
+          if (previousIndex < 0) return { currentIndex: state.queue.length - 1, currentTimeMs: 0, isPlaying: true };
+          return { currentIndex: previousIndex, currentTimeMs: 0, isPlaying: true };
+        }),
+      nextTrackByUser: () =>
+        set((state) => {
+          if (!state.queue.length) return { currentIndex: -1, isPlaying: false };
+          if (state.mode === "shuffle") {
+            if (state.queue.length === 1) return { currentTimeMs: 0, isPlaying: true };
+            const currentTrackId = state.queue[state.currentIndex]?.id;
+            let randomIndex = state.currentIndex;
+            while (randomIndex === state.currentIndex) {
+              randomIndex = Math.floor(Math.random() * state.queue.length);
+            }
+            const history = currentTrackId
+              ? [...state.shuffleHistoryTrackIds, currentTrackId].slice(-200)
+              : state.shuffleHistoryTrackIds;
+            return {
+              currentIndex: randomIndex,
+              shuffleHistoryTrackIds: history,
+              currentTimeMs: 0,
+              isPlaying: true
+            };
+          }
+          const nextIndex = state.currentIndex + 1;
+          if (nextIndex >= state.queue.length) return { currentIndex: 0, currentTimeMs: 0, isPlaying: true };
+          return { currentIndex: nextIndex, currentTimeMs: 0, isPlaying: true };
+        }),
+      previousTrackByUser: () =>
+        set((state) => {
+          if (!state.queue.length) return { currentIndex: -1, isPlaying: false };
           if (state.mode === "shuffle") {
             const history = [...state.shuffleHistoryTrackIds];
             while (history.length) {

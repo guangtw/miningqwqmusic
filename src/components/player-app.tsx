@@ -8,6 +8,7 @@ import {
   getArtistDetail,
   getDiscoverHome,
   getPlaylistDetail,
+  resolvePlaylistInput,
   getSatiScene,
   searchArtists,
   getSearchAssist,
@@ -24,6 +25,7 @@ import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransi
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import {
+  countItemsWithinRows,
   countUniqueLibraryTracks,
   heroActionLabel,
   nextVolumeAfterMuteToggle,
@@ -62,7 +64,7 @@ type DetailPalette = {
 type AppTheme = "dark" | "light";
 type HomePlaylistPanelState = {
   id: string;
-  sourceType: "playlist" | "toplist" | "imported";
+  sourceType: "playlist" | "toplist" | "imported" | "queue";
   title: string;
   subtitle?: string;
   coverUrl?: string;
@@ -82,6 +84,8 @@ type HistoryGuardState = {
 const DETAIL_ANIMATION_MS = 260;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
+const SEARCH_ASSIST_MAX_ITEMS = 20;
+const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
 const HOME_CHANNEL_MIN_CARD_WIDTH = 196;
 const HOME_PLAYLIST_MIN_CARD_WIDTH = 152;
@@ -194,6 +198,19 @@ function NextIcon() {
   );
 }
 
+function QueueIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="6" cy="6.5" r="1.6" fill="currentColor" />
+      <circle cx="6" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="6" cy="17.5" r="1.6" fill="currentColor" />
+      <rect x="9.2" y="5.5" width="10.8" height="2" rx="1" fill="currentColor" />
+      <rect x="9.2" y="11" width="10.8" height="2" rx="1" fill="currentColor" />
+      <rect x="9.2" y="16.5" width="10.8" height="2" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
 function HeartIcon({ filled }: { filled?: boolean }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -246,8 +263,38 @@ function RepeatOneIcon() {
 function ShuffleIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M17.8 4H21v3.2h-1.8V6h-1.4c-1.9 0-3.6.9-4.7 2.4l-1.7 2.4a7.7 7.7 0 0 1-6.2 3.2H3v-2h2.2c1.9 0 3.6-.9 4.7-2.4l1.7-2.4A7.7 7.7 0 0 1 17.8 4z" fill="currentColor" />
-      <path d="M19.2 16.9V15H21v5h-5v-1.8h2.4l-1.8-2.1 1.4-1.2 1.2 1.4zM3 6V4h5.2v1.8H5.8l3.1 3.5-1.3 1.3L3 6zm0 14v-2h2.2c1.9 0 3.6-.9 4.7-2.4l1.7-2.4A7.7 7.7 0 0 1 17.8 10H21v2h-3.2c-1.9 0-3.6.9-4.7 2.4l-1.7 2.4A7.7 7.7 0 0 1 5.2 20H3z" fill="currentColor" />
+      <path
+        d="M3.4 7.2c4.9 0 6.5 1.2 8.6 4.8 2.1 3.6 3.7 4.8 8.2 4.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M3.4 16.8c4.9 0 6.5-1.2 8.6-4.8 2.1-3.6 3.7-4.8 8.2-4.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18 4.8 21 7.2 18 9.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M18 14.4 21 16.8 18 19.2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -291,6 +338,67 @@ function CollapseIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M6 9.8 12 15l6-5.2-1.3-1.5-4.7 4-4.7-4L6 9.8z" fill="currentColor" />
     </svg>
+  );
+}
+
+function PlayingIndicator({ active }: { active: boolean }) {
+  return (
+    <span className={`playing-indicator ${active ? "is-playing" : "is-paused"}`.trim()} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+      <i />
+    </span>
+  );
+}
+
+function MarqueeText({
+  text,
+  className
+}: {
+  text: string;
+  className?: string;
+}) {
+  const trackRef = useRef<HTMLSpanElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      if (!trackRef.current || !measureRef.current) return;
+      setOverflowing(measureRef.current.scrollWidth - trackRef.current.clientWidth > 4);
+    };
+    check();
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && trackRef.current) {
+      observer = new ResizeObserver(check);
+      observer.observe(trackRef.current);
+    }
+    window.addEventListener("resize", check);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", check);
+    };
+  }, [text]);
+
+  return (
+    <span className={`marquee-text ${overflowing ? "is-overflow" : ""} ${className ?? ""}`.trim()}>
+      <span className="marquee-track" ref={trackRef}>
+        <span className="marquee-content" ref={measureRef}>
+          {text}
+        </span>
+        {overflowing ? (
+          <>
+            <span className="marquee-gap" aria-hidden="true">
+              {"\u00A0\u00A0\u00A0\u00A0"}
+            </span>
+            <span className="marquee-content clone" aria-hidden="true">
+              {text}
+            </span>
+          </>
+        ) : null}
+      </span>
+    </span>
   );
 }
 
@@ -342,16 +450,22 @@ const MODE_META: Record<PlaybackMode, { label: string; icon: ReactNode }> = {
 function TrackRow({
   track,
   liked,
+  currentTrackId,
+  isPlaying,
   onPlay,
   onToggleFavorite
 }: {
   track: Track;
   liked: boolean;
+  currentTrackId: string | null;
+  isPlaying: boolean;
   onPlay: (track: Track) => void;
   onToggleFavorite: (track: Track) => void;
 }) {
+  const isCurrent = currentTrackId === track.id;
+  const isPlayingCurrent = isCurrent && isPlaying;
   return (
-    <article className="spotify-track-row">
+    <article className={`spotify-track-row ${isCurrent ? "current" : ""}`.trim()}>
       <div className="spotify-track-main">
         <h3>{track.name}</h3>
         <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
@@ -359,6 +473,7 @@ function TrackRow({
       <p className="spotify-track-album">{track.album?.name ?? "未知专辑"}</p>
       <p className="spotify-track-duration">{formatMs(track.durationMs)}</p>
       <div className="spotify-track-actions">
+        {isCurrent ? <PlayingIndicator active={isPlayingCurrent} /> : null}
         <IconButton ariaLabel="播放歌曲" title="播放歌曲" onClick={() => onPlay(track)}>
           <PlayIcon />
         </IconButton>
@@ -432,7 +547,11 @@ export function PlayerApp() {
   const [homePlaylistPanel, setHomePlaylistPanel] = useState<HomePlaylistPanelState | null>(null);
   const [homePlaylistPhase, setHomePlaylistPhase] = useState<PlaylistPanelPhase>("closed");
   const [homePlaylistView, setHomePlaylistView] = useState<HomePlaylistView>("featured");
+  const [playlistSummaryExpanded, setPlaylistSummaryExpanded] = useState(false);
+  const [playlistSummaryOverflowing, setPlaylistSummaryOverflowing] = useState(false);
   const [searchAssist, setSearchAssist] = useState<{ hotKeywords: string[]; suggestions: string[]; defaultKeyword?: string } | null>(null);
+  const [visibleHotAssistCount, setVisibleHotAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
+  const [visibleSuggestAssistCount, setVisibleSuggestAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
   const [trackInsight, setTrackInsight] = useState<SongInsight | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [importPlaylistInput, setImportPlaylistInput] = useState("");
@@ -477,6 +596,9 @@ export function PlayerApp() {
   const homeChannelGridRef = useRef<HTMLElement>(null);
   const homePlaylistGridRef = useRef<HTMLDivElement>(null);
   const homeEventGridRef = useRef<HTMLDivElement>(null);
+  const hotAssistRowRef = useRef<HTMLDivElement>(null);
+  const suggestAssistRowRef = useRef<HTMLDivElement>(null);
+  const playlistSummaryRef = useRef<HTMLParagraphElement>(null);
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
   const lyricAutoScrollRafRef = useRef<number | null>(null);
   const lyricAutoScrollTimerRef = useRef<number | null>(null);
@@ -495,6 +617,19 @@ export function PlayerApp() {
   const currentTrackName = currentTrack?.name ?? null;
   const favoriteSet = player.favorites;
   const modeMeta = MODE_META[player.mode];
+  const hotAssistCandidates = useMemo(() => searchAssist?.hotKeywords.slice(0, SEARCH_ASSIST_MAX_ITEMS) ?? [], [searchAssist]);
+  const suggestAssistCandidates = useMemo(() => searchAssist?.suggestions.slice(0, SEARCH_ASSIST_MAX_ITEMS) ?? [], [searchAssist]);
+  const homePlaylistSubtitle = useMemo(() => {
+    if (!homePlaylistPanel) return "";
+    return visibleSubtitle(
+      homePlaylistPanel.subtitle,
+      homePlaylistPanel.sourceType === "queue"
+        ? "点击歌曲即可切换播放。"
+        : isMobileUi
+          ? "点击歌曲即可立即切换并播放。"
+          : "点击歌曲开始播放，或先加入播放队列。"
+    );
+  }, [homePlaylistPanel, isMobileUi]);
   const currentCoverUrl = useMemo(
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
@@ -605,6 +740,51 @@ export function PlayerApp() {
       window.clearTimeout(timer);
     };
   }, [keyword]);
+
+  useEffect(() => {
+    setVisibleHotAssistCount(hotAssistCandidates.length);
+  }, [hotAssistCandidates.length]);
+
+  useEffect(() => {
+    setVisibleSuggestAssistCount(suggestAssistCandidates.length);
+  }, [suggestAssistCandidates.length]);
+
+  useEffect(() => {
+    const resetVisibleCounts = () => {
+      setVisibleHotAssistCount(hotAssistCandidates.length);
+      setVisibleSuggestAssistCount(suggestAssistCandidates.length);
+    };
+    window.addEventListener("resize", resetVisibleCounts);
+    return () => {
+      window.removeEventListener("resize", resetVisibleCounts);
+    };
+  }, [hotAssistCandidates.length, suggestAssistCandidates.length]);
+
+  useEffect(() => {
+    const measureVisibleCount = (container: HTMLDivElement | null) => {
+      if (!container) return 0;
+      const buttons = Array.from(container.querySelectorAll("button"));
+      if (!buttons.length) return 0;
+      const offsetTops = buttons.map((button) => button.offsetTop);
+      return countItemsWithinRows(offsetTops, SEARCH_ASSIST_MAX_ROWS);
+    };
+
+    const rafId = window.requestAnimationFrame(() => {
+      const nextHotVisibleCount = measureVisibleCount(hotAssistRowRef.current);
+      if (nextHotVisibleCount > 0 && nextHotVisibleCount < visibleHotAssistCount) {
+        setVisibleHotAssistCount(nextHotVisibleCount);
+      }
+
+      const nextSuggestVisibleCount = measureVisibleCount(suggestAssistRowRef.current);
+      if (nextSuggestVisibleCount > 0 && nextSuggestVisibleCount < visibleSuggestAssistCount) {
+        setVisibleSuggestAssistCount(nextSuggestVisibleCount);
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [hotAssistCandidates.length, suggestAssistCandidates.length, visibleHotAssistCount, visibleSuggestAssistCount]);
 
   useEffect(() => {
     setDetailLyricMode("origin");
@@ -792,6 +972,24 @@ export function PlayerApp() {
     openHomePlaylistPanelWithAnimation();
   };
 
+  const openQueuePanel = () => {
+    const panelVisible = homePlaylistPhaseRef.current !== "closed";
+    if (!popstateHandlingRef.current && !panelVisible) {
+      pushHistoryGuardState("playlist", activeTabRef.current);
+    }
+    setHomePlaylistPanel({
+      id: "queue-panel",
+      sourceType: "queue",
+      title: "播放队列",
+      subtitle: player.queue.length ? `共 ${player.queue.length} 首` : "当前播放队列为空",
+      coverUrl: currentCoverUrl ?? DEFAULT_COVER_URL,
+      tracks: player.queue,
+      loading: false,
+      error: null
+    });
+    openHomePlaylistPanelWithAnimation();
+  };
+
   const importPlaylistFromInput = async () => {
     const raw = importPlaylistInput.trim();
     if (!raw) {
@@ -802,15 +1000,6 @@ export function PlayerApp() {
       }));
       return;
     }
-    const playlistId = extractPlaylistId(raw);
-    if (!playlistId) {
-      setImportPlaylistState((previous) => ({
-        ...previous,
-        message: null,
-        error: "未识别到歌单 ID，请检查链接格式。"
-      }));
-      return;
-    }
 
     setImportPlaylistState({
       loading: true,
@@ -818,6 +1007,14 @@ export function PlayerApp() {
       error: null
     });
     try {
+      let playlistId = extractPlaylistId(raw);
+      if (!playlistId) {
+        const resolved = await resolvePlaylistInput(raw);
+        playlistId = resolved.playlistId;
+      }
+      if (!playlistId) {
+        throw new Error("未识别到歌单 ID，请检查链接格式。");
+      }
       const data = await getPlaylistDetail(playlistId);
       const now = Date.now();
       const existing = player.importedPlaylists[playlistId];
@@ -1566,6 +1763,46 @@ export function PlayerApp() {
   }, [isDetailMounted, homePlaylistPanel]);
 
   useEffect(() => {
+    setHomePlaylistPanel((previous) => {
+      if (!previous || previous.sourceType !== "queue") return previous;
+      return {
+        ...previous,
+        subtitle: player.queue.length ? `共 ${player.queue.length} 首` : "当前播放队列为空",
+        coverUrl: currentCoverUrl ?? DEFAULT_COVER_URL,
+        tracks: player.queue
+      };
+    });
+  }, [player.queue, currentCoverUrl]);
+
+  useEffect(() => {
+    setPlaylistSummaryExpanded(false);
+    setPlaylistSummaryOverflowing(false);
+  }, [homePlaylistPanel?.id, homePlaylistPanel?.sourceType]);
+
+  useEffect(() => {
+    if (homePlaylistPhase !== "closed") return;
+    setPlaylistSummaryExpanded(false);
+  }, [homePlaylistPhase]);
+
+  useEffect(() => {
+    if (!homePlaylistPanel || homePlaylistPanel.sourceType === "queue") {
+      setPlaylistSummaryOverflowing(false);
+      return;
+    }
+    if (playlistSummaryExpanded || !playlistSummaryRef.current) return;
+    const element = playlistSummaryRef.current;
+    const measure = () => {
+      setPlaylistSummaryOverflowing(element.scrollHeight - element.clientHeight > 2);
+    };
+    const rafId = window.requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", measure);
+    };
+  }, [homePlaylistPanel, homePlaylistPhase, homePlaylistSubtitle, playlistSummaryExpanded]);
+
+  useEffect(() => {
     const applyNextPalette = (nextPalette: DetailPalette, nextForeground: DetailForegroundTone) => {
       const nextState = beginPaletteTransition(currentPaletteRef.current, nextPalette);
       currentPaletteRef.current = nextState.currentPalette;
@@ -1673,7 +1910,10 @@ export function PlayerApp() {
 
       <div className="spotify-player-center">
         <div className="spotify-player-controls">
-          <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrack()} className="ghost">
+          <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
+            <QueueIcon />
+          </IconButton>
+          <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
             <PreviousIcon />
           </IconButton>
           <IconButton
@@ -1685,7 +1925,7 @@ export function PlayerApp() {
           >
             {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
           </IconButton>
-          <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrack()} className="ghost">
+          <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
             <NextIcon />
           </IconButton>
           <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
@@ -1869,7 +2109,7 @@ export function PlayerApp() {
                 >
                   {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
                 </IconButton>
-                <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrack()} className="ghost">
+                <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
                   <NextIcon />
                 </IconButton>
               </div>
@@ -2080,8 +2320,8 @@ export function PlayerApp() {
                   {searchAssist.hotKeywords.length ? (
                     <div className="search-assist-row">
                       <span>热搜</span>
-                      <div>
-                        {searchAssist.hotKeywords.slice(0, 8).map((hot) => (
+                      <div ref={hotAssistRowRef}>
+                        {hotAssistCandidates.slice(0, visibleHotAssistCount).map((hot) => (
                           <button
                             key={`hot-${hot}`}
                             type="button"
@@ -2096,8 +2336,8 @@ export function PlayerApp() {
                   {searchAssist.suggestions.length ? (
                     <div className="search-assist-row">
                       <span>联想</span>
-                      <div>
-                        {searchAssist.suggestions.slice(0, 8).map((suggestion) => (
+                      <div ref={suggestAssistRowRef}>
+                        {suggestAssistCandidates.slice(0, visibleSuggestAssistCount).map((suggestion) => (
                           <button
                             key={`suggest-${suggestion}`}
                             type="button"
@@ -2137,6 +2377,8 @@ export function PlayerApp() {
                         key={track.id}
                         track={track}
                         liked={Boolean(favoriteSet[track.id])}
+                        currentTrackId={currentTrackId}
+                        isPlaying={player.isPlaying}
                         onPlay={(item) => {
                           player.playTrackNow(item);
                           player.setPlaying(true);
@@ -2197,6 +2439,8 @@ export function PlayerApp() {
                             key={`artist-track-${track.id}`}
                             track={track}
                             liked={Boolean(favoriteSet[track.id])}
+                            currentTrackId={currentTrackId}
+                            isPlaying={player.isPlaying}
                             onPlay={(item) => {
                               player.playTrackNow(item);
                               player.setPlaying(true);
@@ -2291,6 +2535,8 @@ export function PlayerApp() {
                         key={`fav-${track.id}`}
                         track={track}
                         liked={Boolean(favoriteSet[track.id])}
+                        currentTrackId={currentTrackId}
+                        isPlaying={player.isPlaying}
                         onPlay={(item) => {
                           player.playTrackNow(item);
                           player.setPlaying(true);
@@ -2315,6 +2561,8 @@ export function PlayerApp() {
                         key={`recent-${track.id}`}
                         track={track}
                         liked={Boolean(favoriteSet[track.id])}
+                        currentTrackId={currentTrackId}
+                        isPlaying={player.isPlaying}
                         onPlay={(item) => {
                           player.playTrackNow(item);
                           player.setPlaying(true);
@@ -2437,7 +2685,7 @@ export function PlayerApp() {
                 <h2>播放队列</h2>
                 <div className="spotify-queue-list">
                   {player.queue.map((track, index) => {
-                    const playing = index === player.currentIndex;
+                    const playing = track.id === currentTrackId;
                     return (
                       <button
                         key={`${track.id}-${index}`}
@@ -2447,7 +2695,10 @@ export function PlayerApp() {
                           player.setPlaying(true);
                         }}
                       >
-                        <span>{track.name}</span>
+                        <span className="spotify-queue-item-main">
+                          <span>{track.name}</span>
+                          {playing ? <PlayingIndicator active={player.isPlaying} /> : null}
+                        </span>
                         <span>{track.artists.map((item) => item.name).join(" / ")}</span>
                       </button>
                     );
@@ -2463,32 +2714,53 @@ export function PlayerApp() {
 
       {playlistPortalTarget && homePlaylistPanel && homePlaylistPhase !== "closed"
         ? createPortal(
-            <section className={`home-playlist-drawer-overlay phase-${homePlaylistPhase}`.trim()} role="dialog" aria-label="歌单详情">
+            <section
+              className={`home-playlist-drawer-overlay phase-${homePlaylistPhase}`.trim()}
+              role="dialog"
+              aria-label={homePlaylistPanel.sourceType === "queue" ? "播放队列" : "歌单详情"}
+            >
               <div className={`home-playlist-drawer-backdrop phase-${homePlaylistPhase}`.trim()} onClick={closeHomePlaylistPanel} />
               <aside className={`home-playlist-drawer phase-${homePlaylistPhase}`.trim()} onClick={(event) => event.stopPropagation()}>
                 <header className="home-playlist-drawer-head">
                   <div className="home-playlist-drawer-cover" style={{ backgroundImage: `url(${homePlaylistPanel.coverUrl ?? DEFAULT_COVER_URL})` }} />
                   <div className="home-playlist-drawer-meta">
                     <span>
-                      {homePlaylistPanel.sourceType === "toplist"
+                      {homePlaylistPanel.sourceType === "queue"
+                        ? "当前播放"
+                        : homePlaylistPanel.sourceType === "toplist"
                         ? "热播榜单"
                         : homePlaylistPanel.sourceType === "imported"
                           ? "我的歌单"
                           : "推荐歌单"}
                     </span>
                     <h3>{homePlaylistPanel.title}</h3>
-                    <p>{visibleSubtitle(homePlaylistPanel.subtitle, isMobileUi ? "点击歌曲即可立即切换并播放。" : "点击歌曲开始播放，或先加入播放队列。")}</p>
+                    <div className={`home-playlist-summary ${playlistSummaryExpanded ? "expanded" : ""}`.trim()}>
+                      <p ref={playlistSummaryRef}>{homePlaylistSubtitle}</p>
+                    </div>
+                    {playlistSummaryOverflowing ? (
+                      <button
+                        type="button"
+                        className="home-playlist-summary-toggle"
+                        onClick={() => setPlaylistSummaryExpanded((previous) => !previous)}
+                      >
+                        {playlistSummaryExpanded ? "收起" : "展开"}
+                      </button>
+                    ) : null}
                   </div>
                 </header>
 
                 <div className="home-playlist-drawer-actions">
-                  <button type="button" onClick={playHomePlaylistAll} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
-                    播放全部
-                  </button>
-                  {!isMobileUi ? (
-                    <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
-                      全部加入队列
-                    </button>
+                  {homePlaylistPanel.sourceType !== "queue" ? (
+                    <>
+                      <button type="button" onClick={playHomePlaylistAll} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
+                        播放全部
+                      </button>
+                      {!isMobileUi ? (
+                        <button type="button" onClick={addHomePlaylistToQueue} disabled={homePlaylistPanel.loading || !homePlaylistPanel.tracks.length}>
+                          全部加入队列
+                        </button>
+                      ) : null}
+                    </>
                   ) : null}
                   <button type="button" className="ghost" onClick={closeHomePlaylistPanel}>
                     关闭
@@ -2509,21 +2781,24 @@ export function PlayerApp() {
                   ) : null}
                   {homePlaylistPanel.error ? <p className="error error-inline">{homePlaylistPanel.error}</p> : null}
                   {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
-                    <p className="spotify-empty">该歌单暂时没有可播放歌曲。</p>
+                    <p className="spotify-empty">{homePlaylistPanel.sourceType === "queue" ? "当前播放队列为空。" : "该歌单暂时没有可播放歌曲。"}</p>
                   ) : null}
                   {!homePlaylistPanel.loading && !homePlaylistPanel.error
                     ? homePlaylistPanel.tracks.map((track, index) => (
-                        <article className="home-playlist-track-row" key={`panel-${track.id}-${index}`}>
+                        <article className={`home-playlist-track-row ${track.id === currentTrackId ? "active" : ""}`.trim()} key={`panel-${track.id}-${index}`}>
                           <div className="home-playlist-track-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
                           <button
                             type="button"
                             className="home-playlist-track-play"
                             onClick={() => playHomePlaylistTrackAt(index)}
                           >
-                            <span>{`${index + 1}. ${track.name}`}</span>
+                            <span className="home-playlist-track-line">
+                              <span>{`${index + 1}. ${track.name}`}</span>
+                              {track.id === currentTrackId ? <PlayingIndicator active={player.isPlaying} /> : null}
+                            </span>
                             <small>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</small>
                           </button>
-                          {!isMobileUi ? (
+                          {!isMobileUi && homePlaylistPanel.sourceType !== "queue" ? (
                             <button
                               type="button"
                               className="home-playlist-track-queue"
@@ -2605,7 +2880,9 @@ export function PlayerApp() {
                   </div>
                 </div>
                 <div className="detail-bottom-meta">
-                  <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
+                  <h3>
+                    <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
+                  </h3>
                   <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
                 </div>
                 {!isMobileUi ? (
@@ -2622,7 +2899,9 @@ export function PlayerApp() {
 
               <section className="detail-stage-right">
                 <div className="detail-title-block">
-                  <h2>{currentTrack?.name ?? "还没有播放任何歌曲"}</h2>
+                  <h2>
+                    <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
+                  </h2>
                   <p>
                     专辑：{currentTrack?.album?.name ?? "未知专辑"}　歌手：{currentTrack?.artists.map((item) => item.name).join(" / ") || "未知歌手"}
                   </p>
@@ -2784,16 +3063,18 @@ export function PlayerApp() {
               <div className="detail-dock-row">
                 {!isMobileUi ? (
                   <div className="detail-dock-song">
-                    <b>{currentTrack?.name ?? "未播放"}</b>
+                    <b>
+                      <MarqueeText text={currentTrack?.name ?? "未播放"} />
+                    </b>
                     <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
                   </div>
                 ) : null}
 
                 <div className="detail-dock-controls">
-                  <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
-                    {modeMeta.icon}
+                  <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
+                    <QueueIcon />
                   </IconButton>
-                  <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrack()} className="ghost">
+                  <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
                     <PreviousIcon />
                   </IconButton>
                   <IconButton
@@ -2805,8 +3086,11 @@ export function PlayerApp() {
                   >
                     {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
                   </IconButton>
-                  <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrack()} className="ghost">
+                  <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
                     <NextIcon />
+                  </IconButton>
+                  <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
+                    {modeMeta.icon}
                   </IconButton>
                 </div>
 

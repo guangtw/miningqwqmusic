@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  countItemsWithinRows,
   countUniqueLibraryTracks,
   heroActionLabel,
   nextVolumeAfterMuteToggle,
@@ -61,5 +62,11 @@ describe("player ui helpers", () => {
         target
       })
     ).toBe(true);
+  });
+
+  it("counts item size within two rows by offset tops", () => {
+    expect(countItemsWithinRows([0, 0, 0, 28, 28, 56, 56], 2)).toBe(5);
+    expect(countItemsWithinRows([0, 0, 20], 2)).toBe(3);
+    expect(countItemsWithinRows([], 2)).toBe(0);
   });
 });

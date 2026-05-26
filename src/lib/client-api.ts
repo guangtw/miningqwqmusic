@@ -9,6 +9,7 @@ import type {
   DownloadSource,
   PagedResult,
   Playlist,
+  PlaylistResolveResult,
   PlaySource,
   SceneData,
   SearchAssist,
@@ -76,6 +77,13 @@ export async function getPlaylistDetail(playlistId: string): Promise<Playlist> {
     method: "GET"
   });
   return readResult<Playlist>(response);
+}
+
+export async function resolvePlaylistInput(input: string): Promise<PlaylistResolveResult> {
+  const response = await fetch(`/api/music/playlist/resolve?input=${encodeURIComponent(input)}`, {
+    method: "GET"
+  });
+  return readResult<PlaylistResolveResult>(response);
 }
 
 export async function getDiscoverHome(): Promise<DiscoverData> {

@@ -27,6 +27,11 @@ export type Playlist = {
   tracks: Track[];
 };
 
+export type PlaylistResolveResult = {
+  playlistId: string;
+  resolvedUrl?: string;
+};
+
 export type ImportedPlaylist = {
   id: string;
   name: string;

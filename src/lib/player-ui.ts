@@ -63,3 +63,19 @@ export function shouldTogglePlaybackBySpace(args: SpaceHotkeyArgs): boolean {
   if (isEditableKeyboardTarget(args.target)) return false;
   return true;
 }
+
+export function countItemsWithinRows(offsetTops: number[], maxRows: number): number {
+  if (maxRows <= 0 || offsetTops.length === 0) return 0;
+  const rowTops: number[] = [];
+  for (let index = 0; index < offsetTops.length; index += 1) {
+    const top = offsetTops[index];
+    const matchedRow = rowTops.find((rowTop) => Math.abs(rowTop - top) <= 1);
+    if (typeof matchedRow !== "number") {
+      rowTops.push(top);
+      if (rowTops.length > maxRows) {
+        return index;
+      }
+    }
+  }
+  return offsetTops.length;
+}

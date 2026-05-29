@@ -171,7 +171,8 @@ curl "http://127.0.0.1:3001/api/music/track/347230/play-url"
 
 - 上线手册：`docs/echo-subdomain-deploy.md`
 - Nginx 参考配置：`ops/nginx/echo.miningqwq.cn.conf`
-- 验收脚本（服务器执行）：`ops/scripts/verify-echo-subdomain.sh`
+- 验收脚本（Linux）：`ops/scripts/verify-echo-subdomain.sh`
+- 验收脚本（PowerShell）：`ops/scripts/verify-echo-subdomain.ps1`
 
 ## 测试
 

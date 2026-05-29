@@ -121,4 +121,10 @@ curl -I https://miningqwq.cn
 bash ops/scripts/verify-echo-subdomain.sh
 ```
 
+Windows PowerShell 可直接运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\scripts\verify-echo-subdomain.ps1
+```
+
 脚本会按 DNS、HTTP/HTTPS、BFF 接口与主域名隔离进行检查，并给出通过/失败提示。

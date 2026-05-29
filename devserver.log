@@ -1,0 +1,140 @@
+
+> miningqwqmusic-player@0.1.0 dev
+> next dev --port 3200
+
+   ▲ Next.js 15.5.18
+   - Local:        http://localhost:3200
+   - Network:      http://198.18.0.1:3200
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 12.5s
+ ✓ Compiled / in 484ms (568 modules)
+ GET / 200 in 987ms
+ GET / 200 in 991ms
+ ○ Compiling /api/account/[...path] ...
+ ✓ Compiled /api/account/[...path] in 572ms (604 modules)
+ GET /api/music/discover/home 200 in 890ms
+ GET /api/music/scene/sport?bpm=130 200 in 889ms
+ GET /api/music/scene/sati 200 in 889ms
+ POST /api/account/auth/refresh 200 in 885ms
+ POST /api/account/auth/refresh 502 in 1313ms
+ POST /api/account/auth/refresh 502 in 63ms
+ GET /api/music/scene/sport?bpm=130 200 in 1400ms
+ GET /api/music/scene/sati 200 in 1694ms
+ GET /api/music/discover/home 200 in 1696ms
+ GET / 200 in 150ms
+ POST /api/account/auth/refresh 502 in 81ms
+ POST /api/account/auth/refresh 502 in 16ms
+ GET /api/music/scene/sport?bpm=130 200 in 136ms
+ GET /api/music/discover/home 200 in 139ms
+ GET /api/music/scene/sati 200 in 206ms
+ GET / 200 in 41ms
+ POST /api/account/auth/refresh 502 in 76ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/scene/sport?bpm=130 200 in 185ms
+ GET /api/music/scene/sati 200 in 324ms
+ GET /api/music/discover/home 200 in 348ms
+ ✓ Compiled /_not-found in 292ms (609 modules)
+ GET / 404 in 478ms
+ GET / 200 in 66ms
+ POST /api/account/auth/refresh 502 in 96ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/scene/sport?bpm=130 200 in 233ms
+ GET /api/music/scene/sati 200 in 327ms
+ GET /api/music/discover/home 200 in 381ms
+ GET / 200 in 42ms
+ POST /api/account/auth/refresh 502 in 77ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/scene/sport?bpm=130 200 in 185ms
+ GET /api/music/scene/sati 200 in 283ms
+ GET /api/music/discover/home 200 in 364ms
+ GET / 200 in 37ms
+ POST /api/account/auth/refresh 502 in 66ms
+ POST /api/account/auth/refresh 502 in 9ms
+ GET /api/music/scene/sport?bpm=130 200 in 226ms
+ GET /api/music/scene/sati 200 in 258ms
+ GET /api/music/discover/home 200 in 270ms
+ GET / 200 in 42ms
+ POST /api/account/auth/refresh 502 in 68ms
+ POST /api/account/auth/refresh 502 in 9ms
+ GET /api/music/scene/sport?bpm=130 200 in 437ms
+ GET /api/music/discover/home 200 in 813ms
+ GET /api/music/scene/sati 200 in 824ms
+ GET / 200 in 51ms
+ POST /api/account/auth/refresh 502 in 80ms
+ POST /api/account/auth/refresh 502 in 17ms
+ GET /api/music/scene/sport?bpm=130 200 in 227ms
+ GET /api/music/scene/sati 200 in 324ms
+ GET /api/music/discover/home 200 in 377ms
+ ✓ Compiled in 655ms (569 modules)
+ ✓ Compiled in 420ms (569 modules)
+ ✓ Compiled in 354ms (569 modules)
+ ✓ Compiled in 365ms (569 modules)
+ ✓ Compiled in 403ms (569 modules)
+ ✓ Compiled in 418ms (569 modules)
+ ✓ Compiled in 363ms (569 modules)
+ ✓ Compiled in 376ms (569 modules)
+ ✓ Compiled in 354ms (569 modules)
+ ✓ Compiled in 384ms (569 modules)
+ ✓ Compiled in 8.6s (583 modules)
+ ✓ Compiled in 167ms (583 modules)
+ GET / 200 in 174ms
+ ○ Compiling /api/account/[...path] ...
+ ✓ Compiled /api/account/[...path] in 539ms (362 modules)
+ ✓ Compiled in 1ms (368 modules)
+ ✓ Compiled in 0ms (368 modules)
+ ✓ Compiled in 0ms (368 modules)
+ POST /api/account/auth/refresh 502 in 960ms
+ GET / 200 in 406ms
+ POST /api/account/auth/refresh 502 in 23ms
+ GET / 200 in 28ms
+ GET /api/music/scene/sport?bpm=130 200 in 1334ms
+ GET /api/music/scene/sati 200 in 1713ms
+ GET /api/music/discover/home 200 in 1823ms
+ GET / 200 in 91ms
+ POST /api/account/auth/refresh 502 in 55ms
+ POST /api/account/auth/refresh 502 in 9ms
+ GET /api/music/scene/sport?bpm=130 200 in 122ms
+ GET /api/music/discover/home 200 in 198ms
+ GET /api/music/scene/sati 200 in 199ms
+ GET / 200 in 46ms
+ POST /api/account/auth/refresh 502 in 84ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/scene/sport?bpm=130 200 in 242ms
+ GET /api/music/scene/sati 200 in 371ms
+ GET /api/music/discover/home 200 in 374ms
+ GET / 200 in 46ms
+ POST /api/account/auth/refresh 502 in 71ms
+ POST /api/account/auth/refresh 502 in 8ms
+ GET /api/music/scene/sport?bpm=130 200 in 226ms
+ GET /api/music/scene/sati 200 in 277ms
+ GET /api/music/discover/home 200 in 356ms
+ ✓ Compiled in 266ms (583 modules)
+ GET / 200 in 244ms
+ ✓ Compiled /api/music/scene/sati in 113ms (362 modules)
+ ✓ Compiled (368 modules)
+ POST /api/account/auth/refresh 502 in 406ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/discover/home 200 in 1308ms
+ GET /api/music/scene/sati 200 in 1308ms
+ GET /api/music/scene/sport?bpm=130 200 in 1308ms
+ ✓ Compiled in 500ms (604 modules)
+ ✓ Compiled in 371ms (569 modules)
+ ✓ Compiled in 433ms (569 modules)
+ ✓ Compiled in 342ms (569 modules)
+ ✓ Compiled in 266ms (583 modules)
+ GET / 200 in 267ms
+ ✓ Compiled /api/account/[...path] in 155ms (362 modules)
+ ✓ Compiled (368 modules)
+ POST /api/account/auth/refresh 502 in 426ms
+ POST /api/account/auth/refresh 502 in 16ms
+ GET /api/music/scene/sport?bpm=130 200 in 852ms
+ GET /api/music/discover/home 200 in 996ms
+ GET /api/music/scene/sati 200 in 1632ms
+ GET / 200 in 144ms
+ POST /api/account/auth/refresh 502 in 64ms
+ POST /api/account/auth/refresh 502 in 15ms
+ GET /api/music/scene/sport?bpm=130 200 in 119ms
+ GET /api/music/scene/sati 200 in 210ms
+ GET /api/music/discover/home 200 in 273ms

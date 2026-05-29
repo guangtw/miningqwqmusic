@@ -4,15 +4,15 @@ vi.mock("@/src/lib/music/service", () => ({
   getDiscoverData: vi.fn(async () => ({
     blocks: [],
     searchAssist: {
-      defaultKeyword: "晴天",
-      hotKeywords: ["晴天", "夜曲"],
-      suggestions: ["周杰伦", "晴天"]
+      defaultKeyword: "林俊杰",
+      hotKeywords: ["修炼爱情", "江南"],
+      suggestions: ["林俊杰", "修炼爱情"]
     }
   })),
   getSearchAssist: vi.fn(async (keyword: string) => ({
-    defaultKeyword: "晴天",
-    hotKeywords: ["晴天", "夜曲"],
-    suggestions: keyword ? [keyword, "晴天"] : ["周杰伦", "晴天"]
+    defaultKeyword: "林俊杰",
+    hotKeywords: ["修炼爱情", "江南"],
+    suggestions: keyword ? [keyword, "修炼爱情"] : ["林俊杰", "修炼爱情"]
   }))
 }));
 
@@ -25,12 +25,12 @@ describe("discover routes", () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload.code).toBe(0);
-    expect(payload.data.searchAssist.defaultKeyword).toBe("晴天");
+    expect(payload.data.searchAssist.defaultKeyword).toBe("林俊杰");
   });
 
   it("returns search assist payload", async () => {
     const response = await getDiscoverAssist(
-      new Request("http://localhost:3000/api/music/discover/search-assist?q=周杰伦")
+      new Request("http://localhost:3000/api/music/discover/search-assist?q=林俊杰")
     );
     expect(response.status).toBe(200);
     const payload = await response.json();
@@ -38,4 +38,3 @@ describe("discover routes", () => {
     expect(Array.isArray(payload.data.suggestions)).toBe(true);
   });
 });
-

@@ -7,6 +7,7 @@
 - 搜索歌曲、播放控制、播放队列（立即播放/下一首/队尾）
 - 歌词时间轴同步与滚动高亮
 - 收藏与最近播放（本地持久化）
+- 可选账号登录（不强制），登录后自动启用云端音乐库同步
 - 播放模式：顺序 / 单曲循环 / 随机
 - 播放链接短时效续签（播放器中自动刷新播放 URL）
 - 基础 PWA：可安装、离线壳页面、静态资源缓存
@@ -34,6 +35,7 @@
 
 ```bash
 MUSIC_SOURCE_BASE_URL=https://your-private-music-api.example.com
+ACCOUNT_SERVICE_BASE_URL=http://127.0.0.1:3002
 MUSIC_SOURCE_API_KEY=
 MUSIC_SOURCE_TIMEOUT_MS=6000
 MUSIC_SOURCE_RETRY_TIMES=2
@@ -59,6 +61,7 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
 - `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `kuwo,kugou,migu`）
 - `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
+- `ACCOUNT_SERVICE_BASE_URL`：可选，独立登录服务地址。配置后站内 `/api/account/*` 会代理到该服务，前端显示“登录同步”入口；未配置则保持纯游客模式。
 
 ## 接口约定（站内 BFF）
 
@@ -67,6 +70,7 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - `GET /api/music/track/:id/play-url`
 - `GET /api/music/track/:id/lyric`
 - `GET /api/music/playlist/:id`
+- `ALL /api/account/*`（可选代理，转发到独立登录服务）
 
 统一返回：
 
@@ -160,6 +164,14 @@ curl "http://127.0.0.1:3001/api/music/track/347230/play-url"
 - 前端 502：先看 Next 进程是否在 `3001` 存活，再看宝塔反代目标是否正确
 - BFF 返回错误码 `2004/2005`：上游超时或网络失败，优先检查 `127.0.0.1:3000` 是否可达
 - 能搜到但无法播放：检查 `/song/url/v1` 返回是否有 `url`，以及 `level` 是否可播（改 `MUSIC_SOURCE_PLAY_LEVEL`）
+
+## 备案完成后子域上线（`echo.miningqwq.cn`）
+
+适用场景：域名已备案，主域名不承载当前前端，仅用子域名访问本站前端。
+
+- 上线手册：`docs/echo-subdomain-deploy.md`
+- Nginx 参考配置：`ops/nginx/echo.miningqwq.cn.conf`
+- 验收脚本（服务器执行）：`ops/scripts/verify-echo-subdomain.sh`
 
 ## 测试
 

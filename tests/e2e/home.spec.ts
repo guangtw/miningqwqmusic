@@ -9,6 +9,44 @@ test("home page renders player shell", async ({ page }) => {
   await expect(page.locator(".spotify-player-controls .play-main").first()).toBeVisible();
 });
 
+test("account entry stays hidden when account proxy is not configured", async ({ page }) => {
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5401,
+        message: "Account service is not configured",
+        traceId: "e2e-no-account",
+        retryable: false
+      })
+    });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+});
+
+test("account entry is available when account proxy responds and can open dialog", async ({ page }) => {
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5203,
+        message: "Refresh token invalid or expired",
+        traceId: "e2e-account-on",
+        retryable: false
+      })
+    });
+  });
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto("/");
+  const loginButton = page.getByRole("button", { name: "登录同步" }).first();
+  await expect(loginButton).toBeVisible();
+  await loginButton.click();
+  await expect(page.getByRole("dialog", { name: "账号登录" })).toBeVisible();
+});
+
 test("escape closes detail overlay and returns search tab to home", async ({ page }) => {
   await page.goto("/");
   const playerBar = page.locator(".spotify-player-bar");
@@ -122,11 +160,17 @@ test("playlist drawer keeps a small top gap", async ({ page }) => {
 test("mobile detail layout hides lyric mode chips and tab switch remains clickable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  const playerBar = page.locator(".spotify-player-bar");
-  const playerBarBox = await playerBar.boundingBox();
-  expect(playerBarBox).not.toBeNull();
-  if (playerBarBox) {
-    await page.mouse.click(playerBarBox.x + 4, playerBarBox.y + 4);
+  const expandDetailButton = page.getByRole("button", { name: "展开详情" }).first();
+  if (await expandDetailButton.count()) {
+    await expandDetailButton.click();
+  } else {
+    const playerBar = page.locator(".spotify-player-bar");
+    await expect(playerBar).toBeVisible();
+    const playerBarBox = await playerBar.boundingBox();
+    expect(playerBarBox).not.toBeNull();
+    if (playerBarBox) {
+      await page.mouse.click(playerBarBox.x + 4, playerBarBox.y + 4);
+    }
   }
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
   await expect(page.getByRole("button", { name: "原文" })).toHaveCount(0);
@@ -139,6 +183,13 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   await page.getByRole("button", { name: "歌词" }).click();
   const lyricScroll = page.locator(".detail-lyric-scroll");
   await expect(lyricScroll).toBeVisible();
+  const detailScreen = page.locator(".player-detail-screen");
+  const detailTransition = await detailScreen.evaluate((node) => ({
+    timing: getComputedStyle(node).transitionTimingFunction,
+    duration: getComputedStyle(node).transitionDuration
+  }));
+  expect(detailTransition.timing).toContain("cubic-bezier(0.22, 1, 0.36, 1)");
+  expect(detailTransition.duration).toContain("0.34s");
   const topbar = page.locator(".detail-topbar");
   const topbarBox = await topbar.boundingBox();
   const lyricBox = await lyricScroll.boundingBox();
@@ -159,6 +210,38 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
     scrollWidth: node.scrollWidth
   }));
   expect(lyricMetrics.scrollWidth).toBeLessThanOrEqual(lyricMetrics.clientWidth + 1);
+
+  const mobileLyricWindow = await lyricScroll.evaluate((node) => {
+    const firstLine = node.querySelector(".detail-lyric-line") as HTMLElement | null;
+    if (!firstLine) return null;
+    const style = getComputedStyle(firstLine);
+    const rowHeight = firstLine.getBoundingClientRect().height;
+    return {
+      rowHeight,
+      visibleRows: node.clientHeight / rowHeight,
+      fontSize: Number.parseFloat(style.fontSize)
+    };
+  });
+  if (mobileLyricWindow) {
+    expect(mobileLyricWindow.visibleRows).toBeGreaterThan(3.4);
+    expect(mobileLyricWindow.visibleRows).toBeLessThan(4.6);
+    expect(mobileLyricWindow.fontSize).toBeGreaterThanOrEqual(16);
+  }
+
+  const lyricFocusOffset = await lyricScroll.evaluate((node) => {
+    const active = node.querySelector(".detail-lyric-line.active") as HTMLElement | null;
+    if (!active) return null;
+    const hostRect = node.getBoundingClientRect();
+    const activeRect = active.getBoundingClientRect();
+    return {
+      offset:
+        activeRect.top + activeRect.height / 2 - (hostRect.top + hostRect.height / 2),
+      hostHeight: hostRect.height
+    };
+  });
+  if (lyricFocusOffset) {
+    expect(Math.abs(lyricFocusOffset.offset)).toBeLessThanOrEqual(lyricFocusOffset.hostHeight * 0.3);
+  }
 
   await page.getByRole("button", { name: "收起播放器" }).click();
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeHidden();
@@ -257,6 +340,93 @@ test("queue button opens queue drawer and can close", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "播放队列" })).toBeVisible();
   await page.getByRole("button", { name: "关闭" }).first().click();
   await expect(page.getByRole("dialog", { name: "播放队列" })).toBeHidden();
+});
+
+test("locate playing button works for queue and is disabled when playlist has no current track", async ({ page }) => {
+  await page.route("**/api/music/playlist/111111", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 0,
+        message: "ok",
+        traceId: "e2e-locate-seed",
+        data: {
+          id: "111111",
+          name: "定位功能种子歌单",
+          description: "用于准备当前播放歌曲",
+          coverUrl: "https://picsum.photos/seed/e2e-seed/300/300",
+          tracks: [
+            {
+              id: "queue-seed-track-1",
+              name: "队列定位测试歌曲",
+              artists: [{ id: "artist-seed-1", name: "E2E Seed Artist" }],
+              durationMs: 182000,
+              coverUrl: "https://picsum.photos/seed/e2e-seed-track/300/300"
+            }
+          ]
+        }
+      })
+    });
+  });
+
+  await page.route("**/api/music/playlist/909090", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 0,
+        message: "ok",
+        traceId: "e2e-locate-panel",
+        data: {
+          id: "909090",
+          name: "定位禁用验证歌单",
+          description: "用于验证定位当前播放歌曲按钮",
+          coverUrl: "https://picsum.photos/seed/e2e-locate/300/300",
+          tracks: [
+            {
+              id: "locate-only-1",
+              name: "不在当前播放中的歌曲",
+              artists: [{ id: "artist-locate-1", name: "E2E Locate Artist" }],
+              durationMs: 182000,
+              coverUrl: "https://picsum.photos/seed/e2e-locate-track/300/300"
+            }
+          ]
+        }
+      })
+    });
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
+  await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=111111");
+  await page.getByRole("button", { name: "导入歌单" }).click();
+  const seedPlaylistItem = page.locator(".library-imported-item", { hasText: "定位功能种子歌单" }).first();
+  await expect(seedPlaylistItem).toBeVisible();
+  await seedPlaylistItem.getByRole("button", { name: "播放" }).click();
+
+  await page.getByRole("button", { name: "打开播放队列" }).first().click();
+  await expect(page.getByRole("dialog", { name: "播放队列" })).toBeVisible();
+  const locateButton = page.getByRole("button", { name: "定位正在播放" }).first();
+  await expect(locateButton).toBeVisible();
+  await expect(locateButton).toBeEnabled();
+  await locateButton.click();
+  const locatedCount = await page.locator(".home-playlist-track-row.located").count();
+  expect(locatedCount).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "关闭" }).first().click();
+  await expect(page.getByRole("dialog", { name: "播放队列" })).toBeHidden();
+
+  await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=909090");
+  await page.getByRole("button", { name: "导入歌单" }).click();
+  const mismatchPlaylistItem = page.locator(".library-imported-item", { hasText: "定位禁用验证歌单" }).first();
+  await expect(mismatchPlaylistItem).toBeVisible();
+  await mismatchPlaylistItem.getByRole("button", { name: "打开" }).click();
+  await expect(page.getByRole("dialog", { name: "歌单详情" })).toBeVisible();
+  const locateButtonInPlaylist = page.getByRole("button", { name: "定位正在播放" }).first();
+  await expect(locateButtonInPlaylist).toBeVisible();
+  await expect(locateButtonInPlaylist).toBeDisabled();
+  await expect(locateButtonInPlaylist).toHaveAttribute("title", "当前播放歌曲不在此列表中");
 });
 
 test("player controls stay consistent and centered in dock/detail", async ({ page }) => {

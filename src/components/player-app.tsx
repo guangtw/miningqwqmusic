@@ -4,6 +4,20 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
+  addFavoriteTrack,
+  addRecentTrack,
+  detectAccountServiceEnabled,
+  getLibrarySnapshot,
+  loadCurrentAccountUser,
+  loginAccount,
+  logoutAccount,
+  registerAccount,
+  removeFavoriteTrack,
+  removeImportedPlaylistCloud,
+  tryRefreshAccessToken,
+  upsertImportedPlaylistCloud
+} from "@/src/lib/account-client";
+import {
   getAlbumDetail,
   getArtistDetail,
   getDiscoverHome,
@@ -31,8 +45,10 @@ import {
   shouldTogglePlaybackBySpace
 } from "@/src/lib/player-ui";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
+import { useAuthStore } from "@/src/store/auth-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
+import type { AuthStatus, SyncState } from "@/src/types/account";
 import type {
   ArtistDetail,
   ArtistSearchItem,
@@ -80,12 +96,15 @@ type HistoryGuardState = {
     at: number;
   };
 };
+type AuthFormMode = "login" | "register";
 
-const DETAIL_ANIMATION_MS = 260;
+const DETAIL_ANIMATION_MS = 340;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
+const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
 const LIBRARY_CONTENT_LEAVE_MS = 140;
 const LIBRARY_CONTENT_ENTER_MS = 220;
+const ACCOUNT_SYNC_DEBOUNCE_MS = 180;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
@@ -152,6 +171,20 @@ function visibleSubtitle(text: string | undefined, fallback: string): string {
     return fallback;
   }
   return trimmed;
+}
+
+function syncStateLabel(state: SyncState): string {
+  if (state === "syncing") return "同步中";
+  if (state === "failed") return "同步失败";
+  if (state === "success") return "已同步";
+  return "本地模式";
+}
+
+function authStatusLabel(status: AuthStatus): string {
+  if (status === "authenticated") return "已登录";
+  if (status === "authenticating") return "连接中";
+  if (status === "error") return "连接异常";
+  return "游客模式";
 }
 
 function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
@@ -528,6 +561,15 @@ function ArtistSearchRow({
 export function PlayerApp() {
   const player = usePlayerStore();
   const controller = usePlayerController();
+  const authStatus = useAuthStore((state) => state.status);
+  const authUser = useAuthStore((state) => state.user);
+  const authSyncState = useAuthStore((state) => state.lastSyncState);
+  const authErrorMessage = useAuthStore((state) => state.errorMessage);
+  const setAuthAuthenticating = useAuthStore((state) => state.setAuthenticating);
+  const setAuthAuthenticated = useAuthStore((state) => state.setAuthenticated);
+  const setAuthGuest = useAuthStore((state) => state.setGuest);
+  const setAuthError = useAuthStore((state) => state.setError);
+  const setAuthSyncState = useAuthStore((state) => state.setSyncState);
 
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
@@ -588,6 +630,19 @@ export function PlayerApp() {
   const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
   const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
   const [isMobileUi, setIsMobileUi] = useState(false);
+  const [isAccountEnabled, setIsAccountEnabled] = useState(false);
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [authFormMode, setAuthFormMode] = useState<AuthFormMode>("login");
+  const [authFormState, setAuthFormState] = useState({
+    email: "",
+    password: "",
+    nickname: ""
+  });
+  const [authFormSubmitting, setAuthFormSubmitting] = useState(false);
+  const [authFormError, setAuthFormError] = useState<string | null>(null);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [authRefreshIssue, setAuthRefreshIssue] = useState<string | null>(null);
+  const [locatedPanelTrackId, setLocatedPanelTrackId] = useState<string | null>(null);
   const [displayedLibraryView, setDisplayedLibraryView] = useState<LibraryView>("library-favorites");
   const [libraryContentTransitionPhase, setLibraryContentTransitionPhase] = useState<LibraryContentTransitionPhase>("idle");
   const [librarySegmentedThumb, setLibrarySegmentedThumb] = useState<{ x: number; width: number; ready: boolean }>({
@@ -619,6 +674,8 @@ export function PlayerApp() {
   const hotAssistRowRef = useRef<HTMLDivElement>(null);
   const suggestAssistRowRef = useRef<HTMLDivElement>(null);
   const playlistSummaryRef = useRef<HTMLParagraphElement>(null);
+  const homePlaylistListRef = useRef<HTMLDivElement>(null);
+  const panelTrackRowRefsRef = useRef<Map<number, HTMLElement>>(new Map());
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
   const lyricAutoScrollRafRef = useRef<number | null>(null);
   const lyricAutoScrollTimerRef = useRef<number | null>(null);
@@ -629,7 +686,21 @@ export function PlayerApp() {
   const lyricLineRefsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
   const lyricUserScrollLockUntilRef = useRef(0);
   const lyricUserLockTimerRef = useRef<number | null>(null);
+  const locatedPanelTrackTimerRef = useRef<number | null>(null);
   const currentPaletteRef = useRef<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
+  const snapshotApplyingRef = useRef(false);
+  const syncBaselineRef = useRef<{
+    favorites: Record<string, Track>;
+    recent: Track[];
+    importedPlaylists: Record<string, ImportedPlaylist>;
+  }>({
+    favorites: player.favorites,
+    recent: player.recent,
+    importedPlaylists: player.importedPlaylists
+  });
+  const syncTimerRef = useRef<number | null>(null);
+  const authBootstrapDoneRef = useRef(false);
+  const syncReadyRef = useRef(false);
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -650,6 +721,17 @@ export function PlayerApp() {
           : "点击歌曲开始播放，或先加入播放队列。"
     );
   }, [homePlaylistPanel, isMobileUi]);
+  const playingTrackIndexInPanel = useMemo(() => {
+    if (!homePlaylistPanel?.tracks.length || !currentTrackId) return -1;
+    return homePlaylistPanel.tracks.findIndex((track) => track.id === currentTrackId);
+  }, [homePlaylistPanel?.tracks, currentTrackId]);
+  const canLocatePlayingTrack = playingTrackIndexInPanel >= 0;
+  const locatePlayingTrackButtonTitle = useMemo(() => {
+    if (!currentTrackId) return "当前没有正在播放歌曲";
+    if (!homePlaylistPanel?.tracks.length) return "当前列表暂无歌曲";
+    if (!canLocatePlayingTrack) return "当前播放歌曲不在此列表中";
+    return "定位到正在播放歌曲";
+  }, [canLocatePlayingTrack, currentTrackId, homePlaylistPanel?.tracks.length]);
   const currentCoverUrl = useMemo(
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
@@ -659,6 +741,161 @@ export function PlayerApp() {
     if (!track) return DEFAULT_COVER_URL;
     return artworkByTrackId[track.id] ?? pickTrackCover(track) ?? DEFAULT_COVER_URL;
   };
+
+  const applyCloudSnapshot = useCallback(
+    (snapshot: {
+      favorites: Record<string, Track>;
+      recent: Track[];
+      importedPlaylists: Record<string, ImportedPlaylist>;
+    }) => {
+      snapshotApplyingRef.current = true;
+      player.replaceLibraryState({
+        favorites: snapshot.favorites ?? {},
+        recent: snapshot.recent ?? [],
+        importedPlaylists: snapshot.importedPlaylists ?? {}
+      });
+      syncBaselineRef.current = {
+        favorites: snapshot.favorites ?? {},
+        recent: snapshot.recent ?? [],
+        importedPlaylists: snapshot.importedPlaylists ?? {}
+      };
+      window.setTimeout(() => {
+        snapshotApplyingRef.current = false;
+      }, 0);
+    },
+    [player]
+  );
+
+  const syncAfterLogin = useCallback(async () => {
+    syncReadyRef.current = false;
+    setAuthSyncState("syncing");
+    try {
+      const snapshot = await getLibrarySnapshot();
+      applyCloudSnapshot({
+        favorites: snapshot.favorites ?? {},
+        recent: snapshot.recent ?? [],
+        importedPlaylists: snapshot.importedPlaylists ?? {}
+      });
+      setAuthSyncState("success");
+      setAuthRefreshIssue(null);
+      setAuthNotice("已同步云端音乐库（云端覆盖本地）。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "同步失败";
+      setAuthSyncState("failed");
+      setAuthNotice(`云同步失败：${message}`);
+    } finally {
+      syncReadyRef.current = true;
+    }
+  }, [applyCloudSnapshot, setAuthSyncState]);
+
+  const closeAccountDialog = useCallback(() => {
+    setAccountDialogOpen(false);
+    setAuthFormError(null);
+  }, []);
+
+  const openLoginDialog = useCallback(() => {
+    setAuthFormMode("login");
+    setAuthFormError(null);
+    setAccountDialogOpen(true);
+  }, []);
+
+  const openRegisterDialog = useCallback(() => {
+    setAuthFormMode("register");
+    setAuthFormError(null);
+    setAccountDialogOpen(true);
+  }, []);
+
+  const submitAuthForm = useCallback(async () => {
+    const email = authFormState.email.trim();
+    const password = authFormState.password;
+    const nickname = authFormState.nickname.trim();
+    if (!email || !password) {
+      setAuthFormError("请输入邮箱和密码。");
+      return;
+    }
+    if (password.length < 8) {
+      setAuthFormError("密码至少 8 位。");
+      return;
+    }
+
+    setAuthFormSubmitting(true);
+    setAuthFormError(null);
+    setAuthAuthenticating();
+    syncReadyRef.current = false;
+    try {
+      if (authFormMode === "register") {
+        await registerAccount({
+          email,
+          password,
+          nickname: nickname || undefined
+        });
+      } else {
+        await loginAccount({
+          email,
+          password
+        });
+      }
+      const me = await loadCurrentAccountUser();
+      const token = useAuthStore.getState().accessToken;
+      if (!token) {
+        throw new Error("登录令牌缺失");
+      }
+      setAuthAuthenticated(me, token);
+      setAuthRefreshIssue(null);
+      await syncAfterLogin();
+      closeAccountDialog();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "登录失败";
+      setAuthError(message);
+      setAuthFormError(message);
+    } finally {
+      setAuthFormSubmitting(false);
+    }
+  }, [authFormMode, authFormState, closeAccountDialog, setAuthAuthenticated, setAuthAuthenticating, setAuthError, syncAfterLogin]);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await logoutAccount();
+      setAuthNotice("已退出登录，已切换到本地游客模式。");
+      setAuthRefreshIssue(null);
+      setAuthGuest();
+      setAuthSyncState("idle");
+      syncReadyRef.current = false;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "退出失败";
+      setAuthNotice(message);
+    }
+  }, [setAuthGuest, setAuthSyncState]);
+
+  const handleAuthRefreshRetry = useCallback(async () => {
+    if (!isAccountEnabled) return;
+    setAuthAuthenticating();
+    setAuthRefreshIssue(null);
+    const refreshed = await tryRefreshAccessToken();
+    if (!refreshed) {
+      syncReadyRef.current = false;
+      setAuthGuest();
+      setAuthRefreshIssue("登录服务暂不可用，请稍后重试。");
+      return;
+    }
+
+    try {
+      const me = await loadCurrentAccountUser();
+      const token = useAuthStore.getState().accessToken;
+      if (!token) {
+        syncReadyRef.current = false;
+        setAuthGuest();
+        setAuthRefreshIssue("已连接账号服务，但会话令牌无效。");
+        return;
+      }
+      setAuthAuthenticated(me, token);
+      await syncAfterLogin();
+    } catch {
+      syncReadyRef.current = false;
+      setAuthGuest();
+      setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
+    }
+  }, [isAccountEnabled, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -693,6 +930,138 @@ export function PlayerApp() {
       mediaQuery.removeEventListener("change", update);
     };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      const enabled = await detectAccountServiceEnabled();
+      if (!active) return;
+      setIsAccountEnabled(enabled);
+      if (!enabled) {
+        syncReadyRef.current = false;
+        setAuthGuest();
+        setAuthRefreshIssue(null);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [setAuthGuest]);
+
+  useEffect(() => {
+    if (!isAccountEnabled || authBootstrapDoneRef.current) return;
+    authBootstrapDoneRef.current = true;
+    let active = true;
+    const bootstrap = async () => {
+      setAuthAuthenticating();
+      setAuthRefreshIssue(null);
+      const refreshed = await tryRefreshAccessToken();
+      if (!active) return;
+      if (!refreshed) {
+        syncReadyRef.current = false;
+        setAuthGuest();
+        setAuthRefreshIssue("登录服务暂不可用，自动登录失败。");
+        return;
+      }
+      try {
+        const me = await loadCurrentAccountUser();
+        if (!active) return;
+        const token = useAuthStore.getState().accessToken;
+        if (!token) {
+          syncReadyRef.current = false;
+          setAuthGuest();
+          setAuthRefreshIssue("已连接账号服务，但会话令牌无效。");
+          return;
+        }
+        setAuthAuthenticated(me, token);
+        await syncAfterLogin();
+      } catch {
+        if (!active) return;
+        syncReadyRef.current = false;
+        setAuthGuest();
+        setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
+      }
+    };
+    void bootstrap();
+    return () => {
+      active = false;
+    };
+  }, [isAccountEnabled, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+
+  useEffect(() => {
+    if (!isAccountEnabled || authStatus !== "authenticated") return;
+    if (!syncReadyRef.current) return;
+    if (snapshotApplyingRef.current) return;
+    if (!player.hasHydrated) return;
+
+    const previous = syncBaselineRef.current;
+    const nextFavorites = player.favorites;
+    const nextRecent = player.recent;
+    const nextImported = player.importedPlaylists;
+    const favoriteAdded = Object.values(nextFavorites).filter((item) => !previous.favorites[item.id]);
+    const favoriteRemoved = Object.keys(previous.favorites).filter((trackId) => !nextFavorites[trackId]);
+    const previousRecentHead = previous.recent[0]?.id ?? null;
+    const nextRecentHead = nextRecent[0] ?? null;
+    const shouldPushRecent = Boolean(nextRecentHead && nextRecentHead.id !== previousRecentHead);
+    const importedChanged = Object.values(nextImported).filter((playlist) => {
+      const previousPlaylist = previous.importedPlaylists[playlist.id];
+      if (!previousPlaylist) return true;
+      return (
+        previousPlaylist.updatedAt !== playlist.updatedAt ||
+        previousPlaylist.name !== playlist.name ||
+        previousPlaylist.description !== playlist.description ||
+        previousPlaylist.tracks.length !== playlist.tracks.length
+      );
+    });
+    const importedRemoved = Object.keys(previous.importedPlaylists).filter((playlistId) => !nextImported[playlistId]);
+
+    if (!favoriteAdded.length && !favoriteRemoved.length && !shouldPushRecent && !importedChanged.length && !importedRemoved.length) {
+      return;
+    }
+
+    if (syncTimerRef.current) {
+      window.clearTimeout(syncTimerRef.current);
+    }
+
+    syncTimerRef.current = window.setTimeout(() => {
+      void (async () => {
+        setAuthSyncState("syncing");
+        try {
+          for (const track of favoriteAdded) {
+            await addFavoriteTrack(track);
+          }
+          for (const trackId of favoriteRemoved) {
+            await removeFavoriteTrack(trackId);
+          }
+          if (shouldPushRecent && nextRecentHead) {
+            await addRecentTrack(nextRecentHead);
+          }
+          for (const playlist of importedChanged) {
+            await upsertImportedPlaylistCloud(playlist);
+          }
+          for (const playlistId of importedRemoved) {
+            await removeImportedPlaylistCloud(playlistId);
+          }
+          syncBaselineRef.current = {
+            favorites: player.favorites,
+            recent: player.recent,
+            importedPlaylists: player.importedPlaylists
+          };
+          setAuthSyncState("success");
+        } catch {
+          setAuthSyncState("failed");
+        }
+      })();
+    }, ACCOUNT_SYNC_DEBOUNCE_MS);
+
+    return () => {
+      if (syncTimerRef.current) {
+        window.clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = null;
+      }
+    };
+  }, [authStatus, isAccountEnabled, player.favorites, player.hasHydrated, player.importedPlaylists, player.recent, setAuthSyncState]);
 
   useLayoutEffect(() => {
     const root = librarySegmentedRef.current;
@@ -1327,6 +1696,28 @@ export function PlayerApp() {
     homePlaylistPanel.tracks.forEach((track) => player.addToQueue(track));
   };
 
+  const locatePlayingTrackInPanel = useCallback(() => {
+    if (!canLocatePlayingTrack || !homePlaylistPanel?.tracks.length) return;
+    const index = playingTrackIndexInPanel;
+    const container = homePlaylistListRef.current;
+    const targetRow =
+      panelTrackRowRefsRef.current.get(index) ??
+      container?.querySelector<HTMLElement>(`[data-panel-track-index="${index}"]`) ??
+      null;
+    if (!(targetRow instanceof HTMLElement)) return;
+    targetRow.scrollIntoView({ behavior: "smooth", block: "center" });
+    const targetTrack = homePlaylistPanel.tracks[index];
+    if (!targetTrack) return;
+    setLocatedPanelTrackId(targetTrack.id);
+    if (locatedPanelTrackTimerRef.current) {
+      window.clearTimeout(locatedPanelTrackTimerRef.current);
+    }
+    locatedPanelTrackTimerRef.current = window.setTimeout(() => {
+      setLocatedPanelTrackId(null);
+      locatedPanelTrackTimerRef.current = null;
+    }, LOCATED_PANEL_TRACK_HIGHLIGHT_MS);
+  }, [canLocatePlayingTrack, homePlaylistPanel?.tracks, playingTrackIndexInPanel]);
+
   const handleDownloadTrack = async () => {
     if (!currentTrack) return;
     setDownloadState((previous) => ({ ...previous, loading: true, message: null }));
@@ -1768,6 +2159,9 @@ export function PlayerApp() {
       if (lyricUserLockTimerRef.current) {
         window.clearTimeout(lyricUserLockTimerRef.current);
       }
+      if (locatedPanelTrackTimerRef.current) {
+        window.clearTimeout(locatedPanelTrackTimerRef.current);
+      }
       if (libraryContentTransitionTimerRef.current) {
         window.clearTimeout(libraryContentTransitionTimerRef.current);
       }
@@ -1795,6 +2189,26 @@ export function PlayerApp() {
     },
     []
   );
+
+  const bindPanelTrackRowRef = useCallback(
+    (index: number) => (node: HTMLElement | null) => {
+      if (node) {
+        panelTrackRowRefsRef.current.set(index, node);
+      } else {
+        panelTrackRowRefsRef.current.delete(index);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    panelTrackRowRefsRef.current.clear();
+    setLocatedPanelTrackId(null);
+    if (locatedPanelTrackTimerRef.current) {
+      window.clearTimeout(locatedPanelTrackTimerRef.current);
+      locatedPanelTrackTimerRef.current = null;
+    }
+  }, [homePlaylistPanel?.id, homePlaylistPhase]);
 
   useEffect(() => {
     if (!isDetailMounted || detailTab !== "lyric") return;
@@ -2128,11 +2542,76 @@ export function PlayerApp() {
     </button>
   );
 
+  const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
+  const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
+  const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
+
   const librarySegmentedPillStyle = {
     "--lib-seg-thumb-x": `${librarySegmentedThumb.x}px`,
     "--lib-seg-thumb-w": `${librarySegmentedThumb.width}px`,
     "--lib-seg-count": LIBRARY_VIEW_OPTIONS.length
   } as CSSProperties;
+
+  const nowPlayingMergedPanel = (
+    <section className={`now-playing-merged glass-surface ${isMobileUi ? "compact-mobile" : ""}`.trim()}>
+      <div className="now-playing-merged-main">
+        {!isMobileUi ? (
+          <div className="now-playing-merged-cover">
+            <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
+              <div
+                className="vinyl-cover"
+                role="img"
+                aria-label={currentTrack?.name ?? "默认封套"}
+                style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
+              />
+            </div>
+          </div>
+        ) : null}
+        <div className="now-playing-merged-meta">
+          <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
+          <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先搜索并播放歌曲"}</p>
+          {!isMobileUi ? (
+            <div className="now-state-row">
+              <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
+              <span className="status-pill">{modeMeta.label}</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="now-playing-merged-actions">
+        <div className="spotify-player-controls compact">
+          {!isMobileUi ? (
+            <IconButton
+              ariaLabel={modeMeta.label}
+              title={modeMeta.label}
+              disabled={controlDisabled}
+              onClick={() => player.nextMode()}
+              className="ghost"
+            >
+              {modeMeta.icon}
+            </IconButton>
+          ) : null}
+          <IconButton
+            ariaLabel={player.isPlaying ? "暂停" : "播放"}
+            title={player.isPlaying ? "暂停" : "播放"}
+            className="play-main"
+            disabled={controlDisabled}
+            onClick={() => player.togglePlay()}
+          >
+            {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
+          </IconButton>
+          {!isMobileUi ? (
+            <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
+              <NextIcon />
+            </IconButton>
+          ) : null}
+        </div>
+        <button className="now-playing-merged-detail-btn" onClick={openDetail}>
+          展开详情
+        </button>
+      </div>
+    </section>
+  );
 
   return (
     <main ref={shellRef} className="spotify-shell">
@@ -2159,8 +2638,35 @@ export function PlayerApp() {
                 你的音乐库
               </button>
             </nav>
-            {isMobileUi ? <div className="theme-switch-mobile">{themeSwitchControl}</div> : null}
+            {isMobileUi ? (
+              <div className="sidebar-mobile-tools">
+                {isAccountEnabled ? (
+                  <button
+                    type="button"
+                    className="sidebar-mobile-account-toggle sidebar-mobile-account-btn"
+                    onClick={() => {
+                      if (authStatus === "authenticated") {
+                        void handleLogout();
+                        return;
+                      }
+                      openLoginDialog();
+                    }}
+                  >
+                    {authStatus === "authenticated" ? "退出登录" : "登录同步"}
+                  </button>
+                ) : null}
+                <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
+              </div>
+            ) : null}
           </div>
+          {isMobileUi && hasAuthRefreshIssue ? (
+            <div className="account-refresh-warning mobile-inline">
+              <p>{authRefreshIssue}</p>
+              <button type="button" onClick={() => void handleAuthRefreshRetry()}>
+                重试连接
+              </button>
+            </div>
+          ) : null}
 
           <section className="spotify-collections">
             <h3>我的音乐</h3>
@@ -2190,6 +2696,50 @@ export function PlayerApp() {
                 <em>›</em>
               </button>
             </div>
+            {isAccountEnabled ? (
+              <div className="account-switch-card">
+                <span>账号同步</span>
+                <div className="account-switch-body">
+                  <div className="account-switch-meta">
+                    <strong>{accountDisplayName}</strong>
+                    <small>{accountStateText}</small>
+                  </div>
+                  {authStatus === "authenticated" ? (
+                    <div className="account-switch-actions">
+                      <button type="button" className="ghost" onClick={() => void handleLogout()}>
+                        退出
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="account-switch-actions">
+                      <button
+                        type="button"
+                        onClick={openLoginDialog}
+                      >
+                        登录同步
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost"
+                        onClick={openRegisterDialog}
+                      >
+                        注册
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {authNotice ? <p className="account-switch-tip">{authNotice}</p> : null}
+                {authErrorMessage ? <p className="account-switch-tip error">{authErrorMessage}</p> : null}
+                {hasAuthRefreshIssue ? (
+                  <div className="account-refresh-warning">
+                    <p>{authRefreshIssue}</p>
+                    <button type="button" onClick={() => void handleAuthRefreshRetry()}>
+                      重试连接
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {!isMobileUi ? (
               <div className="theme-switch-card">
                 <span>网页主题</span>
@@ -2200,71 +2750,21 @@ export function PlayerApp() {
         </aside>
 
         <section className="spotify-main">
-          {!(isMobileUi && activeTab === "library") ? (
-            <section className="now-playing-merged glass-surface">
-              <div className="now-playing-merged-main">
-                <div className="now-playing-merged-cover">
-                  <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
-                    <div
-                      className="vinyl-cover"
-                      role="img"
-                      aria-label={currentTrack?.name ?? "默认封套"}
-                      style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
-                    />
-                  </div>
-                </div>
-                <div className="now-playing-merged-meta">
-                  <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
-                  <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先搜索并播放歌曲"}</p>
-                  <div className="now-state-row">
-                    <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
-                    <span className="status-pill">{modeMeta.label}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="now-playing-merged-actions">
-                <div className="spotify-player-controls compact">
-                  <IconButton
-                    ariaLabel={modeMeta.label}
-                    title={modeMeta.label}
-                    disabled={controlDisabled}
-                    onClick={() => player.nextMode()}
-                    className="ghost"
-                  >
-                    {modeMeta.icon}
-                  </IconButton>
-                  <IconButton
-                    ariaLabel={player.isPlaying ? "暂停" : "播放"}
-                    title={player.isPlaying ? "暂停" : "播放"}
-                    className="play-main"
-                    disabled={controlDisabled}
-                    onClick={() => player.togglePlay()}
-                  >
-                    {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-                  </IconButton>
-                  <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-                    <NextIcon />
-                  </IconButton>
-                </div>
-                <button className="now-playing-merged-detail-btn" onClick={openDetail}>
-                  展开详情
-                </button>
-              </div>
-            </section>
-          ) : null}
+          {!(isMobileUi && (activeTab === "home" || activeTab === "library")) ? nowPlayingMergedPanel : null}
 
           {activeTab === "home" ? (
             <>
-              <header className="home-toolbar">
+              <header className={`home-toolbar ${isMobileUi ? "mobile-priority" : ""}`.trim()}>
                 <div className="home-toolbar-main">
                   <h1>发现音乐</h1>
                   <p>精选内容与你的播放偏好</p>
                 </div>
-                <div className="home-toolbar-actions">
-                  <button onClick={() => goTab("search")}>去搜索</button>
+                <div className={`home-toolbar-actions ${isMobileUi ? "mobile-cta" : ""}`.trim()}>
+                  <button className="primary" onClick={() => goTab("search")}>搜索音乐</button>
                   <button onClick={() => goTab("library")}>我的音乐库</button>
                 </div>
               </header>
+              {isMobileUi ? nowPlayingMergedPanel : null}
 
               {homePlaylistView === "featured" ? (
                 <>
@@ -2410,7 +2910,7 @@ export function PlayerApp() {
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
                   placeholder={
-                    searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：周杰伦、晴天"
+                    searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：林俊杰、修炼爱情"
                   }
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
@@ -2521,7 +3021,7 @@ export function PlayerApp() {
                       />
                     ))}
 
-                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“周杰伦”或“晴天”。</p> : null}
+                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“林俊杰”或“修炼爱情”。</p> : null}
                     {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
                     {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
                   </div>
@@ -2616,7 +3116,6 @@ export function PlayerApp() {
               <header className="library-hub-head">
                 <div>
                   <h2>你的音乐库</h2>
-                  <p>把收藏与最近播放整理到更清晰的二级页面中。</p>
                 </div>
                 <div
                   className={`library-segmented-pill ${librarySegmentedThumb.ready ? "ready" : ""}`.trim()}
@@ -2745,7 +3244,14 @@ export function PlayerApp() {
                             >
                               播放
                             </button>
-                            <button type="button" className="danger" onClick={() => player.removeImportedPlaylist(playlist.id)}>
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => {
+                                if (!window.confirm(`确认删除歌单「${playlist.name}」吗？`)) return;
+                                player.removeImportedPlaylist(playlist.id);
+                              }}
+                            >
                               删除
                             </button>
                           </div>
@@ -2761,7 +3267,7 @@ export function PlayerApp() {
         </section>
 
         <aside className="spotify-right">
-          <section className="spotify-now-card">
+          <section className={`spotify-now-card ${!isMobileUi ? "lite" : ""}`.trim()}>
             <h2>正在播放</h2>
             <div className="now-state-row">
               <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
@@ -2777,8 +3283,16 @@ export function PlayerApp() {
                 />
               </div>
             </div>
-            <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
-            <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
+            {!isMobileUi ? (
+              <p className="spotify-now-lite-tip">
+                {currentTrack ? "歌曲详情已在中间播放卡展示" : "请先在搜索页选择歌曲开始播放"}
+              </p>
+            ) : (
+              <>
+                <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
+                <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
+              </>
+            )}
             {controller.loadingSource ? (
               <p className="status-line">
                 <Spinner />
@@ -2886,12 +3400,20 @@ export function PlayerApp() {
                       ) : null}
                     </>
                   ) : null}
+                  <button
+                    type="button"
+                    onClick={locatePlayingTrackInPanel}
+                    disabled={!canLocatePlayingTrack}
+                    title={locatePlayingTrackButtonTitle}
+                  >
+                    定位正在播放
+                  </button>
                   <button type="button" className="ghost" onClick={closeHomePlaylistPanel}>
                     关闭
                   </button>
                 </div>
 
-                <div className="home-playlist-drawer-list">
+                <div className="home-playlist-drawer-list" ref={homePlaylistListRef}>
                   {homePlaylistPanel.loading ? (
                     <div className="home-playlist-skeleton-list" aria-hidden="true">
                       {Array.from({ length: 8 }).map((_, index) => (
@@ -2909,7 +3431,12 @@ export function PlayerApp() {
                   ) : null}
                   {!homePlaylistPanel.loading && !homePlaylistPanel.error
                     ? homePlaylistPanel.tracks.map((track, index) => (
-                        <article className={`home-playlist-track-row ${track.id === currentTrackId ? "active" : ""}`.trim()} key={`panel-${track.id}-${index}`}>
+                        <article
+                          className={`home-playlist-track-row ${track.id === currentTrackId ? "active" : ""} ${track.id === locatedPanelTrackId ? "located" : ""}`.trim()}
+                          key={`panel-${track.id}-${index}`}
+                          ref={bindPanelTrackRowRef(index)}
+                          data-panel-track-index={index}
+                        >
                           <div className="home-playlist-track-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
                           <button
                             type="button"
@@ -2938,6 +3465,79 @@ export function PlayerApp() {
               </aside>
             </section>,
             playlistPortalTarget
+          )
+        : null}
+
+      {accountDialogOpen
+        ? createPortal(
+            <section className="account-dialog-overlay" role="dialog" aria-label="账号登录">
+              <button type="button" className="account-dialog-backdrop" aria-label="关闭登录窗口" onClick={closeAccountDialog} />
+              <article className={`account-dialog-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}>
+                <header className="account-dialog-head">
+                  <h3>{authFormMode === "login" ? "登录后可同步音乐库" : "创建账号并开启云同步"}</h3>
+                  <button type="button" className="ghost" onClick={closeAccountDialog}>
+                    关闭
+                  </button>
+                </header>
+                <div className="account-dialog-tabs">
+                  <button
+                    type="button"
+                    className={authFormMode === "login" ? "active" : ""}
+                    onClick={() => {
+                      setAuthFormMode("login");
+                      setAuthFormError(null);
+                    }}
+                  >
+                    登录
+                  </button>
+                  <button
+                    type="button"
+                    className={authFormMode === "register" ? "active" : ""}
+                    onClick={() => {
+                      setAuthFormMode("register");
+                      setAuthFormError(null);
+                    }}
+                  >
+                    注册
+                  </button>
+                </div>
+                <label className="account-form-label">
+                  邮箱
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={authFormState.email}
+                    onChange={(event) => setAuthFormState((previous) => ({ ...previous, email: event.target.value }))}
+                  />
+                </label>
+                <label className="account-form-label">
+                  密码
+                  <input
+                    type="password"
+                    placeholder="至少 8 位"
+                    value={authFormState.password}
+                    onChange={(event) => setAuthFormState((previous) => ({ ...previous, password: event.target.value }))}
+                  />
+                </label>
+                {authFormMode === "register" ? (
+                  <label className="account-form-label">
+                    昵称（可选）
+                    <input
+                      type="text"
+                      placeholder="例如：MiningQwQ"
+                      value={authFormState.nickname}
+                      onChange={(event) => setAuthFormState((previous) => ({ ...previous, nickname: event.target.value }))}
+                    />
+                  </label>
+                ) : null}
+                {authFormError ? <p className="account-form-error">{authFormError}</p> : null}
+                <button type="button" className="account-form-submit" disabled={authFormSubmitting} onClick={() => void submitAuthForm()}>
+                  {authFormSubmitting ? "处理中..." : authFormMode === "login" ? "登录并同步" : "注册并同步"}
+                </button>
+                <p className="account-form-note">未登录时继续本地保存；登录后自动开启云同步。</p>
+              </article>
+            </section>,
+            document.body
           )
         : null}
 
@@ -3044,7 +3644,6 @@ export function PlayerApp() {
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list">
                     <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
-                    <p>可播性：{trackInsight?.playable === false ? "受限" : "正常"}</p>
                     {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
                     {trackInsight?.creators.length ? (
                       <p>
@@ -3067,20 +3666,6 @@ export function PlayerApp() {
                         onClick={() => controller.seekTo(trackInsight.chorusStartMs ?? 0)}
                       >
                         跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
-                      </button>
-                    ) : null}
-                    {trackInsight?.alternatives.length ? (
-                      <button
-                        type="button"
-                        className="meta-action-btn"
-                        onClick={() => {
-                          const alternative = trackInsight.alternatives[0];
-                          if (!alternative) return;
-                          player.playTrackNow(alternative);
-                          player.setPlaying(true);
-                        }}
-                      >
-                        播放替代版本：{trackInsight.alternatives[0].name}
                       </button>
                     ) : null}
                     {!isMobileUi ? (

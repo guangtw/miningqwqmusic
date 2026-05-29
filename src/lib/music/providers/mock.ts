@@ -149,9 +149,9 @@ export class MockMusicAdapter implements MusicSourceAdapter {
 
   async getSearchAssist(): Promise<SearchAssist> {
     return {
-      defaultKeyword: "周杰伦",
-      hotKeywords: ["晴天", "夜曲", "稻香", "玻璃", "唯一"],
-      suggestions: ["周杰伦", "周深", "周传雄"]
+      defaultKeyword: "林俊杰",
+      hotKeywords: ["修炼爱情", "江南", "曹操", "可惜没如果", "不为谁而作的歌"],
+      suggestions: ["林俊杰", "修炼爱情", "江南"]
     };
   }
 

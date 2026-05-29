@@ -42,6 +42,11 @@ type PlayerActions = {
   rememberTrack: (track: Track) => void;
   upsertImportedPlaylist: (playlist: ImportedPlaylist) => void;
   removeImportedPlaylist: (playlistId: string) => void;
+  replaceLibraryState: (payload: {
+    favorites: Record<string, Track>;
+    recent: Track[];
+    importedPlaylists: Record<string, ImportedPlaylist>;
+  }) => void;
   listImportedPlaylists: () => ImportedPlaylist[];
 };
 
@@ -257,6 +262,12 @@ export const usePlayerStore = create<PlayerStore>()(
           const next = { ...state.importedPlaylists };
           delete next[playlistId];
           return { importedPlaylists: next };
+        }),
+      replaceLibraryState: ({ favorites, recent, importedPlaylists }) =>
+        set({
+          favorites: { ...favorites },
+          recent: [...recent].slice(0, 50),
+          importedPlaylists: { ...importedPlaylists }
         }),
       listImportedPlaylists: () => {
         const state = get();

@@ -193,11 +193,11 @@ function resolveAuthRefreshIssue(
   mode: "auto" | "manual"
 ): string {
   if (!error) {
-    return mode === "auto" ? "登录服务暂不可用，自动登录失败。" : "登录服务暂不可用，请稍后重试。";
+    return mode === "auto" ? "暂时无法恢复登录状态，已切换到游客模式。" : "暂时无法连接登录服务，请稍后重试。";
   }
 
   if (error.status === 401 && error.code === 5203) {
-    return mode === "auto" ? "未登录或会话已过期，自动登录未执行。" : "未登录或会话已过期，请重新登录。";
+    return mode === "auto" ? "登录状态已失效，已切换到游客模式。" : "登录状态已失效，请重新登录。";
   }
 
   if (error.status === 403 && error.code === 5207) {
@@ -205,14 +205,155 @@ function resolveAuthRefreshIssue(
   }
 
   if (error.status === 429) {
-    return "请求过于频繁，请稍后重试。";
+    return "操作过于频繁，请稍后再试。";
   }
 
   if (error.code === 5403 || error.status >= 500) {
-    return mode === "auto" ? "登录服务暂不可用，自动登录失败。" : "登录服务暂不可用，请稍后重试。";
+    return mode === "auto" ? "登录服务暂时不可用，已切换到游客模式。" : "登录服务暂时不可用，请稍后重试。";
   }
 
-  return mode === "auto" ? "自动登录失败，请手动登录。" : "账号连接失败，请稍后重试。";
+  return mode === "auto" ? "自动登录未完成，请手动登录。" : "账号连接失败，请稍后重试。";
+}
+
+function hasStrongPassword(value: string): boolean {
+  return value.length >= 10 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value) && /[^A-Za-z0-9]/.test(value);
+}
+
+function resolveAuthFormError(error: unknown, mode: AuthFormMode): string {
+  if (error instanceof AccountApiError) {
+    if (error.status === 401 && error.code === 5202) {
+      return "邮箱或密码不正确，请重新输入。";
+    }
+    if (error.status === 409 && error.code === 5201) {
+      return "该邮箱已注册，请直接登录。";
+    }
+    if (error.status === 400 && error.code === 5101) {
+      return mode === "register"
+        ? "请检查注册信息：密码需至少 10 位，并包含大小写字母、数字和符号。"
+        : "请检查输入信息后重试。";
+    }
+    if (error.status === 429) {
+      return "尝试次数过多，请稍后再试。";
+    }
+    if (error.status === 403 && error.code === 5207) {
+      return "当前访问环境异常，请稍后再试。";
+    }
+    if (error.status >= 500 || error.code === 5403) {
+      return "服务暂时繁忙，请稍后再试。";
+    }
+  }
+
+  return mode === "register" ? "注册暂时失败，请稍后重试。" : "登录暂时失败，请稍后重试。";
+}
+
+function resolveSyncNotice(error: unknown): string {
+  if (error instanceof AccountApiError) {
+    if (error.status === 401) {
+      return "登录状态已失效，请重新登录后再同步。";
+    }
+    if (error.status === 429) {
+      return "同步请求过于频繁，请稍后再试。";
+    }
+    if (error.status >= 500 || error.code === 5403) {
+      return "云同步暂时不可用，请稍后重试。";
+    }
+  }
+  return "云同步失败，请稍后重试。";
+}
+
+function sanitizeArtistForCloud(artist: unknown): { id: string; name: string; coverUrl?: string } | null {
+  if (!artist || typeof artist !== "object") return null;
+  const raw = artist as { id?: unknown; name?: unknown; coverUrl?: unknown };
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!id || !name) return null;
+  const coverUrl = typeof raw.coverUrl === "string" ? raw.coverUrl.trim() : "";
+  return coverUrl ? { id, name, coverUrl } : { id, name };
+}
+
+function sanitizeTrackForCloud(track: unknown): Track | null {
+  if (!track || typeof track !== "object") return null;
+  const raw = track as {
+    id?: unknown;
+    name?: unknown;
+    artists?: unknown;
+    album?: unknown;
+    durationMs?: unknown;
+    coverUrl?: unknown;
+  };
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!id || !name) return null;
+
+  const artists = Array.isArray(raw.artists)
+    ? raw.artists
+        .map((item) => sanitizeArtistForCloud(item))
+        .filter((item): item is NonNullable<ReturnType<typeof sanitizeArtistForCloud>> => Boolean(item))
+    : [];
+
+  const durationNumber = typeof raw.durationMs === "number" ? raw.durationMs : Number(raw.durationMs);
+  const durationMs = Number.isFinite(durationNumber) ? Math.max(0, Math.floor(durationNumber)) : 0;
+  const coverUrl = typeof raw.coverUrl === "string" ? raw.coverUrl.trim() : "";
+
+  let album: Track["album"];
+  if (raw.album && typeof raw.album === "object") {
+    const albumRaw = raw.album as { id?: unknown; name?: unknown; coverUrl?: unknown };
+    const albumId = typeof albumRaw.id === "string" ? albumRaw.id.trim() : "";
+    const albumName = typeof albumRaw.name === "string" ? albumRaw.name.trim() : "";
+    if (albumId && albumName) {
+      const albumCover = typeof albumRaw.coverUrl === "string" ? albumRaw.coverUrl.trim() : "";
+      album = albumCover ? { id: albumId, name: albumName, coverUrl: albumCover } : { id: albumId, name: albumName };
+    }
+  }
+
+  return {
+    id,
+    name,
+    artists,
+    durationMs,
+    ...(album ? { album } : {}),
+    ...(coverUrl ? { coverUrl } : {})
+  };
+}
+
+function sanitizeImportedPlaylistForCloud(playlist: unknown): ImportedPlaylist | null {
+  if (!playlist || typeof playlist !== "object") return null;
+  const raw = playlist as {
+    id?: unknown;
+    name?: unknown;
+    description?: unknown;
+    coverUrl?: unknown;
+    tracks?: unknown;
+    sourceUrl?: unknown;
+    importedAt?: unknown;
+    updatedAt?: unknown;
+  };
+  const id = typeof raw.id === "string" ? raw.id.trim() : "";
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  const sourceUrl = typeof raw.sourceUrl === "string" ? raw.sourceUrl.trim() : "";
+  if (!id || !name || !sourceUrl) return null;
+
+  const description = typeof raw.description === "string" ? raw.description : undefined;
+  const coverUrl = typeof raw.coverUrl === "string" ? raw.coverUrl.trim() : "";
+  const importedAtNumber = typeof raw.importedAt === "number" ? raw.importedAt : Number(raw.importedAt);
+  const updatedAtNumber = typeof raw.updatedAt === "number" ? raw.updatedAt : Number(raw.updatedAt);
+  const now = Date.now();
+  const importedAt = Number.isFinite(importedAtNumber) ? Math.max(0, Math.floor(importedAtNumber)) : now;
+  const updatedAt = Number.isFinite(updatedAtNumber) ? Math.max(0, Math.floor(updatedAtNumber)) : now;
+  const tracks = Array.isArray(raw.tracks)
+    ? raw.tracks.map((track) => sanitizeTrackForCloud(track)).filter((track): track is Track => Boolean(track))
+    : [];
+
+  return {
+    id,
+    name,
+    ...(description !== undefined ? { description } : {}),
+    ...(coverUrl ? { coverUrl } : {}),
+    tracks,
+    sourceUrl,
+    importedAt,
+    updatedAt
+  };
 }
 
 function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
@@ -808,9 +949,8 @@ export function PlayerApp() {
       setAuthRefreshIssue(null);
       setAuthNotice("已同步云端音乐库（云端覆盖本地）。");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "同步失败";
       setAuthSyncState("failed");
-      setAuthNotice(`云同步失败：${message}`);
+      setAuthNotice(resolveSyncNotice(error));
     } finally {
       syncReadyRef.current = true;
     }
@@ -841,8 +981,8 @@ export function PlayerApp() {
       setAuthFormError("请输入邮箱和密码。");
       return;
     }
-    if (password.length < 8) {
-      setAuthFormError("密码至少 8 位。");
+    if (authFormMode === "register" && !hasStrongPassword(password)) {
+      setAuthFormError("请设置更安全的密码：至少 10 位，且包含大小写字母、数字和符号。");
       return;
     }
 
@@ -866,14 +1006,14 @@ export function PlayerApp() {
       const me = await loadCurrentAccountUser();
       const token = useAuthStore.getState().accessToken;
       if (!token) {
-        throw new Error("登录令牌缺失");
+        throw new Error("AUTH_TOKEN_MISSING");
       }
       setAuthAuthenticated(me, token);
       setAuthRefreshIssue(null);
       await syncAfterLogin();
       closeAccountDialog();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "登录失败";
+      const message = resolveAuthFormError(error, authFormMode);
       setAuthError(message);
       setAuthFormError(message);
     } finally {
@@ -889,9 +1029,8 @@ export function PlayerApp() {
       setAuthGuest();
       setAuthSyncState("idle");
       syncReadyRef.current = false;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "退出失败";
-      setAuthNotice(message);
+    } catch {
+      setAuthNotice("退出失败，请稍后重试。");
     }
   }, [setAuthGuest, setAuthSyncState]);
 
@@ -913,7 +1052,7 @@ export function PlayerApp() {
       if (!token) {
         syncReadyRef.current = false;
         setAuthGuest();
-        setAuthRefreshIssue("已连接账号服务，但会话令牌无效。");
+        setAuthRefreshIssue("登录状态异常，请重新登录。");
         return;
       }
       setAuthAuthenticated(me, token);
@@ -999,7 +1138,7 @@ export function PlayerApp() {
         if (!token) {
           syncReadyRef.current = false;
           setAuthGuest();
-          setAuthRefreshIssue("已连接账号服务，但会话令牌无效。");
+          setAuthRefreshIssue("登录状态异常，请重新登录。");
           return;
         }
         setAuthAuthenticated(me, token);
@@ -1057,16 +1196,25 @@ export function PlayerApp() {
         setAuthSyncState("syncing");
         try {
           for (const track of favoriteAdded) {
-            await addFavoriteTrack(track);
+            const payload = sanitizeTrackForCloud(track);
+            if (payload) {
+              await addFavoriteTrack(payload);
+            }
           }
           for (const trackId of favoriteRemoved) {
             await removeFavoriteTrack(trackId);
           }
           if (shouldPushRecent && nextRecentHead) {
-            await addRecentTrack(nextRecentHead);
+            const payload = sanitizeTrackForCloud(nextRecentHead);
+            if (payload) {
+              await addRecentTrack(payload);
+            }
           }
           for (const playlist of importedChanged) {
-            await upsertImportedPlaylistCloud(playlist);
+            const payload = sanitizeImportedPlaylistForCloud(playlist);
+            if (payload) {
+              await upsertImportedPlaylistCloud(payload);
+            }
           }
           for (const playlistId of importedRemoved) {
             await removeImportedPlaylistCloud(playlistId);
@@ -1077,8 +1225,9 @@ export function PlayerApp() {
             importedPlaylists: player.importedPlaylists
           };
           setAuthSyncState("success");
-        } catch {
+        } catch (error) {
           setAuthSyncState("failed");
+          setAuthNotice(resolveSyncNotice(error));
         }
       })();
     }, ACCOUNT_SYNC_DEBOUNCE_MS);

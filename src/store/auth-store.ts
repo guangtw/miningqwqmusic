@@ -43,7 +43,7 @@ export const useAuthStore = create<AuthStore>()((set) => ({
       status: "authenticated",
       user,
       accessToken,
-      lastSyncState: "success",
+      lastSyncState: "idle",
       errorMessage: null
     }),
   updateAccessToken: (accessToken) =>

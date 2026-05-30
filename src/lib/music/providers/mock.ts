@@ -9,6 +9,7 @@ import type {
   PagedResult,
   Playlist,
   PlaySource,
+  PlaySourceRequestOptions,
   SceneData,
   SearchAssist,
   SongInsight,
@@ -118,11 +119,23 @@ export class MockMusicAdapter implements MusicSourceAdapter {
     return MOCK_TRACKS.find((track) => track.id === trackId) ?? MOCK_TRACKS[0];
   }
 
-  async getPlaySource(trackId: string): Promise<PlaySource> {
+  async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
+    const level = options?.level ?? "standard";
+    const bitrateByLevel: Record<string, number> = {
+      standard: 128000,
+      higher: 192000,
+      exhigh: 320000,
+      lossless: 999000,
+      hires: 1000000,
+      jyeffect: 640000,
+      sky: 640000,
+      dolby: 640000,
+      jymaster: 1200000
+    };
     return {
       trackId,
       url: MOCK_AUDIO_URL,
-      bitrate: 320000,
+      bitrate: bitrateByLevel[level] ?? 320000,
       ttlSeconds: 60
     };
   }

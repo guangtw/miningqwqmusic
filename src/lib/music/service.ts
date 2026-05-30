@@ -14,6 +14,7 @@ import type {
   PagedResult,
   Playlist,
   PlaySource,
+  PlaySourceRequestOptions,
   SceneData,
   SearchAssist,
   SongInsight,
@@ -85,13 +86,13 @@ export async function getTrack(trackId: string): Promise<Track> {
   }
 }
 
-export async function getPlaySource(trackId: string): Promise<PlaySource> {
+export async function getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
   try {
-    return await breaker.execute(() => getAdapter().getPlaySource(trackId));
+    return await breaker.execute(() => getAdapter().getPlaySource(trackId, options));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     adapter = createMockMusicAdapter();
-    return adapter.getPlaySource(trackId);
+    return adapter.getPlaySource(trackId, options);
   }
 }
 

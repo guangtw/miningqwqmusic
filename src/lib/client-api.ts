@@ -11,6 +11,7 @@ import type {
   Playlist,
   PlaylistResolveResult,
   PlaySource,
+  PlaySourceRequestOptions,
   SceneData,
   SearchAssist,
   SongInsight,
@@ -51,8 +52,16 @@ export async function searchArtists(keyword: string, page = 1, pageSize = 20): P
   return readResult<PagedResult<ArtistSearchItem>>(response);
 }
 
-export async function getTrackPlaySource(trackId: string): Promise<PlaySource> {
-  const response = await fetch(`/api/music/track/${trackId}/play-url`, {
+export async function getTrackPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
+  const search = new URLSearchParams();
+  if (options?.level) {
+    search.set("level", options.level);
+  }
+  if (options?.unblockMode) {
+    search.set("unblockMode", options.unblockMode);
+  }
+  const query = search.size ? `?${search.toString()}` : "";
+  const response = await fetch(`/api/music/track/${trackId}/play-url${query}`, {
     method: "GET"
   });
   return readResult<PlaySource>(response);

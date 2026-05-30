@@ -7,6 +7,7 @@ import type {
   PagedResult,
   Playlist,
   PlaySource,
+  PlaySourceRequestOptions,
   SceneData,
   SearchAssist,
   SongInsight,
@@ -31,7 +32,7 @@ export interface MusicSourceAdapter {
   searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>>;
   searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>>;
   getTrackDetail(trackId: string): Promise<Track>;
-  getPlaySource(trackId: string): Promise<PlaySource>;
+  getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource>;
   getTrackLyric(trackId: string): Promise<TrackLyric>;
   getPlaylist(playlistId: string): Promise<Playlist>;
   getSearchAssist(keyword: string): Promise<SearchAssist>;

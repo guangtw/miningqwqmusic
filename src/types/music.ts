@@ -43,6 +43,24 @@ export type ImportedPlaylist = {
   updatedAt: number;
 };
 
+export type PlayQualityLevel =
+  | "standard"
+  | "higher"
+  | "exhigh"
+  | "lossless"
+  | "hires"
+  | "jyeffect"
+  | "sky"
+  | "dolby"
+  | "jymaster";
+
+export type PlayUnblockMode = "auto" | "force_on" | "force_off";
+
+export type PlaySourceRequestOptions = {
+  level?: PlayQualityLevel;
+  unblockMode?: PlayUnblockMode;
+};
+
 export type PlaySource = {
   trackId: string;
   url: string;

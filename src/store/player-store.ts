@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { ImportedPlaylist, PlaybackMode, Track } from "@/src/types/music";
+import type { ImportedPlaylist, PlaybackMode, PlayQualityLevel, PlayUnblockMode, Track } from "@/src/types/music";
 
 type PersistTrack = Track;
 
@@ -18,6 +18,8 @@ type PlayerState = {
   favorites: Record<string, PersistTrack>;
   recent: PersistTrack[];
   importedPlaylists: Record<string, ImportedPlaylist>;
+  playQualityLevel: PlayQualityLevel;
+  playUnblockMode: PlayUnblockMode;
   hasHydrated: boolean;
 };
 
@@ -47,6 +49,8 @@ type PlayerActions = {
     recent: Track[];
     importedPlaylists: Record<string, ImportedPlaylist>;
   }) => void;
+  setPlayQualityLevel: (level: PlayQualityLevel) => void;
+  setPlayUnblockMode: (mode: PlayUnblockMode) => void;
   listImportedPlaylists: () => ImportedPlaylist[];
 };
 
@@ -66,6 +70,8 @@ export const usePlayerStore = create<PlayerStore>()(
       favorites: {},
       recent: [],
       importedPlaylists: {},
+      playQualityLevel: "standard",
+      playUnblockMode: "auto",
       hasHydrated: false,
       setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
       setQueue: (tracks, startIndex = 0) => {
@@ -269,6 +275,8 @@ export const usePlayerStore = create<PlayerStore>()(
           recent: [...recent].slice(0, 50),
           importedPlaylists: { ...importedPlaylists }
         }),
+      setPlayQualityLevel: (playQualityLevel) => set({ playQualityLevel }),
+      setPlayUnblockMode: (playUnblockMode) => set({ playUnblockMode }),
       listImportedPlaylists: () => {
         const state = get();
         return Object.values(state.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt);
@@ -284,7 +292,9 @@ export const usePlayerStore = create<PlayerStore>()(
         volume: state.volume,
         favorites: state.favorites,
         recent: state.recent,
-        importedPlaylists: state.importedPlaylists
+        importedPlaylists: state.importedPlaylists,
+        playQualityLevel: state.playQualityLevel,
+        playUnblockMode: state.playUnblockMode
       }),
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== "object") return persistedState as PlayerStore;
@@ -297,13 +307,15 @@ export const usePlayerStore = create<PlayerStore>()(
         }
         return {
           ...state,
-          importedPlaylists: state.importedPlaylists ?? {}
+          importedPlaylists: state.importedPlaylists ?? {},
+          playQualityLevel: state.playQualityLevel ?? "standard",
+          playUnblockMode: state.playUnblockMode ?? "auto"
         } as PlayerStore;
       },
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
       },
-      version: 2
+      version: 3
     }
   )
 );

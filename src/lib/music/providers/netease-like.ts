@@ -13,6 +13,9 @@ import type {
   PagedResult,
   Playlist,
   PlaySource,
+  PlayQualityLevel,
+  PlaySourceRequestOptions,
+  PlayUnblockMode,
   SceneData,
   SceneResource,
   SearchAssist,
@@ -407,6 +410,35 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return Boolean(topLevelMessage && /(trial|preview|vip|copyright|无版权|试听|付费)/i.test(topLevelMessage));
   }
 
+  private resolvePlayLevel(options?: PlaySourceRequestOptions): string {
+    return options?.level ?? this.config.playLevel;
+  }
+
+  private resolvePlayUnblockMode(options?: PlaySourceRequestOptions): PlayUnblockMode {
+    return options?.unblockMode ?? "auto";
+  }
+
+  private buildPrimaryPlayQuery(trackId: string, level: string, unblockMode: PlayUnblockMode): Record<string, string | number | boolean> {
+    if (unblockMode === "force_on") {
+      return {
+        id: trackId,
+        level,
+        unblock: true
+      };
+    }
+    if (unblockMode === "force_off") {
+      return {
+        id: trackId,
+        level,
+        unblock: false
+      };
+    }
+    return {
+      id: trackId,
+      level
+    };
+  }
+
   private debugUnblockTrace(trackId: string, stage: string, extra?: Record<string, unknown>) {
     if (process.env.NODE_ENV !== "development") return;
     const details = extra ? ` ${JSON.stringify(extra)}` : "";
@@ -477,15 +509,21 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return toTrack(song);
   }
 
-  async getPlaySource(trackId: string): Promise<PlaySource> {
-    const raw = await this.request<AnyRecord>(this.config.pathPlayUrl, {
-      id: trackId,
-      level: this.config.playLevel
-    });
+  async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
+    const level = this.resolvePlayLevel(options);
+    const unblockMode = this.resolvePlayUnblockMode(options);
+    const raw = await this.request<AnyRecord>(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode));
     const data = this.extractPlayData(raw);
     const unblockPath = this.config.pathPlayUrlUnblock;
-    const shouldTryUnblock = this.shouldAttemptUnblock(raw, data);
+    const shouldTryUnblock =
+      unblockMode === "force_on"
+        ? !this.hasPlayableUrl(data)
+        : unblockMode === "force_off"
+          ? false
+          : this.shouldAttemptUnblock(raw, data);
     this.debugUnblockTrace(trackId, "v1", {
+      level,
+      unblockMode,
       hasUrl: this.hasPlayableUrl(data),
       preview: Boolean(data && this.isVipPreview(data)),
       shouldTryUnblock
@@ -510,7 +548,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       try {
         const unblockRaw = await this.requestSafe<AnyRecord>(unblockPath, {
           id: trackId,
-          level: this.config.playLevel,
+          level,
           ...(source ? { source } : {})
         });
         if (!unblockRaw) {

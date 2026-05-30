@@ -8,6 +8,7 @@ import {
   addFavoriteTrack,
   addRecentTrack,
   detectAccountServiceEnabled,
+  getLibraryChanges,
   getLibrarySnapshot,
   loadCurrentAccountUser,
   loginAccount,
@@ -57,6 +58,8 @@ import type {
   DiscoverItem,
   ImportedPlaylist,
   PlaybackMode,
+  PlayQualityLevel,
+  PlayUnblockMode,
   Playlist,
   SceneData,
   SongInsight,
@@ -106,6 +109,9 @@ const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
 const LIBRARY_CONTENT_LEAVE_MS = 140;
 const LIBRARY_CONTENT_ENTER_MS = 220;
 const ACCOUNT_SYNC_DEBOUNCE_MS = 180;
+const ACCOUNT_PULL_POLLING_MS = 30_000;
+const ACCOUNT_PULL_THROTTLE_MS = 1_800;
+const ACCOUNT_PULL_RETRY_BLOCK_MS = 4_000;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
@@ -127,6 +133,22 @@ const NEUTRAL_DETAIL_PALETTE: DetailPalette = {
 const DARK_DETAIL_FOREGROUND = deriveDetailForegroundTone({ red: 28, green: 36, blue: 52 });
 
 const DEFAULT_COVER_URL = "/assets/default-cover.svg";
+const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = [
+  { value: "standard", label: "standard" },
+  { value: "higher", label: "higher" },
+  { value: "exhigh", label: "exhigh" },
+  { value: "lossless", label: "lossless" },
+  { value: "hires", label: "hires" },
+  { value: "jyeffect", label: "jyeffect" },
+  { value: "sky", label: "sky" },
+  { value: "dolby", label: "dolby" },
+  { value: "jymaster", label: "jymaster" }
+];
+const PLAY_UNBLOCK_MODE_OPTIONS: Array<{ value: PlayUnblockMode; label: string }> = [
+  { value: "auto", label: "自动" },
+  { value: "force_on", label: "强制开启" },
+  { value: "force_off", label: "强制关闭" }
+];
 
 function readHistoryGuardState(): HistoryGuardState["__mqmGuard"] | undefined {
   if (typeof window === "undefined") return undefined;
@@ -248,6 +270,12 @@ function resolveAuthFormError(error: unknown, mode: AuthFormMode): string {
 
 function resolveSyncNotice(error: unknown): string {
   if (error instanceof AccountApiError) {
+    if (error.code === 5101 || (error.status === 400 && error.code === 5101)) {
+      return "同步内容字段过多，请稍后重试或联系管理员提升同步字段上限。";
+    }
+    if (error.code === 5102 || error.status === 413) {
+      return "同步内容过大，请稍后重试或联系管理员提升同步请求体上限。";
+    }
     if (error.status === 401) {
       return "登录状态已失效，请重新登录后再同步。";
     }
@@ -354,6 +382,61 @@ function sanitizeImportedPlaylistForCloud(playlist: unknown): ImportedPlaylist |
     importedAt,
     updatedAt
   };
+}
+
+type LibrarySyncSnapshot = {
+  favorites: Record<string, Track>;
+  recent: Track[];
+  importedPlaylists: Record<string, ImportedPlaylist>;
+};
+
+type LibrarySyncDelta = {
+  favoriteAdded: Track[];
+  favoriteRemoved: string[];
+  shouldPushRecent: boolean;
+  nextRecentHead: Track | null;
+  importedChanged: ImportedPlaylist[];
+  importedRemoved: string[];
+};
+
+function hasImportedPlaylistChanged(previous: ImportedPlaylist | undefined, next: ImportedPlaylist): boolean {
+  if (!previous) return true;
+  return (
+    previous.updatedAt !== next.updatedAt ||
+    previous.name !== next.name ||
+    previous.description !== next.description ||
+    previous.tracks.length !== next.tracks.length
+  );
+}
+
+function computeLibrarySyncDelta(previous: LibrarySyncSnapshot, next: LibrarySyncSnapshot): LibrarySyncDelta {
+  const favoriteAdded = Object.values(next.favorites).filter((item) => !previous.favorites[item.id]);
+  const favoriteRemoved = Object.keys(previous.favorites).filter((trackId) => !next.favorites[trackId]);
+  const previousRecentHead = previous.recent[0]?.id ?? null;
+  const nextRecentHead = next.recent[0] ?? null;
+  const shouldPushRecent = Boolean(nextRecentHead && nextRecentHead.id !== previousRecentHead);
+  const importedChanged = Object.values(next.importedPlaylists).filter((playlist) =>
+    hasImportedPlaylistChanged(previous.importedPlaylists[playlist.id], playlist)
+  );
+  const importedRemoved = Object.keys(previous.importedPlaylists).filter((playlistId) => !next.importedPlaylists[playlistId]);
+  return {
+    favoriteAdded,
+    favoriteRemoved,
+    shouldPushRecent,
+    nextRecentHead,
+    importedChanged,
+    importedRemoved
+  };
+}
+
+function hasPendingLibrarySync(delta: LibrarySyncDelta): boolean {
+  return (
+    delta.favoriteAdded.length > 0 ||
+    delta.favoriteRemoved.length > 0 ||
+    delta.shouldPushRecent ||
+    delta.importedChanged.length > 0 ||
+    delta.importedRemoved.length > 0
+  );
 }
 
 function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
@@ -868,6 +951,12 @@ export function PlayerApp() {
     importedPlaylists: player.importedPlaylists
   });
   const syncTimerRef = useRef<number | null>(null);
+  const syncPollTimerRef = useRef<number | null>(null);
+  const cloudRevisionRef = useRef(0);
+  const pullInFlightRef = useRef(false);
+  const pendingPullReasonRef = useRef<string | null>(null);
+  const lastPullTriggeredAtRef = useRef(0);
+  const pullRetryBlockedUntilRef = useRef(0);
   const authBootstrapDoneRef = useRef(false);
   const syncReadyRef = useRef(false);
 
@@ -935,6 +1024,155 @@ export function PlayerApp() {
     [player]
   );
 
+  const captureCurrentLibrarySnapshot = useCallback<() => LibrarySyncSnapshot>(
+    () => ({
+      favorites: player.favorites,
+      recent: player.recent,
+      importedPlaylists: player.importedPlaylists
+    }),
+    [player.favorites, player.importedPlaylists, player.recent]
+  );
+
+  const pushLocalChanges = useCallback(
+    async (options?: { syncState?: boolean; silentSuccess?: boolean }) => {
+      if (!isAccountEnabled || authStatus !== "authenticated" || !syncReadyRef.current || snapshotApplyingRef.current || !player.hasHydrated) {
+        return { pushed: false, failed: false };
+      }
+
+      const previous = syncBaselineRef.current;
+      const next = captureCurrentLibrarySnapshot();
+      const delta = computeLibrarySyncDelta(previous, next);
+      if (!hasPendingLibrarySync(delta)) {
+        return { pushed: false, failed: false };
+      }
+
+      if (options?.syncState !== false) {
+        setAuthSyncState("syncing");
+      }
+
+      let maxRevision = cloudRevisionRef.current;
+      let skippedInvalidPlaylists = 0;
+
+      try {
+        for (const track of delta.favoriteAdded) {
+          const payload = sanitizeTrackForCloud(track);
+          if (!payload) continue;
+          const result = await addFavoriteTrack(payload);
+          maxRevision = Math.max(maxRevision, result.revision);
+        }
+        for (const trackId of delta.favoriteRemoved) {
+          const result = await removeFavoriteTrack(trackId);
+          maxRevision = Math.max(maxRevision, result.revision);
+        }
+        if (delta.shouldPushRecent && delta.nextRecentHead) {
+          const payload = sanitizeTrackForCloud(delta.nextRecentHead);
+          if (payload) {
+            const result = await addRecentTrack(payload);
+            maxRevision = Math.max(maxRevision, result.revision);
+          }
+        }
+        for (const playlist of delta.importedChanged) {
+          const payload = sanitizeImportedPlaylistForCloud(playlist);
+          if (!payload) {
+            skippedInvalidPlaylists += 1;
+            continue;
+          }
+          const result = await upsertImportedPlaylistCloud(payload);
+          maxRevision = Math.max(maxRevision, result.revision);
+        }
+        for (const playlistId of delta.importedRemoved) {
+          const result = await removeImportedPlaylistCloud(playlistId);
+          maxRevision = Math.max(maxRevision, result.revision);
+        }
+
+        syncBaselineRef.current = next;
+        cloudRevisionRef.current = Math.max(cloudRevisionRef.current, maxRevision);
+        pullRetryBlockedUntilRef.current = 0;
+
+        if (!options?.silentSuccess) {
+          setAuthSyncState("success");
+        }
+        if (skippedInvalidPlaylists > 0) {
+          setAuthNotice(`发现 ${skippedInvalidPlaylists} 个歌单数据不完整，已跳过云同步。`);
+        }
+        return { pushed: true, failed: false };
+      } catch (error) {
+        setAuthSyncState("failed");
+        setAuthNotice(resolveSyncNotice(error));
+        pullRetryBlockedUntilRef.current = Date.now() + ACCOUNT_PULL_RETRY_BLOCK_MS;
+        return { pushed: false, failed: true };
+      }
+    },
+    [authStatus, captureCurrentLibrarySnapshot, isAccountEnabled, player.hasHydrated, setAuthSyncState]
+  );
+
+  const triggerCloudPull = useCallback(
+    async (reason: string, options?: { force?: boolean }) => {
+      const force = options?.force ?? false;
+      if (!isAccountEnabled || authStatus !== "authenticated" || !syncReadyRef.current || !player.hasHydrated) {
+        return;
+      }
+      const now = Date.now();
+      if (!force && now < pullRetryBlockedUntilRef.current) {
+        return;
+      }
+      if (pullInFlightRef.current) {
+        pendingPullReasonRef.current = reason;
+        return;
+      }
+      if (!force && now - lastPullTriggeredAtRef.current < ACCOUNT_PULL_THROTTLE_MS) {
+        return;
+      }
+
+      lastPullTriggeredAtRef.current = now;
+      pullInFlightRef.current = true;
+      setAuthSyncState("syncing");
+
+      try {
+        const localDelta = computeLibrarySyncDelta(syncBaselineRef.current, captureCurrentLibrarySnapshot());
+        if (hasPendingLibrarySync(localDelta)) {
+          const pushResult = await pushLocalChanges({ syncState: false, silentSuccess: true });
+          if (pushResult.failed) return;
+        }
+
+        const sinceRevision = Math.max(0, cloudRevisionRef.current);
+        const changes = await getLibraryChanges(sinceRevision);
+        if (typeof changes.toRevision === "number") {
+          cloudRevisionRef.current = Math.max(cloudRevisionRef.current, changes.toRevision);
+        }
+        if (!changes.hasChanges) {
+          setAuthSyncState("success");
+          pullRetryBlockedUntilRef.current = 0;
+          return;
+        }
+
+        const snapshot = await getLibrarySnapshot();
+        applyCloudSnapshot({
+          favorites: snapshot.favorites ?? {},
+          recent: snapshot.recent ?? [],
+          importedPlaylists: snapshot.importedPlaylists ?? {}
+        });
+        cloudRevisionRef.current = Math.max(cloudRevisionRef.current, snapshot.revision ?? 0);
+        setAuthSyncState("success");
+        pullRetryBlockedUntilRef.current = 0;
+      } catch (error) {
+        setAuthSyncState("failed");
+        setAuthNotice(resolveSyncNotice(error));
+        pullRetryBlockedUntilRef.current = Date.now() + ACCOUNT_PULL_RETRY_BLOCK_MS;
+      } finally {
+        pullInFlightRef.current = false;
+        const pendingReason = pendingPullReasonRef.current;
+        pendingPullReasonRef.current = null;
+        if (pendingReason) {
+          window.setTimeout(() => {
+            void triggerCloudPull(pendingReason, { force: true });
+          }, 0);
+        }
+      }
+    },
+    [applyCloudSnapshot, authStatus, captureCurrentLibrarySnapshot, isAccountEnabled, player.hasHydrated, pushLocalChanges, setAuthSyncState]
+  );
+
   const syncAfterLogin = useCallback(async () => {
     syncReadyRef.current = false;
     setAuthSyncState("syncing");
@@ -945,9 +1183,9 @@ export function PlayerApp() {
         recent: snapshot.recent ?? [],
         importedPlaylists: snapshot.importedPlaylists ?? {}
       });
+      cloudRevisionRef.current = Math.max(0, snapshot.revision ?? 0);
       setAuthSyncState("success");
       setAuthRefreshIssue(null);
-      setAuthNotice("已同步云端音乐库（云端覆盖本地）。");
     } catch (error) {
       setAuthSyncState("failed");
       setAuthNotice(resolveSyncNotice(error));
@@ -955,6 +1193,23 @@ export function PlayerApp() {
       syncReadyRef.current = true;
     }
   }, [applyCloudSnapshot, setAuthSyncState]);
+
+  const resetCloudSyncSession = useCallback(() => {
+    syncReadyRef.current = false;
+    cloudRevisionRef.current = 0;
+    pullInFlightRef.current = false;
+    pendingPullReasonRef.current = null;
+    lastPullTriggeredAtRef.current = 0;
+    pullRetryBlockedUntilRef.current = 0;
+    if (syncTimerRef.current) {
+      window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    if (syncPollTimerRef.current) {
+      window.clearInterval(syncPollTimerRef.current);
+      syncPollTimerRef.current = null;
+    }
+  }, []);
 
   const closeAccountDialog = useCallback(() => {
     setAccountDialogOpen(false);
@@ -1028,11 +1283,11 @@ export function PlayerApp() {
       setAuthRefreshIssue(null);
       setAuthGuest();
       setAuthSyncState("idle");
-      syncReadyRef.current = false;
+      resetCloudSyncSession();
     } catch {
       setAuthNotice("退出失败，请稍后重试。");
     }
-  }, [setAuthGuest, setAuthSyncState]);
+  }, [resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
 
   const handleAuthRefreshRetry = useCallback(async () => {
     if (!isAccountEnabled) return;
@@ -1040,7 +1295,7 @@ export function PlayerApp() {
     setAuthRefreshIssue(null);
     const refreshResult = await tryRefreshAccessTokenDetailed();
     if (!refreshResult.ok) {
-      syncReadyRef.current = false;
+      resetCloudSyncSession();
       setAuthGuest();
       setAuthRefreshIssue(resolveAuthRefreshIssue(refreshResult.error, "manual"));
       return;
@@ -1050,7 +1305,7 @@ export function PlayerApp() {
       const me = await loadCurrentAccountUser();
       const token = useAuthStore.getState().accessToken;
       if (!token) {
-        syncReadyRef.current = false;
+        resetCloudSyncSession();
         setAuthGuest();
         setAuthRefreshIssue("登录状态异常，请重新登录。");
         return;
@@ -1058,11 +1313,11 @@ export function PlayerApp() {
       setAuthAuthenticated(me, token);
       await syncAfterLogin();
     } catch {
-      syncReadyRef.current = false;
+      resetCloudSyncSession();
       setAuthGuest();
       setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
     }
-  }, [isAccountEnabled, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+  }, [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -1105,7 +1360,7 @@ export function PlayerApp() {
       if (!active) return;
       setIsAccountEnabled(enabled);
       if (!enabled) {
-        syncReadyRef.current = false;
+        resetCloudSyncSession();
         setAuthGuest();
         setAuthRefreshIssue(null);
       }
@@ -1114,7 +1369,7 @@ export function PlayerApp() {
     return () => {
       active = false;
     };
-  }, [setAuthGuest]);
+  }, [resetCloudSyncSession, setAuthGuest]);
 
   useEffect(() => {
     if (!isAccountEnabled || authBootstrapDoneRef.current) return;
@@ -1126,7 +1381,7 @@ export function PlayerApp() {
       const refreshResult = await tryRefreshAccessTokenDetailed();
       if (!active) return;
       if (!refreshResult.ok) {
-        syncReadyRef.current = false;
+        resetCloudSyncSession();
         setAuthGuest();
         setAuthRefreshIssue(resolveAuthRefreshIssue(refreshResult.error, "auto"));
         return;
@@ -1136,7 +1391,7 @@ export function PlayerApp() {
         if (!active) return;
         const token = useAuthStore.getState().accessToken;
         if (!token) {
-          syncReadyRef.current = false;
+          resetCloudSyncSession();
           setAuthGuest();
           setAuthRefreshIssue("登录状态异常，请重新登录。");
           return;
@@ -1145,7 +1400,7 @@ export function PlayerApp() {
         await syncAfterLogin();
       } catch {
         if (!active) return;
-        syncReadyRef.current = false;
+        resetCloudSyncSession();
         setAuthGuest();
         setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
       }
@@ -1154,7 +1409,63 @@ export function PlayerApp() {
     return () => {
       active = false;
     };
-  }, [isAccountEnabled, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+  }, [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+
+  useEffect(() => {
+    if (activeTab !== "library") return;
+    if (!isAccountEnabled || authStatus !== "authenticated") return;
+    if (!player.hasHydrated) return;
+    void triggerCloudPull("enter-library", { force: true });
+  }, [activeTab, authStatus, isAccountEnabled, player.hasHydrated, triggerCloudPull]);
+
+  useEffect(() => {
+    if (activeTab !== "library") return;
+    if (libraryView !== "library-recent" && libraryView !== "library-playlists") return;
+    if (!isAccountEnabled || authStatus !== "authenticated") return;
+    if (!player.hasHydrated) return;
+    void triggerCloudPull(`library-view:${libraryView}`, { force: true });
+  }, [activeTab, authStatus, isAccountEnabled, libraryView, player.hasHydrated, triggerCloudPull]);
+
+  useEffect(() => {
+    if (!isAccountEnabled || authStatus !== "authenticated") return;
+    if (!player.hasHydrated) return;
+
+    const onFocus = () => {
+      void triggerCloudPull("window-focus", { force: true });
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void triggerCloudPull("tab-visible", { force: true });
+    };
+
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [authStatus, isAccountEnabled, player.hasHydrated, triggerCloudPull]);
+
+  useEffect(() => {
+    if (syncPollTimerRef.current) {
+      window.clearInterval(syncPollTimerRef.current);
+      syncPollTimerRef.current = null;
+    }
+    if (!isAccountEnabled || authStatus !== "authenticated") return;
+    if (!player.hasHydrated) return;
+
+    syncPollTimerRef.current = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void triggerCloudPull("polling");
+    }, ACCOUNT_PULL_POLLING_MS);
+
+    return () => {
+      if (syncPollTimerRef.current) {
+        window.clearInterval(syncPollTimerRef.current);
+        syncPollTimerRef.current = null;
+      }
+    };
+  }, [authStatus, isAccountEnabled, player.hasHydrated, triggerCloudPull]);
 
   useEffect(() => {
     if (!isAccountEnabled || authStatus !== "authenticated") return;
@@ -1162,28 +1473,8 @@ export function PlayerApp() {
     if (snapshotApplyingRef.current) return;
     if (!player.hasHydrated) return;
 
-    const previous = syncBaselineRef.current;
-    const nextFavorites = player.favorites;
-    const nextRecent = player.recent;
-    const nextImported = player.importedPlaylists;
-    const favoriteAdded = Object.values(nextFavorites).filter((item) => !previous.favorites[item.id]);
-    const favoriteRemoved = Object.keys(previous.favorites).filter((trackId) => !nextFavorites[trackId]);
-    const previousRecentHead = previous.recent[0]?.id ?? null;
-    const nextRecentHead = nextRecent[0] ?? null;
-    const shouldPushRecent = Boolean(nextRecentHead && nextRecentHead.id !== previousRecentHead);
-    const importedChanged = Object.values(nextImported).filter((playlist) => {
-      const previousPlaylist = previous.importedPlaylists[playlist.id];
-      if (!previousPlaylist) return true;
-      return (
-        previousPlaylist.updatedAt !== playlist.updatedAt ||
-        previousPlaylist.name !== playlist.name ||
-        previousPlaylist.description !== playlist.description ||
-        previousPlaylist.tracks.length !== playlist.tracks.length
-      );
-    });
-    const importedRemoved = Object.keys(previous.importedPlaylists).filter((playlistId) => !nextImported[playlistId]);
-
-    if (!favoriteAdded.length && !favoriteRemoved.length && !shouldPushRecent && !importedChanged.length && !importedRemoved.length) {
+    const delta = computeLibrarySyncDelta(syncBaselineRef.current, captureCurrentLibrarySnapshot());
+    if (!hasPendingLibrarySync(delta)) {
       return;
     }
 
@@ -1193,41 +1484,9 @@ export function PlayerApp() {
 
     syncTimerRef.current = window.setTimeout(() => {
       void (async () => {
-        setAuthSyncState("syncing");
-        try {
-          for (const track of favoriteAdded) {
-            const payload = sanitizeTrackForCloud(track);
-            if (payload) {
-              await addFavoriteTrack(payload);
-            }
-          }
-          for (const trackId of favoriteRemoved) {
-            await removeFavoriteTrack(trackId);
-          }
-          if (shouldPushRecent && nextRecentHead) {
-            const payload = sanitizeTrackForCloud(nextRecentHead);
-            if (payload) {
-              await addRecentTrack(payload);
-            }
-          }
-          for (const playlist of importedChanged) {
-            const payload = sanitizeImportedPlaylistForCloud(playlist);
-            if (payload) {
-              await upsertImportedPlaylistCloud(payload);
-            }
-          }
-          for (const playlistId of importedRemoved) {
-            await removeImportedPlaylistCloud(playlistId);
-          }
-          syncBaselineRef.current = {
-            favorites: player.favorites,
-            recent: player.recent,
-            importedPlaylists: player.importedPlaylists
-          };
-          setAuthSyncState("success");
-        } catch (error) {
-          setAuthSyncState("failed");
-          setAuthNotice(resolveSyncNotice(error));
+        const result = await pushLocalChanges();
+        if (result.pushed && !result.failed) {
+          void triggerCloudPull("after-local-push", { force: true });
         }
       })();
     }, ACCOUNT_SYNC_DEBOUNCE_MS);
@@ -1238,7 +1497,17 @@ export function PlayerApp() {
         syncTimerRef.current = null;
       }
     };
-  }, [authStatus, isAccountEnabled, player.favorites, player.hasHydrated, player.importedPlaylists, player.recent, setAuthSyncState]);
+  }, [
+    authStatus,
+    captureCurrentLibrarySnapshot,
+    isAccountEnabled,
+    player.favorites,
+    player.hasHydrated,
+    player.importedPlaylists,
+    player.recent,
+    pushLocalChanges,
+    triggerCloudPull
+  ]);
 
   useLayoutEffect(() => {
     const root = librarySegmentedRef.current;
@@ -3847,6 +4116,34 @@ export function PlayerApp() {
                     ) : null}
                     {!isMobileUi ? (
                       <div className="download-row">
+                        <label htmlFor="playback-level">播放音质</label>
+                        <select
+                          id="playback-level"
+                          value={player.playQualityLevel}
+                          onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
+                        >
+                          {PLAY_QUALITY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <label htmlFor="playback-unblock">解灰模式</label>
+                        <select
+                          id="playback-unblock"
+                          value={player.playUnblockMode}
+                          onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
+                        >
+                          {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    {!isMobileUi ? (
+                      <div className="download-row">
                         <label htmlFor="download-level">下载音质</label>
                         <select
                           id="download-level"
@@ -3871,6 +4168,34 @@ export function PlayerApp() {
                         >
                           {downloadState.loading ? "获取中..." : "获取下载链接"}
                         </button>
+                      </div>
+                    ) : null}
+                    {isMobileUi ? (
+                      <div className="download-row">
+                        <label htmlFor="playback-level-mobile">播放音质</label>
+                        <select
+                          id="playback-level-mobile"
+                          value={player.playQualityLevel}
+                          onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
+                        >
+                          {PLAY_QUALITY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <label htmlFor="playback-unblock-mobile">解灰模式</label>
+                        <select
+                          id="playback-unblock-mobile"
+                          value={player.playUnblockMode}
+                          onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
+                        >
+                          {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     ) : null}
                     {downloadState.message ? <p>{downloadState.message}</p> : null}

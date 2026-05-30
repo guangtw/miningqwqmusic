@@ -11,7 +11,7 @@ import {
   shouldStartPlayback
 } from "@/src/lib/playback-guard";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
-import type { LyricLine, PlaySource, PlaybackMode, Track } from "@/src/types/music";
+import type { LyricLine, PlaySource, PlaybackMode, PlaySourceRequestOptions, Track } from "@/src/types/music";
 
 type TransitionPhase = "idle" | "fadingOut" | "switching" | "fadingIn";
 
@@ -85,6 +85,8 @@ export function usePlayerController(): ControllerState {
   const nextTrack = usePlayerStore((state) => state.nextTrack);
   const rememberTrack = usePlayerStore((state) => state.rememberTrack);
   const playTrackNow = usePlayerStore((state) => state.playTrackNow);
+  const playQualityLevel = usePlayerStore((state) => state.playQualityLevel);
+  const playUnblockMode = usePlayerStore((state) => state.playUnblockMode);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
   const currentTrackId = queueTrack?.id ?? null;
@@ -96,6 +98,16 @@ export function usePlayerController(): ControllerState {
   const [loadingSource, setLoadingSource] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>("idle");
+  const playSourceOptions = useMemo<PlaySourceRequestOptions | undefined>(
+    () =>
+      playQualityLevel === "standard" && playUnblockMode === "auto"
+        ? undefined
+        : {
+            level: playQualityLevel,
+            unblockMode: playUnblockMode
+          },
+    [playQualityLevel, playUnblockMode]
+  );
 
   const renewTimerRef = useRef<number | null>(null);
   const transitionTokenRef = useRef(0);
@@ -103,6 +115,7 @@ export function usePlayerController(): ControllerState {
   const fullAudioCacheRef = useRef<Map<string, CachedAudioBlob>>(new Map());
   const fullAudioFetchControllerRef = useRef<Map<string, AbortController>>(new Map());
   const prefetchingRef = useRef<Set<string>>(new Set());
+  const prefetchSourcePromiseRef = useRef<Map<string, Promise<PlaySource>>>(new Map());
   const recoveryRef = useRef<{ attempts: number; windowStartedAt: number; lastRecoverAt: number }>({
     attempts: 0,
     windowStartedAt: 0,
@@ -117,6 +130,9 @@ export function usePlayerController(): ControllerState {
   const appliedTrackIdRef = useRef<string | null>(null);
   const appliedSourceUrlRef = useRef<string | null>(null);
   const transitionPhaseRef = useRef<TransitionPhase>("idle");
+  const playSourceOptionsRef = useRef<PlaySourceRequestOptions | undefined>(playSourceOptions);
+  const cacheTrackAudioBlobRef = useRef<((trackId: string, sourceUrl: string) => Promise<void>) | null>(null);
+  const hasMountedPlayOptionsRef = useRef(false);
   const playbackSessionRef = useRef(0);
   const lastLoadedTrackIdRef = useRef<string | null>(null);
   const recoveryInFlightRef = useRef(false);
@@ -147,6 +163,10 @@ export function usePlayerController(): ControllerState {
   }, [transitionPhase]);
 
   useEffect(() => {
+    playSourceOptionsRef.current = playSourceOptions;
+  }, [playSourceOptions]);
+
+  useEffect(() => {
     recoveryRef.current = {
       attempts: 0,
       windowStartedAt: Date.now(),
@@ -156,6 +176,12 @@ export function usePlayerController(): ControllerState {
     recoveryInFlightRef.current = false;
     lastEndedAtRef.current = 0;
   }, [currentTrackId]);
+
+  const requestTrackPlaySource = useCallback(
+    (trackId: string, options: PlaySourceRequestOptions | undefined) =>
+      options ? getTrackPlaySource(trackId, options) : getTrackPlaySource(trackId),
+    []
+  );
 
   const applyGain = useCallback((nextVolume: number, smoothMs = 80) => {
     const audio = audioRef.current;
@@ -281,6 +307,10 @@ export function usePlayerController(): ControllerState {
   }, [ensureAudioCacheLimit]);
 
   useEffect(() => {
+    cacheTrackAudioBlobRef.current = cacheTrackAudioBlob;
+  }, [cacheTrackAudioBlob]);
+
+  useEffect(() => {
     if (!queueTrack) {
       setResolvedTrack(null);
       return;
@@ -370,6 +400,7 @@ export function usePlayerController(): ControllerState {
       const cachedAudio = fullAudioCacheRef.current.get(nextTrackId);
       const cached = prefetchedSourceRef.current.get(nextTrackId);
       const validCached = isCachedSourceUsable(cached);
+      const inFlightPrefetched = prefetchSourcePromiseRef.current.get(nextTrackId);
       const playSourcePromise = cachedAudio
         ? Promise.resolve<PlaySource>({
             trackId: nextTrackId,
@@ -377,7 +408,7 @@ export function usePlayerController(): ControllerState {
           })
         : validCached && cached
           ? Promise.resolve(cached.source)
-          : getTrackPlaySource(nextTrackId);
+          : inFlightPrefetched ?? requestTrackPlaySource(nextTrackId, playSourceOptionsRef.current);
 
       setTransitionPhase("fadingOut");
       await fadeOutAudio(token);
@@ -451,7 +482,16 @@ export function usePlayerController(): ControllerState {
     return () => {
       active = false;
     };
-  }, [currentTrackId, playTrackNow, rememberTrack, setCurrentTimeMs, setDurationMs, applyGain, fadeOutAudio]);
+  }, [
+    currentTrackId,
+    playTrackNow,
+    rememberTrack,
+    setCurrentTimeMs,
+    setDurationMs,
+    applyGain,
+    fadeOutAudio,
+    requestTrackPlaySource
+  ]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -649,7 +689,7 @@ export function usePlayerController(): ControllerState {
           return;
         }
 
-        const renewed = await getTrackPlaySource(trackId);
+        const renewed = await requestTrackPlaySource(trackId, playSourceOptionsRef.current);
         if (!isCurrentSession() || !canRecoverTargetTrack(trackId) || renewed.trackId !== trackId) return;
         prefetchedSourceRef.current.set(trackId, { source: renewed, cachedAt: Date.now() });
         resumeAfterSourceSwitchRef.current = resumeMs;
@@ -735,7 +775,7 @@ export function usePlayerController(): ControllerState {
       audio.removeEventListener("suspend", onSuspend);
       audio.removeEventListener("error", onError);
     };
-  }, [cacheTrackAudioBlob, currentTrackId, nextTrack, playTrackNow, setCurrentTimeMs, setDurationMs]);
+  }, [cacheTrackAudioBlob, currentTrackId, nextTrack, playTrackNow, setCurrentTimeMs, setDurationMs, requestTrackPlaySource]);
 
   useEffect(() => {
     if (renewTimerRef.current) {
@@ -760,7 +800,7 @@ export function usePlayerController(): ControllerState {
     const renewAt = Math.max(1000, ttlMs - 5000);
     renewTimerRef.current = window.setTimeout(async () => {
       try {
-        const renewed = await getTrackPlaySource(trackId);
+        const renewed = await requestTrackPlaySource(trackId, playSourceOptionsRef.current);
         if (
           !isSessionValid(
             sessionSnapshot,
@@ -793,7 +833,7 @@ export function usePlayerController(): ControllerState {
         window.clearTimeout(renewTimerRef.current);
       }
     };
-  }, [source?.trackId, source?.url, source?.ttlSeconds, currentTrackId]);
+  }, [source?.trackId, source?.url, source?.ttlSeconds, currentTrackId, requestTrackPlaySource]);
 
   useEffect(() => {
     const target = selectPrefetchTarget(queue, currentIndex, mode);
@@ -802,7 +842,9 @@ export function usePlayerController(): ControllerState {
     if (isCachedSourceUsable(prefetchedSourceRef.current.get(target.id))) return;
 
     prefetchingRef.current.add(target.id);
-    getTrackPlaySource(target.id)
+    const prefetchedPromise = requestTrackPlaySource(target.id, playSourceOptionsRef.current);
+    prefetchSourcePromiseRef.current.set(target.id, prefetchedPromise);
+    prefetchedPromise
       .then((playSource) => {
         prefetchedSourceRef.current.set(target.id, { source: playSource, cachedAt: Date.now() });
       })
@@ -810,9 +852,60 @@ export function usePlayerController(): ControllerState {
         // 预加载失败不影响主播放链路。
       })
       .finally(() => {
+        prefetchSourcePromiseRef.current.delete(target.id);
         prefetchingRef.current.delete(target.id);
       });
-  }, [queue, currentIndex, mode, currentTrackId]);
+  }, [queue, currentIndex, mode, currentTrackId, playSourceOptions, requestTrackPlaySource]);
+
+  useEffect(() => {
+    prefetchedSourceRef.current.clear();
+    prefetchSourcePromiseRef.current.clear();
+  }, [playSourceOptions]);
+
+  useEffect(() => {
+    const trackId = currentTrackIdRef.current;
+    if (!hasMountedPlayOptionsRef.current) {
+      hasMountedPlayOptionsRef.current = true;
+      return;
+    }
+    if (!trackId) return;
+    if (!currentSourceRef.current) return;
+
+    const resumeMs = Math.floor((audioRef.current?.currentTime ?? 0) * 1000);
+    const sessionSnapshot = {
+      sessionId: playbackSessionRef.current,
+      trackId,
+      token: transitionTokenRef.current
+    };
+    let active = true;
+
+    requestTrackPlaySource(trackId, playSourceOptions)
+      .then((renewed) => {
+        if (
+          !active ||
+          !isSessionValid(
+            sessionSnapshot,
+            playbackSessionRef.current,
+            currentTrackIdRef.current,
+            transitionTokenRef.current
+          )
+        ) {
+          return;
+        }
+        prefetchedSourceRef.current.set(trackId, { source: renewed, cachedAt: Date.now() });
+        resumeAfterSourceSwitchRef.current = resumeMs;
+        setSource(renewed);
+        void cacheTrackAudioBlobRef.current?.(trackId, renewed.url);
+      })
+      .catch(() => {
+        if (!active) return;
+        setErrorText("当前音质或解灰模式不可用，已保持原播放链路。");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [playSourceOptions, requestTrackPlaySource]);
 
   useEffect(() => {
     const fetchControllerMap = fullAudioFetchControllerRef.current;

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
+  AccountApiError,
   addFavoriteTrack,
   addRecentTrack,
   detectAccountServiceEnabled,
@@ -14,7 +15,7 @@ import {
   registerAccount,
   removeFavoriteTrack,
   removeImportedPlaylistCloud,
-  tryRefreshAccessToken,
+  tryRefreshAccessTokenDetailed,
   upsertImportedPlaylistCloud
 } from "@/src/lib/account-client";
 import {
@@ -185,6 +186,33 @@ function authStatusLabel(status: AuthStatus): string {
   if (status === "authenticating") return "连接中";
   if (status === "error") return "连接异常";
   return "游客模式";
+}
+
+function resolveAuthRefreshIssue(
+  error: AccountApiError | undefined,
+  mode: "auto" | "manual"
+): string {
+  if (!error) {
+    return mode === "auto" ? "登录服务暂不可用，自动登录失败。" : "登录服务暂不可用，请稍后重试。";
+  }
+
+  if (error.status === 401 && error.code === 5203) {
+    return mode === "auto" ? "未登录或会话已过期，自动登录未执行。" : "未登录或会话已过期，请重新登录。";
+  }
+
+  if (error.status === 403 && error.code === 5207) {
+    return "登录请求来源校验失败，请联系管理员检查域名配置。";
+  }
+
+  if (error.status === 429) {
+    return "请求过于频繁，请稍后重试。";
+  }
+
+  if (error.code === 5403 || error.status >= 500) {
+    return mode === "auto" ? "登录服务暂不可用，自动登录失败。" : "登录服务暂不可用，请稍后重试。";
+  }
+
+  return mode === "auto" ? "自动登录失败，请手动登录。" : "账号连接失败，请稍后重试。";
 }
 
 function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
@@ -871,11 +899,11 @@ export function PlayerApp() {
     if (!isAccountEnabled) return;
     setAuthAuthenticating();
     setAuthRefreshIssue(null);
-    const refreshed = await tryRefreshAccessToken();
-    if (!refreshed) {
+    const refreshResult = await tryRefreshAccessTokenDetailed();
+    if (!refreshResult.ok) {
       syncReadyRef.current = false;
       setAuthGuest();
-      setAuthRefreshIssue("登录服务暂不可用，请稍后重试。");
+      setAuthRefreshIssue(resolveAuthRefreshIssue(refreshResult.error, "manual"));
       return;
     }
 
@@ -956,12 +984,12 @@ export function PlayerApp() {
     const bootstrap = async () => {
       setAuthAuthenticating();
       setAuthRefreshIssue(null);
-      const refreshed = await tryRefreshAccessToken();
+      const refreshResult = await tryRefreshAccessTokenDetailed();
       if (!active) return;
-      if (!refreshed) {
+      if (!refreshResult.ok) {
         syncReadyRef.current = false;
         setAuthGuest();
-        setAuthRefreshIssue("登录服务暂不可用，自动登录失败。");
+        setAuthRefreshIssue(resolveAuthRefreshIssue(refreshResult.error, "auto"));
         return;
       }
       try {

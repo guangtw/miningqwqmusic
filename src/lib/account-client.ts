@@ -20,6 +20,15 @@ type RequestOptions = {
   retryOnUnauthorized?: boolean;
 };
 
+export type RefreshAttemptResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      error?: AccountApiError;
+    };
+
 export class AccountApiError extends Error {
   readonly code: number;
   readonly status: number;
@@ -135,15 +144,26 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
 }
 
 export async function tryRefreshAccessToken(): Promise<boolean> {
+  const result = await tryRefreshAccessTokenDetailed();
+  return result.ok;
+}
+
+export async function tryRefreshAccessTokenDetailed(): Promise<RefreshAttemptResult> {
   try {
     const data = await fetchAccount<AuthTokenData>("/api/account/auth/refresh", {
       method: "POST",
       retryOnUnauthorized: false
     });
     useAuthStore.getState().updateAccessToken(data.accessToken);
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof AccountApiError) {
+      return {
+        ok: false,
+        error
+      };
+    }
+    return { ok: false };
   }
 }
 

@@ -104,6 +104,7 @@ type HistoryGuardState = {
 type AuthFormMode = "login" | "register";
 
 const DETAIL_ANIMATION_MS = 340;
+const DETAIL_OPEN_FOCUS_DELAY_MS = 460;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
 const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
@@ -2573,7 +2574,10 @@ export function PlayerApp() {
 
   useEffect(() => {
     if (detailPhase !== "open") return;
-    focusFirstInteractive(detailScreenRef.current);
+    const focusTimerId = window.setTimeout(() => {
+      focusFirstInteractive(detailScreenRef.current);
+    }, DETAIL_OPEN_FOCUS_DELAY_MS);
+    return () => window.clearTimeout(focusTimerId);
   }, [detailPhase]);
 
   useEffect(() => {

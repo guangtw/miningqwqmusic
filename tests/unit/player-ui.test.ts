@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canOpenPlayerDetail,
   countItemsWithinRows,
   countUniqueLibraryTracks,
   heroActionLabel,
@@ -21,6 +22,11 @@ describe("player ui helpers", () => {
     expect(heroActionLabel(false, false)).toBe("去搜索");
     expect(heroActionLabel(true, false)).toBe("开始播放");
     expect(heroActionLabel(true, true)).toBe("暂停播放");
+  });
+
+  it("guards player detail entry by playable track state", () => {
+    expect(canOpenPlayerDetail(false)).toBe(false);
+    expect(canOpenPlayerDetail(true)).toBe(true);
   });
 
   it("counts unique tracks across favorites and recent", () => {

@@ -1,6 +1,15 @@
-const CACHE_NAME = "qwq-music-shell-v2";
+const CACHE_NAME = "qwq-music-shell-v3";
 const OFFLINE_URL = "/offline";
-const ASSET_CACHE = ["/offline", "/manifest.webmanifest", "/icons/icon-192.svg", "/icons/icon-512.svg"];
+const ASSET_CACHE = [
+  "/offline",
+  "/manifest.webmanifest",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
+  "/icons/icon-maskable-192.png",
+  "/icons/icon-maskable-512.png"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

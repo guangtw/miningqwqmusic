@@ -16,6 +16,10 @@ export function heroActionLabel(hasTrack: boolean, isPlaying: boolean): string {
   return isPlaying ? "暂停播放" : "开始播放";
 }
 
+export function canOpenPlayerDetail(hasTrack: boolean): boolean {
+  return hasTrack;
+}
+
 type TrackLike = { id: string };
 
 type SpaceHotkeyArgs = {

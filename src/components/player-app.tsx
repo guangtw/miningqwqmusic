@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   AccountApiError,
@@ -41,6 +41,7 @@ import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransi
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import {
+  canOpenPlayerDetail,
   countItemsWithinRows,
   heroActionLabel,
   nextVolumeAfterMuteToggle,
@@ -740,6 +741,51 @@ const LIBRARY_VIEW_OPTIONS: Array<{ value: LibraryView; label: string }> = [
   { value: "library-playlists", label: "我的" }
 ];
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])'
+].join(",");
+
+function getFocusableElements(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter((element) => {
+    if (element.hasAttribute("disabled") || element.getAttribute("aria-hidden") === "true") return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden";
+  });
+}
+
+function focusFirstInteractive(root: HTMLElement | null): void {
+  const [first] = getFocusableElements(root);
+  first?.focus();
+}
+
+function trapTabWithin(root: HTMLElement | null, event: ReactKeyboardEvent): void {
+  if (event.key !== "Tab") return;
+  const focusable = getFocusableElements(root);
+  if (!focusable.length) {
+    event.preventDefault();
+    root?.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !root?.contains(active))) {
+    event.preventDefault();
+    last.focus();
+    return;
+  }
+  if (!event.shiftKey && active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function TrackRow({
   track,
   liked,
@@ -904,6 +950,12 @@ export function PlayerApp() {
   });
   const searchInputRef = useRef<HTMLInputElement>(null);
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
+  const accountDialogPanelRef = useRef<HTMLFormElement>(null);
+  const detailScreenRef = useRef<HTMLElement>(null);
+  const homePlaylistDrawerRef = useRef<HTMLElement>(null);
+  const accountDialogReturnFocusRef = useRef<HTMLElement | null>(null);
+  const detailReturnFocusRef = useRef<HTMLElement | null>(null);
+  const playlistReturnFocusRef = useRef<HTMLElement | null>(null);
   const librarySegmentedRef = useRef<HTMLDivElement>(null);
   const displayedLibraryViewRef = useRef<LibraryView>("library-favorites");
   const libraryContentTransitionTokenRef = useRef(0);
@@ -1214,15 +1266,23 @@ export function PlayerApp() {
   const closeAccountDialog = useCallback(() => {
     setAccountDialogOpen(false);
     setAuthFormError(null);
+    window.setTimeout(() => {
+      accountDialogReturnFocusRef.current?.focus();
+      accountDialogReturnFocusRef.current = null;
+    }, 0);
   }, []);
 
   const openLoginDialog = useCallback(() => {
+    const activeElement = document.activeElement;
+    accountDialogReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
     setAuthFormMode("login");
     setAuthFormError(null);
     setAccountDialogOpen(true);
   }, []);
 
   const openRegisterDialog = useCallback(() => {
+    const activeElement = document.activeElement;
+    accountDialogReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
     setAuthFormMode("register");
     setAuthFormError(null);
     setAccountDialogOpen(true);
@@ -1776,9 +1836,12 @@ export function PlayerApp() {
     }
     setHomePlaylistPhase("closed");
     setHomePlaylistPanel(null);
+    playlistReturnFocusRef.current = null;
   }, []);
 
   const openHomePlaylistPanelWithAnimation = useCallback(() => {
+    const activeElement = document.activeElement;
+    playlistReturnFocusRef.current = activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null;
     if (homePlaylistCloseTimerRef.current) {
       window.clearTimeout(homePlaylistCloseTimerRef.current);
       homePlaylistCloseTimerRef.current = null;
@@ -1806,6 +1869,8 @@ export function PlayerApp() {
       setHomePlaylistPhase("closed");
       setHomePlaylistPanel(null);
       homePlaylistCloseTimerRef.current = null;
+      playlistReturnFocusRef.current?.focus();
+      playlistReturnFocusRef.current = null;
     }, PLAYLIST_PANEL_ANIMATION_MS);
   }, []);
 
@@ -1985,12 +2050,12 @@ export function PlayerApp() {
   const runSearch = async (nextKeyword: string, mode: SearchMode) => {
     const q = nextKeyword.trim();
     if (!q) {
-      setSearchStatus("idle");
+      setSearchStatus("error");
       setTrackResult([]);
       setArtistResult([]);
       setSearchArtistDetail(null);
       setSearchArtistDetailError(null);
-      setSearchError(null);
+      setSearchError("请输入关键词后再搜索。");
       return;
     }
 
@@ -2065,6 +2130,7 @@ export function PlayerApp() {
       setSearchStatus("idle");
       setTrackResult([]);
       setArtistResult([]);
+      setSearchError(null);
       return;
     }
     void runSearch(keyword, nextMode);
@@ -2084,13 +2150,16 @@ export function PlayerApp() {
   const handleDiscoverItem = async (item: DiscoverItem) => {
     const action = resolveDiscoverAction(item);
     if (action.type === "unsupported") {
-      setSearchError("该推荐项暂时不可用，请稍后重试。");
+      setDiscoverError("该推荐项暂时不可用，请稍后重试。");
       return;
     }
 
     try {
       if (action.type === "open-external") {
-        window.open(action.url, "_blank", "noopener,noreferrer");
+        const opened = window.open(action.url, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          setDiscoverError(`浏览器阻止了新窗口，请复制链接打开：${action.url}`);
+        }
         return;
       }
 
@@ -2120,7 +2189,7 @@ export function PlayerApp() {
         return;
       }
     } catch {
-      setSearchError("该推荐项暂时不可用，请稍后重试。");
+      setDiscoverError("该推荐项暂时不可用，请稍后重试。");
     }
   };
 
@@ -2183,8 +2252,12 @@ export function PlayerApp() {
       if (!source) {
         throw new Error("当前歌曲没有可用下载链路");
       }
-      window.open(source.url, "_blank", "noopener,noreferrer");
-      setDownloadState((previous) => ({ ...previous, loading: false, message: `已获取 ${source.level} 音质下载链接` }));
+      const opened = window.open(source.url, "_blank", "noopener,noreferrer");
+      setDownloadState((previous) => ({
+        ...previous,
+        loading: false,
+        message: opened ? `已获取 ${source.level} 音质下载链接` : `已获取 ${source.level} 音质下载链接，请复制打开：${source.url}`
+      }));
     } catch (error) {
       setDownloadState((previous) => ({
         ...previous,
@@ -2207,6 +2280,7 @@ export function PlayerApp() {
 
   const isMuted = player.volume <= 0;
   const hasTrack = Boolean(currentTrack ?? queueTrack);
+  const canOpenDetail = canOpenPlayerDetail(hasTrack);
   const controlDisabled = player.queue.length === 0;
   const isDetailMounted = detailPhase !== "closed";
   const progressPercent =
@@ -2372,13 +2446,21 @@ export function PlayerApp() {
     detailCloseTimerRef.current = window.setTimeout(() => {
       setDetailPhase("closed");
       detailCloseTimerRef.current = null;
+      detailReturnFocusRef.current?.focus();
+      detailReturnFocusRef.current = null;
     }, DETAIL_ANIMATION_MS);
   }, []);
 
-  const openDetail = () => {
+  const openDetail = (returnFocusElement?: HTMLElement | null) => {
+    if (!canOpenDetail) {
+      return;
+    }
     if (detailPhase === "open" || detailPhase === "opening") {
       return;
     }
+    const activeElement = document.activeElement;
+    detailReturnFocusRef.current =
+      returnFocusElement ?? (activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null);
     if (detailCloseTimerRef.current) {
       window.clearTimeout(detailCloseTimerRef.current);
       detailCloseTimerRef.current = null;
@@ -2402,6 +2484,7 @@ export function PlayerApp() {
   }, [closeDetailWithAnimation]);
 
   const openQueuePanelFromDetail = () => {
+    detailReturnFocusRef.current = null;
     setPendingQueueOpenAfterDetail(true);
     closeDetail();
   };
@@ -2452,6 +2535,10 @@ export function PlayerApp() {
       }
 
       if (event.key !== "Escape") return;
+      if (accountDialogOpen) {
+        closeAccountDialog();
+        return;
+      }
       const currentDetailPhase = detailPhaseRef.current;
       const detailOpen = currentDetailPhase === "open" || currentDetailPhase === "opening";
       if (detailOpen) {
@@ -2470,7 +2557,24 @@ export function PlayerApp() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [homePlaylistPanel, closeDetail, closeHomePlaylistPanel, restoreHomeTab, controlDisabled, player]);
+  }, [accountDialogOpen, homePlaylistPanel, closeAccountDialog, closeDetail, closeHomePlaylistPanel, restoreHomeTab, controlDisabled, player]);
+
+  useEffect(() => {
+    if (!accountDialogOpen) return;
+    window.setTimeout(() => {
+      focusFirstInteractive(accountDialogPanelRef.current);
+    }, 0);
+  }, [accountDialogOpen]);
+
+  useEffect(() => {
+    if (homePlaylistPhase !== "open") return;
+    focusFirstInteractive(homePlaylistDrawerRef.current);
+  }, [homePlaylistPhase, homePlaylistPanel?.id]);
+
+  useEffect(() => {
+    if (detailPhase !== "open") return;
+    focusFirstInteractive(detailScreenRef.current);
+  }, [detailPhase]);
 
   useEffect(() => {
     let createdNode: HTMLElement | null = null;
@@ -2896,7 +3000,16 @@ export function PlayerApp() {
   }, [currentTrackId, currentTrackName, currentCoverUrl]);
 
   const playerDock = (
-    <footer ref={playerDockRef} className="spotify-player-bar clickable" onClick={openDetail}>
+    <footer
+      ref={playerDockRef}
+      className={`spotify-player-bar ${canOpenDetail ? "clickable" : "empty"}`.trim()}
+      aria-disabled={!canOpenDetail}
+      onClick={(event) => {
+        if (canOpenDetail) {
+          openDetail(event.currentTarget);
+        }
+      }}
+    >
       <div className="spotify-player-left">
         <p className="player-title">{currentTrack?.name ?? ""}</p>
         <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</p>
@@ -2991,6 +3104,7 @@ export function PlayerApp() {
   const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
   const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
   const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
+  const showMainNowPlaying = isMobileUi && activeTab === "search";
 
   const librarySegmentedPillStyle = {
     "--lib-seg-thumb-x": `${librarySegmentedThumb.x}px`,
@@ -3052,9 +3166,15 @@ export function PlayerApp() {
             </IconButton>
           ) : null}
         </div>
-        <button className="now-playing-merged-detail-btn" onClick={openDetail}>
-          展开详情
-        </button>
+        {canOpenDetail ? (
+          <button className="now-playing-merged-detail-btn" onClick={(event) => openDetail(event.currentTarget)}>
+            展开详情
+          </button>
+        ) : (
+          <button className="now-playing-merged-detail-btn empty-cta" onClick={() => goTab("search")}>
+            去搜索音乐
+          </button>
+        )}
       </div>
     </section>
   );
@@ -3195,8 +3315,8 @@ export function PlayerApp() {
           </section>
         </aside>
 
-        <section className="spotify-main">
-          {!(isMobileUi && (activeTab === "home" || activeTab === "library")) ? nowPlayingMergedPanel : null}
+        <section className={`spotify-main tab-${activeTab} ${showMainNowPlaying ? "has-now-playing" : ""}`.trim()}>
+          {showMainNowPlaying ? nowPlayingMergedPanel : null}
 
           {activeTab === "home" ? (
             <>
@@ -3344,138 +3464,144 @@ export function PlayerApp() {
           ) : null}
 
           {activeTab === "search" ? (
-            <section className="spotify-results glass-surface">
-              <div className="spotify-section-title">
-                <h2>搜索音乐</h2>
-                <span>支持歌曲、歌手、专辑关键词</span>
-              </div>
-
-              <div className="spotify-search-panel">
-                <input
-                  ref={searchInputRef}
-                  value={keyword}
-                  onChange={(event) => setKeyword(event.target.value)}
-                  placeholder={
-                    searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：林俊杰、修炼爱情"
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      void doSearch();
-                    }
-                  }}
-                />
-                <button onClick={() => void doSearch()} disabled={searchStatus === "loading"}>
-                  {searchStatus === "loading" ? (
-                    <>
-                      <Spinner />
-                      搜索中
-                    </>
-                  ) : (
-                    "搜索"
-                  )}
-                </button>
-              </div>
-              <div className="search-mode-switch" role="tablist" aria-label="搜索类型切换">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={searchMode === "track"}
-                  className={searchMode === "track" ? "active" : ""}
-                  onClick={() => switchSearchMode("track")}
-                >
-                  单曲
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={searchMode === "artist"}
-                  className={searchMode === "artist" ? "active" : ""}
-                  onClick={() => switchSearchMode("artist")}
-                >
-                  歌手
-                </button>
-              </div>
-              {searchAssist ? (
-                <div className="search-assist-block">
-                  {searchAssist.hotKeywords.length ? (
-                    <div className="search-assist-row">
-                      <span>热搜</span>
-                      <div ref={hotAssistRowRef}>
-                        {hotAssistCandidates.slice(0, visibleHotAssistCount).map((hot) => (
-                          <button
-                            key={`hot-${hot}`}
-                            type="button"
-                            onClick={() => applyKeywordAndSearch(hot)}
-                          >
-                            {hot}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {searchAssist.suggestions.length ? (
-                    <div className="search-assist-row">
-                      <span>联想</span>
-                      <div ref={suggestAssistRowRef}>
-                        {suggestAssistCandidates.slice(0, visibleSuggestAssistCount).map((suggestion) => (
-                          <button
-                            key={`suggest-${suggestion}`}
-                            type="button"
-                            onClick={() => applyKeywordAndSearch(suggestion)}
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
+            <section className="spotify-results glass-surface search-results-shell">
+              <div className="search-sticky-head">
+                <div className="spotify-section-title">
+                  <h2>搜索音乐</h2>
+                  <span>支持歌曲、歌手、专辑关键词</span>
                 </div>
-              ) : null}
 
-              {searchMode === "track" ? (
-                <>
-                  <div className="spotify-track-table-head">
-                    <span>歌曲</span>
-                    <span>专辑</span>
-                    <span className="align-right">时长</span>
-                    <span className="align-center">操作</span>
+                <form
+                  className="spotify-search-panel"
+                  role="search"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void doSearch();
+                  }}
+                >
+                  <input
+                    ref={searchInputRef}
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    placeholder={
+                      searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：林俊杰、修炼爱情"
+                    }
+                  />
+                  <button type="submit" disabled={searchStatus === "loading"}>
+                    {searchStatus === "loading" ? (
+                      <>
+                        <Spinner />
+                        搜索中
+                      </>
+                    ) : (
+                      "搜索"
+                    )}
+                  </button>
+                </form>
+                <div className={`search-mode-switch mode-${searchMode}`} role="tablist" aria-label="搜索类型切换">
+                  <span className="search-mode-switch-thumb" aria-hidden="true" />
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={searchMode === "track"}
+                    className={searchMode === "track" ? "active" : ""}
+                    onClick={() => switchSearchMode("track")}
+                  >
+                    单曲
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={searchMode === "artist"}
+                    className={searchMode === "artist" ? "active" : ""}
+                    onClick={() => switchSearchMode("artist")}
+                  >
+                    歌手
+                  </button>
+                </div>
+                {searchAssist ? (
+                  <div className="search-assist-block">
+                    {searchAssist.hotKeywords.length ? (
+                      <div className="search-assist-row">
+                        <span>热搜</span>
+                        <div ref={hotAssistRowRef}>
+                          {hotAssistCandidates.slice(0, visibleHotAssistCount).map((hot) => (
+                            <button
+                              key={`hot-${hot}`}
+                              type="button"
+                              onClick={() => applyKeywordAndSearch(hot)}
+                            >
+                              {hot}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                    {searchAssist.suggestions.length ? (
+                      <div className="search-assist-row">
+                        <span>联想</span>
+                        <div ref={suggestAssistRowRef}>
+                          {suggestAssistCandidates.slice(0, visibleSuggestAssistCount).map((suggestion) => (
+                            <button
+                              key={`suggest-${suggestion}`}
+                              type="button"
+                              onClick={() => applyKeywordAndSearch(suggestion)}
+                            >
+                              {suggestion}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
+                ) : null}
+              </div>
+
+              <div className="search-results-body">
+                {searchMode === "track" ? (
+                  <>
+                    <div className="spotify-track-table-head">
+                      <span>歌曲</span>
+                      <span>专辑</span>
+                      <span className="align-right">时长</span>
+                      <span className="align-center">操作</span>
+                    </div>
+                    <div className="spotify-track-list">
+                      {searchStatus === "loading"
+                        ? Array.from({ length: 5 }).map((_, index) => (
+                            <div key={`skeleton-track-${index}`} className="track-skeleton-row" aria-hidden="true">
+                              <div />
+                              <div />
+                              <div />
+                              <div />
+                            </div>
+                          ))
+                        : null}
+
+                      {trackResult.map((track) => (
+                        <TrackRow
+                          key={track.id}
+                          track={track}
+                          liked={Boolean(favoriteSet[track.id])}
+                          currentTrackId={currentTrackId}
+                          isPlaying={player.isPlaying}
+                          onPlay={(item) => {
+                            player.playTrackNow(item);
+                            player.setPlaying(true);
+                          }}
+                          onToggleFavorite={(item) => player.toggleFavorite(item)}
+                        />
+                      ))}
+
+                      {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“林俊杰”或“修炼爱情”。</p> : null}
+                      {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
+                      {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
+                    </div>
+                  </>
+                ) : (
                   <div className="spotify-track-list">
-                    {searchStatus === "loading"
-                      ? Array.from({ length: 5 }).map((_, index) => (
-                          <div key={`skeleton-track-${index}`} className="track-skeleton-row" aria-hidden="true">
-                            <div />
-                            <div />
-                            <div />
-                            <div />
-                          </div>
-                        ))
-                      : null}
-
-                    {trackResult.map((track) => (
-                      <TrackRow
-                        key={track.id}
-                        track={track}
-                        liked={Boolean(favoriteSet[track.id])}
-                        currentTrackId={currentTrackId}
-                        isPlaying={player.isPlaying}
-                        onPlay={(item) => {
-                          player.playTrackNow(item);
-                          player.setPlaying(true);
-                        }}
-                        onToggleFavorite={(item) => player.toggleFavorite(item)}
-                      />
-                    ))}
-
-                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“林俊杰”或“修炼爱情”。</p> : null}
-                    {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
-                    {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
-                  </div>
-                </>
-              ) : (
-                <div className="spotify-track-list">
-                  {searchArtistDetail ? (
-                    <section className="artist-detail-panel">
+                    {searchArtistDetail ? (
+                      <section className="artist-detail-panel">
                       <header className="artist-detail-head">
                         <button
                           type="button"
@@ -3551,9 +3677,10 @@ export function PlayerApp() {
                       {searchArtistDetailLoading ? <p className="spotify-empty">歌手详情加载中...</p> : null}
                       {searchArtistDetailError ? <p className="error error-inline">{searchArtistDetailError}</p> : null}
                     </>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
             </section>
           ) : null}
 
@@ -3801,10 +3928,19 @@ export function PlayerApp() {
             <section
               className={`home-playlist-drawer-overlay phase-${homePlaylistPhase}`.trim()}
               role="dialog"
+              aria-modal="true"
               aria-label={homePlaylistPanel.sourceType === "queue" ? "播放队列" : "歌单详情"}
             >
               <div className={`home-playlist-drawer-backdrop phase-${homePlaylistPhase}`.trim()} onClick={closeHomePlaylistPanel} />
-              <aside className={`home-playlist-drawer phase-${homePlaylistPhase}`.trim()} onClick={(event) => event.stopPropagation()}>
+              <aside
+                ref={homePlaylistDrawerRef}
+                className={`home-playlist-drawer phase-${homePlaylistPhase} source-${homePlaylistPanel.sourceType} ${
+                  homePlaylistPanel.sourceType === "queue" && homePlaylistPanel.tracks.length < 5 ? "compact-list" : ""
+                }`.trim()}
+                tabIndex={-1}
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => trapTabWithin(homePlaylistDrawerRef.current, event)}
+              >
                 <header className="home-playlist-drawer-head">
                   <div className="home-playlist-drawer-cover" style={{ backgroundImage: `url(${homePlaylistPanel.coverUrl ?? DEFAULT_COVER_URL})` }} />
                   <div className="home-playlist-drawer-meta">
@@ -3916,9 +4052,20 @@ export function PlayerApp() {
 
       {accountDialogOpen
         ? createPortal(
-            <section className="account-dialog-overlay" role="dialog" aria-label="账号登录">
+            <section className="account-dialog-overlay" role="dialog" aria-modal="true" aria-label="账号登录">
               <button type="button" className="account-dialog-backdrop" aria-label="关闭登录窗口" onClick={closeAccountDialog} />
-              <article className={`account-dialog-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}>
+              <form
+                ref={accountDialogPanelRef}
+                className={`account-dialog-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}
+                tabIndex={-1}
+                onKeyDown={(event) => trapTabWithin(accountDialogPanelRef.current, event)}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!authFormSubmitting) {
+                    void submitAuthForm();
+                  }
+                }}
+              >
                 <header className="account-dialog-head">
                   <h3>{authFormMode === "login" ? "登录后可同步音乐库" : "创建账号并开启云同步"}</h3>
                   <button type="button" className="ghost" onClick={closeAccountDialog}>
@@ -3929,6 +4076,7 @@ export function PlayerApp() {
                   <button
                     type="button"
                     className={authFormMode === "login" ? "active" : ""}
+                    disabled={authFormSubmitting}
                     onClick={() => {
                       setAuthFormMode("login");
                       setAuthFormError(null);
@@ -3939,6 +4087,7 @@ export function PlayerApp() {
                   <button
                     type="button"
                     className={authFormMode === "register" ? "active" : ""}
+                    disabled={authFormSubmitting}
                     onClick={() => {
                       setAuthFormMode("register");
                       setAuthFormError(null);
@@ -3953,6 +4102,7 @@ export function PlayerApp() {
                     type="email"
                     placeholder="you@example.com"
                     value={authFormState.email}
+                    disabled={authFormSubmitting}
                     onChange={(event) => setAuthFormState((previous) => ({ ...previous, email: event.target.value }))}
                   />
                 </label>
@@ -3962,6 +4112,7 @@ export function PlayerApp() {
                     type="password"
                     placeholder="至少 8 位"
                     value={authFormState.password}
+                    disabled={authFormSubmitting}
                     onChange={(event) => setAuthFormState((previous) => ({ ...previous, password: event.target.value }))}
                   />
                 </label>
@@ -3972,26 +4123,30 @@ export function PlayerApp() {
                       type="text"
                       placeholder="例如：MiningQwQ"
                       value={authFormState.nickname}
+                      disabled={authFormSubmitting}
                       onChange={(event) => setAuthFormState((previous) => ({ ...previous, nickname: event.target.value }))}
                     />
                   </label>
                 ) : null}
                 {authFormError ? <p className="account-form-error">{authFormError}</p> : null}
-                <button type="button" className="account-form-submit" disabled={authFormSubmitting} onClick={() => void submitAuthForm()}>
+                <button type="submit" className="account-form-submit" disabled={authFormSubmitting}>
                   {authFormSubmitting ? "处理中..." : authFormMode === "login" ? "登录并同步" : "注册并同步"}
                 </button>
                 <p className="account-form-note">未登录时继续本地保存；登录后自动开启云同步。</p>
-              </article>
+              </form>
             </section>,
             document.body
           )
         : null}
 
       {isDetailMounted ? (
-        <section className="player-detail-overlay" role="dialog" aria-label="播放详情">
+        <section className="player-detail-overlay" role="dialog" aria-modal="true" aria-label="播放详情">
           <div className={`player-detail-backdrop phase-${detailPhase}`.trim()} onClick={closeDetail} />
           <article
+            ref={detailScreenRef}
             className={`player-detail-screen phase-${detailPhase}`.trim()}
+            tabIndex={-1}
+            onKeyDown={(event) => trapTabWithin(detailScreenRef.current, event)}
             style={
               {
                 "--detail-cover": currentCoverUrl ? `url(${currentCoverUrl})` : "none",

@@ -5,7 +5,13 @@ import type {
   AuthPayload,
   AuthTokenData,
   ChangePasswordInput,
+  AcceptListenInviteResult,
+  FriendRequestSummary,
+  FriendRequestsResult,
+  FriendSearchResult,
+  FriendSummary,
   ListenPlaybackState,
+  ListenRoomInviteSummary,
   ListenRoomEvent,
   ListenRoomSummary,
   LibraryChangesResult,
@@ -261,6 +267,57 @@ export async function deleteAccountAvatar(): Promise<AuthPayload["user"]> {
   return user;
 }
 
+export async function searchFriends(query: string): Promise<FriendSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  return fetchAccount<FriendSearchResult[]>(`/api/account/friends/search?q=${encodeURIComponent(trimmed)}`, {
+    method: "GET"
+  });
+}
+
+export async function listFriends(): Promise<FriendSummary[]> {
+  return fetchAccount<FriendSummary[]>("/api/account/friends", {
+    method: "GET"
+  });
+}
+
+export async function listFriendRequests(): Promise<FriendRequestsResult> {
+  return fetchAccount<FriendRequestsResult>("/api/account/friends/requests", {
+    method: "GET"
+  });
+}
+
+export async function sendFriendRequest(userId: string): Promise<FriendRequestSummary> {
+  return fetchAccount<FriendRequestSummary>("/api/account/friends/requests", {
+    method: "POST",
+    body: { userId }
+  });
+}
+
+export async function acceptFriendRequest(requestId: string): Promise<FriendRequestSummary> {
+  return fetchAccount<FriendRequestSummary>(`/api/account/friends/requests/${encodeURIComponent(requestId)}/accept`, {
+    method: "POST"
+  });
+}
+
+export async function rejectFriendRequest(requestId: string): Promise<FriendRequestSummary> {
+  return fetchAccount<FriendRequestSummary>(`/api/account/friends/requests/${encodeURIComponent(requestId)}/reject`, {
+    method: "POST"
+  });
+}
+
+export async function cancelFriendRequest(requestId: string): Promise<FriendRequestSummary> {
+  return fetchAccount<FriendRequestSummary>(`/api/account/friends/requests/${encodeURIComponent(requestId)}/cancel`, {
+    method: "POST"
+  });
+}
+
+export async function deleteFriend(friendUserId: string): Promise<void> {
+  await fetchAccount<{ ok: true }>(`/api/account/friends/${encodeURIComponent(friendUserId)}`, {
+    method: "DELETE"
+  });
+}
+
 export async function createListenRoom(playbackState: ListenPlaybackState): Promise<ListenRoomSummary> {
   return fetchAccount<ListenRoomSummary>("/api/account/listen/rooms", {
     method: "POST",
@@ -283,7 +340,7 @@ export async function getListenRoom(roomId: string): Promise<ListenRoomSummary> 
 
 export async function sendListenRoomState(
   roomId: string,
-  type: "playback" | "queue" | "seek" | "mode",
+  type: "playback" | "queue" | "seek" | "mode" | "progress",
   playbackState: ListenPlaybackState
 ): Promise<ListenRoomSummary> {
   return fetchAccount<ListenRoomSummary>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/state`, {
@@ -300,6 +357,31 @@ export async function heartbeatListenRoom(roomId: string): Promise<ListenRoomSum
 
 export async function leaveListenRoom(roomId: string): Promise<void> {
   await fetchAccount<{ ok: true }>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/leave`, {
+    method: "POST"
+  });
+}
+
+export async function listListenInvites(): Promise<ListenRoomInviteSummary[]> {
+  return fetchAccount<ListenRoomInviteSummary[]>("/api/account/listen/invites", {
+    method: "GET"
+  });
+}
+
+export async function inviteFriendToListenRoom(roomId: string, friendUserId: string): Promise<ListenRoomInviteSummary> {
+  return fetchAccount<ListenRoomInviteSummary>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/invites`, {
+    method: "POST",
+    body: { friendUserId }
+  });
+}
+
+export async function acceptListenInvite(inviteId: string): Promise<AcceptListenInviteResult> {
+  return fetchAccount<AcceptListenInviteResult>(`/api/account/listen/invites/${encodeURIComponent(inviteId)}/accept`, {
+    method: "POST"
+  });
+}
+
+export async function rejectListenInvite(inviteId: string): Promise<ListenRoomInviteSummary> {
+  return fetchAccount<ListenRoomInviteSummary>(`/api/account/listen/invites/${encodeURIComponent(inviteId)}/reject`, {
     method: "POST"
   });
 }

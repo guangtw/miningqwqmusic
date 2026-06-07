@@ -1,10 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AccountApiError,
+  acceptFriendRequest,
+  acceptListenInvite,
+  cancelFriendRequest,
   createListenRoom,
+  deleteFriend,
   detectAccountServiceEnabled,
+  inviteFriendToListenRoom,
   joinListenRoom,
+  listFriendRequests,
+  listFriends,
+  listListenInvites,
   loadCurrentAccountUser,
+  rejectFriendRequest,
+  rejectListenInvite,
+  searchFriends,
+  sendFriendRequest,
   sendListenRoomState,
   tryRefreshAccessToken,
   uploadAccountAvatar
@@ -243,12 +255,19 @@ describe("account client", () => {
           status: 200,
           headers: { "content-type": "application/json" }
         })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload(sampleListenRoom({ id: "created-room", version: 3 }))), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
       );
 
     const playbackState = samplePlaybackState();
     await createListenRoom(playbackState);
     await joinListenRoom("abc123");
     await sendListenRoomState("created-room", "seek", playbackState);
+    await sendListenRoomState("created-room", "progress", playbackState);
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/account/listen/rooms");
     expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({ playbackState });
@@ -259,5 +278,155 @@ describe("account client", () => {
       type: "seek",
       playbackState
     });
+    expect(fetchMock.mock.calls[3][0]).toBe("/api/account/listen/rooms/created-room/state");
+    expect(JSON.parse(String((fetchMock.mock.calls[3][1] as RequestInit).body))).toEqual({
+      type: "progress",
+      playbackState
+    });
+  });
+
+  it("sends friend and listen invite requests with auth headers", async () => {
+    useAuthStore.getState().setAuthenticated(
+      {
+        id: "u1",
+        email: "user@example.com"
+      },
+      "friend-token"
+    );
+    const user = {
+      id: "u2",
+      email: "friend@example.com",
+      nickname: "Friend"
+    };
+    const request = {
+      id: "request-1",
+      requester: { id: "u1", email: "user@example.com" },
+      addressee: user,
+      status: "pending",
+      direction: "outgoing",
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+      respondedAt: null
+    };
+    const invite = {
+      id: "invite-1",
+      roomId: "room-1",
+      inviteCode: "ABC123",
+      status: "pending",
+      inviter: { id: "u1", email: "user@example.com" },
+      invitee: user,
+      roomStatus: "open",
+      memberCount: 2,
+      expiresAt: "2026-06-07T06:00:00.000Z",
+      createdAt: "2026-06-07T00:00:00.000Z",
+      updatedAt: "2026-06-07T00:00:00.000Z",
+      respondedAt: null
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload([{ user, relationStatus: "none" }])), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload([{ user, since: "2026-06-07T00:00:00.000Z" }])), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ incoming: [], outgoing: [request] })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload(request)), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ ...request, status: "accepted" })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ ...request, status: "rejected" })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ ...request, status: "canceled" })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ ok: true })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload([invite])), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload(invite)), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ invite: { ...invite, status: "accepted" }, room: sampleListenRoom() })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ ...invite, status: "rejected" })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+    await searchFriends(" Friend ");
+    await listFriends();
+    await listFriendRequests();
+    await sendFriendRequest("u2");
+    await acceptFriendRequest("request-1");
+    await rejectFriendRequest("request-1");
+    await cancelFriendRequest("request-1");
+    await deleteFriend("u2");
+    await listListenInvites();
+    await inviteFriendToListenRoom("room-1", "u2");
+    await acceptListenInvite("invite-1");
+    await rejectListenInvite("invite-1");
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/account/friends/search?q=Friend",
+      "/api/account/friends",
+      "/api/account/friends/requests",
+      "/api/account/friends/requests",
+      "/api/account/friends/requests/request-1/accept",
+      "/api/account/friends/requests/request-1/reject",
+      "/api/account/friends/requests/request-1/cancel",
+      "/api/account/friends/u2",
+      "/api/account/listen/invites",
+      "/api/account/listen/rooms/room-1/invites",
+      "/api/account/listen/invites/invite-1/accept",
+      "/api/account/listen/invites/invite-1/reject"
+    ]);
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("authorization")).toBe("Bearer friend-token");
+    expect(JSON.parse(String((fetchMock.mock.calls[3][1] as RequestInit).body))).toEqual({ userId: "u2" });
+    expect((fetchMock.mock.calls[7][1] as RequestInit).method).toBe("DELETE");
+    expect(JSON.parse(String((fetchMock.mock.calls[9][1] as RequestInit).body))).toEqual({ friendUserId: "u2" });
   });
 });

@@ -33,7 +33,7 @@ async function seedPlaybackFromPlaylist(page: Page, playlistId = "100100100", ti
   if (await homeSearchButton.isVisible()) {
     await homeSearchButton.click();
   } else {
-    await page.getByRole("button", { name: "搜索" }).first().click();
+    await openSearchTab(page);
   }
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await page.locator(".spotify-search-panel input").fill(title);
@@ -51,13 +51,71 @@ async function seedPlaybackFromPlaylist(page: Page, playlistId = "100100100", ti
   }
 }
 
+async function openMobileMenuIfPresent(page: Page) {
+  const menuButton = page.getByRole("button", { name: "菜单" }).first();
+  if (await menuButton.isVisible().catch(() => false)) {
+    await menuButton.evaluate((button) => {
+      if (button instanceof HTMLButtonElement) button.click();
+    });
+    await expect(page.getByRole("dialog", { name: "菜单" })).toBeVisible();
+    return true;
+  }
+  return false;
+}
+
+async function openSearchTab(page: Page) {
+  const usedMenu = await openMobileMenuIfPresent(page);
+  await page.getByRole("button", { name: "搜索", exact: true }).first().evaluate((button) => {
+    if (button instanceof HTMLButtonElement) button.click();
+  });
+  if (usedMenu) {
+    await expect(page.getByRole("dialog", { name: "菜单" })).toBeHidden();
+  }
+  if (!(await page.getByRole("heading", { name: "搜索音乐" }).isVisible().catch(() => false))) {
+    const homeSearchButton = page.getByRole("button", { name: "搜索音乐", exact: true }).first();
+    if (await homeSearchButton.isVisible().catch(() => false)) {
+      await homeSearchButton.evaluate((button) => {
+        if (button instanceof HTMLButtonElement) button.click();
+      });
+    }
+  }
+}
+
+async function openLibraryTab(page: Page) {
+  const usedMenu = await openMobileMenuIfPresent(page);
+  await page.getByRole("button", { name: "你的音乐库", exact: true }).first().evaluate((button) => {
+    if (button instanceof HTMLButtonElement) button.click();
+  });
+  if (usedMenu) {
+    await expect(page.getByRole("dialog", { name: "菜单" })).toBeHidden();
+  }
+  if (!(await page.locator(".library-segmented-pill").isVisible().catch(() => false))) {
+    const homeLibraryButton = page.getByRole("button", { name: "我的音乐库", exact: true }).first();
+    if (await homeLibraryButton.isVisible().catch(() => false)) {
+      await homeLibraryButton.evaluate((button) => {
+        if (button instanceof HTMLButtonElement) button.click();
+      });
+    }
+  }
+}
+
+async function openHomeTab(page: Page) {
+  const usedMenu = await openMobileMenuIfPresent(page);
+  await page.getByRole("button", { name: "主页", exact: true }).first().evaluate((button) => {
+    if (button instanceof HTMLButtonElement) button.click();
+  });
+  if (usedMenu) {
+    await expect(page.getByRole("dialog", { name: "菜单" })).toBeHidden();
+  }
+}
+
 test("home page renders player shell", async ({ page }, testInfo) => {
   await page.goto("/");
   await expect(page.locator(".spotify-logo")).toContainText("MiningQwQ Music");
   if (!testInfo.project.name.includes("mobile")) {
     await expect(page.locator(".now-playing-merged")).toHaveCount(0);
   }
-  await page.getByRole("button", { name: "搜索" }).first().click();
+  await openSearchTab(page);
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await expect(page.locator(".spotify-search-panel input")).toBeVisible();
   await expect(page.locator(".spotify-player-controls .play-main").first()).toBeVisible();
@@ -114,7 +172,7 @@ test("empty player state offers search CTA instead of opening detail", async ({ 
     await page.getByRole("button", { name: "去搜索音乐" }).click();
   } else {
     await expect(page.getByRole("button", { name: "去搜索音乐" })).toHaveCount(0);
-    await page.getByRole("button", { name: "搜索" }).first().click();
+    await openSearchTab(page);
   }
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await expect(page.locator(".spotify-search-panel input")).toBeVisible();
@@ -176,7 +234,7 @@ test("escape closes detail overlay and returns search tab to home", async ({ pag
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeHidden();
 
-  await page.getByRole("button", { name: "搜索" }).first().click();
+  await openSearchTab(page);
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await expect(page.locator(".spotify-search-panel input")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -243,9 +301,15 @@ test("desktop theme switch toggles data-theme", async ({ page }, testInfo) => {
   }
 });
 
-test("mobile topbar theme switch toggles theme and keeps line icons", async ({ page }) => {
+test("mobile topbar keeps one menu button and menu theme switch uses line icons", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
+  await expect(page.locator(".sidebar-mobile-tools button")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "菜单" })).toBeVisible();
+  await expect(page.locator(".spotify-nav")).toHaveCount(0);
+  await expect(page.locator(".theme-switch-mobile .theme-switch")).toHaveCount(0);
+  await page.getByRole("button", { name: "菜单" }).click();
+  await expect(page.getByRole("dialog", { name: "菜单" })).toBeVisible();
   const toggle = page.locator(".theme-switch-mobile .theme-switch").first();
   await expect(toggle).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -403,8 +467,8 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
 test("mobile library does not introduce page-level horizontal scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
-  await expect(page.getByRole("heading", { name: "你的音乐库" })).toBeVisible();
+  await openLibraryTab(page);
+  await expect(page.locator(".library-hub-head")).toBeVisible();
 
   const pageMetrics = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
@@ -418,7 +482,7 @@ test("library segmented pill is compact and uses subtle content fade on mobile",
   test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证库页胶囊尺寸。");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await expect(page.locator(".library-segmented-pill")).toBeVisible();
   await expect(page.locator(".library-content-switcher")).toHaveClass(/phase-idle/);
 
@@ -488,7 +552,7 @@ test("can import a playlist link into library and open it", async ({ page }) => 
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
   await expect(page.locator(".library-import-row input")).toBeVisible();
   await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=123456789");
@@ -537,7 +601,7 @@ test("search controls stay visible after playing a result", async ({ page }) => 
 
   await page.setViewportSize({ width: 1366, height: 700 });
   await page.goto("/");
-  await page.getByRole("button", { name: "搜索" }).first().click();
+  await openSearchTab(page);
   const searchInput = page.locator(".spotify-search-panel input");
   await searchInput.fill("周杰伦");
   await page.locator(".spotify-search-panel button").click();
@@ -696,7 +760,7 @@ test("locate playing button works for queue and is disabled when playlist has no
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
   await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=111111");
   await page.getByRole("button", { name: "导入歌单" }).click();
@@ -728,15 +792,20 @@ test("locate playing button works for queue and is disabled when playlist has no
 });
 
 test("player controls stay consistent and centered in dock/detail", async ({ page }) => {
-  await page.goto("/");
+  await seedPlaybackFromPlaylist(page, "100100104", "E2E 控制栏种子歌单");
   const dockControlButtons = page.locator(".spotify-player-bar .spotify-player-controls .icon-btn");
   const dockOrder = await dockControlButtons.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  expect(dockOrder).toHaveLength(6);
-  expect(dockOrder[0]).toBe("一起听");
-  expect(dockOrder[1]).toBe("打开播放队列");
-  expect(dockOrder[2]).toBe("上一首");
-  expect(["播放", "暂停"]).toContain(dockOrder[3]);
-  expect(dockOrder[4]).toBe("下一首");
+  expect(dockOrder).toHaveLength(5);
+  expect(dockOrder[0]).toBe("打开播放队列");
+  expect(dockOrder[1]).toBe("上一首");
+  expect(["播放", "暂停"]).toContain(dockOrder[2]);
+  expect(dockOrder[3]).toBe("下一首");
+
+  const dockChildOrder = await page.locator(".spotify-player-bar .spotify-player-center").evaluate((node) =>
+    Array.from(node.children).map((child) => child.className)
+  );
+  expect(dockChildOrder[0]).toContain("spotify-progress-row");
+  expect(dockChildOrder[1]).toContain("spotify-player-controls");
 
   const dockCenters = await dockControlButtons.evaluateAll((nodes) =>
     nodes.map((node) => {
@@ -744,7 +813,7 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
       return rect.left + rect.width / 2;
     })
   );
-  expect(Math.abs((dockCenters[2] + dockCenters[4]) / 2 - dockCenters[3])).toBeLessThanOrEqual(1.2);
+  expect(Math.abs((dockCenters[1] + dockCenters[3]) / 2 - dockCenters[2])).toBeLessThanOrEqual(1.2);
 
   const playerBar = page.locator(".spotify-player-bar:visible").first();
   const playerBarBox = await playerBar.boundingBox();
@@ -754,7 +823,9 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
   }
   const detailDialog = page.getByRole("dialog", { name: "播放详情" });
   const detailVisibleCount = await detailDialog.count();
-  test.skip(detailVisibleCount === 0, "当前环境无可播放曲目，跳过详情区按钮验证。");
+  if (detailVisibleCount === 0) {
+    return;
+  }
   await expect(detailDialog).toBeVisible();
 
   const detailOrder = await page.locator(".detail-dock-controls .icon-btn").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
@@ -777,7 +848,7 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
 
 test("search assist hot and suggestion are capped within two rows", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "搜索" }).first().click();
+  await openSearchTab(page);
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
 
   const countRows = async (selector: string) =>
@@ -801,7 +872,7 @@ test("mobile library hub head has sufficient height for touch operations", async
   test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证触控高度。");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await expect(page.locator(".library-hub-head")).toBeVisible();
   const headHeight = await page.locator(".library-hub-head").evaluate((node) => node.getBoundingClientRect().height);
   expect(headHeight).toBeGreaterThanOrEqual(170);
@@ -845,7 +916,7 @@ test("playlist summary supports expand collapse and shows active playing row ind
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
   await page.locator(".library-import-row input").fill("https://music.163.com/playlist?id=555666777");
   await page.getByRole("button", { name: "导入歌单" }).click();
@@ -884,12 +955,13 @@ test("playlist summary supports expand collapse and shows active playing row ind
 test("mobile library tab hides merged now-playing module to free vertical space", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证库页空间策略。");
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await seedPlaybackFromPlaylist(page, "100100105", "E2E 移动库页空间歌单");
+  await openHomeTab(page);
 
   await expect(page.locator(".now-playing-merged")).toBeVisible();
-  await page.getByRole("button", { name: "你的音乐库" }).first().click();
+  await openLibraryTab(page);
   await expect(page.locator(".now-playing-merged")).toHaveCount(0);
-  await page.getByRole("button", { name: "主页" }).first().click();
+  await openHomeTab(page);
   await expect(page.locator(".now-playing-merged")).toBeVisible();
 });
 

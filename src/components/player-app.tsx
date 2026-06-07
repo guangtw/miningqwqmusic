@@ -5,9 +5,13 @@ import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } fr
 import { createPortal } from "react-dom";
 import {
   AccountApiError,
+  acceptFriendRequest,
+  acceptListenInvite,
   addFavoriteTrack,
   addRecentTrack,
+  cancelFriendRequest,
   createListenRoom,
+  deleteFriend,
   deleteAccountAvatar,
   detectAccountServiceEnabled,
   getLibraryChanges,
@@ -17,12 +21,20 @@ import {
   loginAccount,
   logoutAccount,
   heartbeatListenRoom,
+  inviteFriendToListenRoom,
   joinListenRoom,
   leaveListenRoom,
+  listFriendRequests,
+  listFriends,
+  listListenInvites,
   openListenRoomStream,
   registerAccount,
+  rejectFriendRequest,
+  rejectListenInvite,
   removeFavoriteTrack,
   removeImportedPlaylistCloud,
+  searchFriends,
+  sendFriendRequest,
   sendListenRoomState,
   tryRefreshAccessTokenDetailed,
   uploadAccountAvatar,
@@ -58,6 +70,7 @@ import {
 } from "@/src/lib/player-ui";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { useAuthStore } from "@/src/store/auth-store";
+import { useFriendStore } from "@/src/store/friend-store";
 import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
@@ -114,10 +127,13 @@ type HistoryGuardState = {
   };
 };
 type AuthFormMode = "login" | "register";
+type ListenStatePublishType = "playback" | "queue" | "seek" | "mode" | "progress";
 
 const DETAIL_ANIMATION_MS = 360;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
+const LISTEN_HEARTBEAT_INTERVAL_MS = 45_000;
+const LISTEN_PROGRESS_SYNC_INTERVAL_MS = 30_000;
 const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
 const LIBRARY_CONTENT_LEAVE_MS = 140;
 const LIBRARY_CONTENT_ENTER_MS = 220;
@@ -888,6 +904,19 @@ export function PlayerApp() {
   const setListenMessage = useListenTogetherStore((state) => state.setMessage);
   const setListenApplyingRemote = useListenTogetherStore((state) => state.setApplyingRemote);
   const leaveListenLocal = useListenTogetherStore((state) => state.leaveLocal);
+  const friendList = useFriendStore((state) => state.friends);
+  const friendRequests = useFriendStore((state) => state.requests);
+  const listenInvites = useFriendStore((state) => state.invites);
+  const friendSearchResults = useFriendStore((state) => state.searchResults);
+  const friendLoading = useFriendStore((state) => state.loading);
+  const friendMessage = useFriendStore((state) => state.message);
+  const setFriendList = useFriendStore((state) => state.setFriends);
+  const setFriendRequests = useFriendStore((state) => state.setRequests);
+  const setListenInvites = useFriendStore((state) => state.setInvites);
+  const setFriendSearchResults = useFriendStore((state) => state.setSearchResults);
+  const setFriendLoading = useFriendStore((state) => state.setLoading);
+  const setFriendMessage = useFriendStore((state) => state.setMessage);
+  const resetFriendPanel = useFriendStore((state) => state.reset);
 
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
@@ -964,6 +993,9 @@ export function PlayerApp() {
   const [listenPanelOpen, setListenPanelOpen] = useState(false);
   const [listenInviteInput, setListenInviteInput] = useState("");
   const [listenBusy, setListenBusy] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [friendSearchInput, setFriendSearchInput] = useState("");
+  const [friendActionBusyId, setFriendActionBusyId] = useState<string | null>(null);
   const [locatedPanelTrackId, setLocatedPanelTrackId] = useState<string | null>(null);
   const [displayedLibraryView, setDisplayedLibraryView] = useState<LibraryView>("library-favorites");
   const [libraryContentTransitionPhase, setLibraryContentTransitionPhase] = useState<LibraryContentTransitionPhase>("idle");
@@ -1041,7 +1073,9 @@ export function PlayerApp() {
   const syncReadyRef = useRef(false);
   const listenStreamAbortRef = useRef<AbortController | null>(null);
   const listenApplyingRemoteRef = useRef(false);
-  const listenLastPublishedRef = useRef("");
+  const listenLeavingRoomIdsRef = useRef<Set<string>>(new Set());
+  const listenLastStrongPublishedRef = useRef("");
+  const listenLastProgressPublishedAtRef = useRef(0);
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -1079,15 +1113,77 @@ export function PlayerApp() {
   );
 
   const captureListenPlaybackState = useCallback((): ListenPlaybackState => {
+    const playerState = usePlayerStore.getState();
     return {
-      queue: player.queue,
-      currentIndex: player.currentIndex,
-      currentTimeMs: Math.max(0, Math.floor(player.currentTimeMs)),
-      isPlaying: player.isPlaying,
-      mode: player.mode,
+      queue: playerState.queue,
+      currentIndex: playerState.currentIndex,
+      currentTimeMs: Math.max(0, Math.floor(playerState.currentTimeMs)),
+      isPlaying: playerState.isPlaying,
+      mode: playerState.mode,
       updatedAt: new Date().toISOString()
     };
-  }, [player.currentIndex, player.currentTimeMs, player.isPlaying, player.mode, player.queue]);
+  }, []);
+
+  const listenStateSignature = useCallback((state: ListenPlaybackState, type: ListenStatePublishType): string => {
+    return JSON.stringify({
+      type,
+      ids: state.queue.map((track) => track.id),
+      index: state.currentIndex,
+      playing: state.isPlaying,
+      mode: state.mode,
+      progressBucket: type === "progress" || type === "seek" ? Math.floor(state.currentTimeMs / 1000) : null
+    });
+  }, []);
+
+  const publishListenState = useCallback(
+    (
+      type: ListenStatePublishType,
+      options: {
+        force?: boolean;
+        minIntervalMs?: number;
+        defer?: boolean;
+      } = {}
+    ) => {
+      const run = () => {
+        if (authStatus !== "authenticated") return;
+        if (listenApplyingRemoteRef.current) return;
+        const room = useListenTogetherStore.getState().room;
+        if (!room || listenLeavingRoomIdsRef.current.has(room.id)) return;
+        const now = Date.now();
+        if (type === "progress") {
+          const intervalMs = options.minIntervalMs ?? LISTEN_PROGRESS_SYNC_INTERVAL_MS;
+          if (now - listenLastProgressPublishedAtRef.current < intervalMs) return;
+          const playerState = usePlayerStore.getState();
+          if (!playerState.isPlaying) return;
+          listenLastProgressPublishedAtRef.current = now;
+        }
+        const playbackState = captureListenPlaybackState();
+        const signature = listenStateSignature(playbackState, type);
+        if (!options.force && type !== "progress" && signature === listenLastStrongPublishedRef.current) return;
+        if (type !== "progress") {
+          listenLastStrongPublishedRef.current = signature;
+        }
+        void sendListenRoomState(room.id, type, playbackState)
+          .then((nextRoom) => {
+            const currentRoom = useListenTogetherStore.getState().room;
+            if (!currentRoom || currentRoom.id !== room.id || listenLeavingRoomIdsRef.current.has(room.id)) return;
+            setListenRoom(nextRoom);
+            setListenConnectionState("connected");
+          })
+          .catch(() => {
+            const currentRoom = useListenTogetherStore.getState().room;
+            if (!currentRoom || currentRoom.id !== room.id || listenLeavingRoomIdsRef.current.has(room.id)) return;
+            setListenConnectionState("reconnecting");
+          });
+      };
+      if (options.defer) {
+        window.setTimeout(run, 0);
+        return;
+      }
+      run();
+    },
+    [authStatus, captureListenPlaybackState, listenStateSignature, setListenConnectionState, setListenRoom]
+  );
 
   const applyListenPlaybackState = useCallback(
     (state: ListenPlaybackState) => {
@@ -1108,6 +1204,17 @@ export function PlayerApp() {
     [controller, player, setListenApplyingRemote]
   );
 
+  const handleSeekTo = useCallback(
+    (ms: number) => {
+      controller.seekTo(ms);
+      publishListenState("seek", {
+        force: true,
+        defer: true
+      });
+    },
+    [controller, publishListenState]
+  );
+
   const handleCreateListenRoom = useCallback(async () => {
     if (authStatus !== "authenticated") {
       setListenPanelOpen(true);
@@ -1118,6 +1225,9 @@ export function PlayerApp() {
     setListenMessage(null);
     try {
       const room = await createListenRoom(captureListenPlaybackState());
+      listenLeavingRoomIdsRef.current.delete(room.id);
+      listenLastStrongPublishedRef.current = listenStateSignature(room.playbackState, "playback");
+      listenLastProgressPublishedAtRef.current = 0;
       setListenRoom(room);
       setListenConnectionState("connected");
       setListenPanelOpen(true);
@@ -1127,7 +1237,7 @@ export function PlayerApp() {
     } finally {
       setListenBusy(false);
     }
-  }, [authStatus, captureListenPlaybackState, setListenConnectionState, setListenMessage, setListenRoom]);
+  }, [authStatus, captureListenPlaybackState, listenStateSignature, setListenConnectionState, setListenMessage, setListenRoom]);
 
   const handleJoinListenRoom = useCallback(async () => {
     if (authStatus !== "authenticated") {
@@ -1143,6 +1253,9 @@ export function PlayerApp() {
     setListenMessage(null);
     try {
       const room = await joinListenRoom(inviteCode);
+      listenLeavingRoomIdsRef.current.delete(room.id);
+      listenLastStrongPublishedRef.current = listenStateSignature(room.playbackState, "playback");
+      listenLastProgressPublishedAtRef.current = 0;
       setListenRoom(room);
       setListenConnectionState("connected");
       applyListenPlaybackState(room.playbackState);
@@ -1153,20 +1266,36 @@ export function PlayerApp() {
     } finally {
       setListenBusy(false);
     }
-  }, [applyListenPlaybackState, authStatus, listenInviteInput, setListenConnectionState, setListenMessage, setListenRoom]);
+  }, [applyListenPlaybackState, authStatus, listenInviteInput, listenStateSignature, setListenConnectionState, setListenMessage, setListenRoom]);
 
   const handleLeaveListenRoom = useCallback(async () => {
     const roomId = listenRoom?.id;
     listenStreamAbortRef.current?.abort();
+    if (!roomId) {
+      leaveListenLocal();
+      setListenMessage("已离开房间。");
+      return;
+    }
+    listenLeavingRoomIdsRef.current.add(roomId);
+    listenLastStrongPublishedRef.current = "";
+    listenLastProgressPublishedAtRef.current = 0;
+    leaveListenLocal();
+    setListenMessage("已离开房间。");
     if (roomId) {
       try {
         await leaveListenRoom(roomId);
       } catch {
-        // Local leave should still clear the room if the server is already gone.
+        const currentRoom = useListenTogetherStore.getState().room;
+        if (!currentRoom || currentRoom.id === roomId) {
+          setListenMessage("已在本地离开，服务器稍后同步。");
+        }
+      } finally {
+        window.setTimeout(() => {
+          listenLeavingRoomIdsRef.current.delete(roomId);
+        }, 300_000);
       }
     }
-    leaveListenLocal();
-  }, [leaveListenLocal, listenRoom?.id]);
+  }, [leaveListenLocal, listenRoom?.id, setListenMessage]);
 
   const handleCopyListenInvite = useCallback(async () => {
     if (!listenRoom) return;
@@ -1177,6 +1306,158 @@ export function PlayerApp() {
       setListenMessage(`邀请码：${listenRoom.inviteCode}`);
     }
   }, [listenRoom, setListenMessage]);
+
+  const refreshFriendPanelData = useCallback(async () => {
+    if (authStatus !== "authenticated") {
+      resetFriendPanel();
+      return;
+    }
+    setFriendLoading(true);
+    try {
+      const [friends, requests, invites] = await Promise.all([listFriends(), listFriendRequests(), listListenInvites()]);
+      setFriendList(friends);
+      setFriendRequests(requests);
+      setListenInvites(invites);
+    } catch (error) {
+      setFriendMessage(error instanceof Error ? error.message : "好友信息加载失败。");
+    } finally {
+      setFriendLoading(false);
+    }
+  }, [authStatus, resetFriendPanel, setFriendList, setFriendLoading, setFriendMessage, setFriendRequests, setListenInvites]);
+
+  const handleFriendSearch = useCallback(async () => {
+    if (authStatus !== "authenticated") {
+      setFriendMessage("请先登录后再添加好友。");
+      return;
+    }
+    const query = friendSearchInput.trim();
+    if (!query) {
+      setFriendSearchResults([]);
+      return;
+    }
+    setFriendLoading(true);
+    setFriendMessage(null);
+    try {
+      const results = await searchFriends(query);
+      setFriendSearchResults(results);
+    } catch (error) {
+      setFriendMessage(error instanceof Error ? error.message : "搜索好友失败。");
+    } finally {
+      setFriendLoading(false);
+    }
+  }, [authStatus, friendSearchInput, setFriendLoading, setFriendMessage, setFriendSearchResults]);
+
+  const handleSendFriendRequest = useCallback(
+    async (userId: string) => {
+      setFriendActionBusyId(userId);
+      setFriendMessage(null);
+      try {
+        await sendFriendRequest(userId);
+        setFriendMessage("好友请求已发送。");
+        await refreshFriendPanelData();
+        if (friendSearchInput.trim()) {
+          const results = await searchFriends(friendSearchInput);
+          setFriendSearchResults(results);
+        }
+      } catch (error) {
+        setFriendMessage(error instanceof Error ? error.message : "发送好友请求失败。");
+      } finally {
+        setFriendActionBusyId(null);
+      }
+    },
+    [friendSearchInput, refreshFriendPanelData, setFriendMessage, setFriendSearchResults]
+  );
+
+  const handleRespondFriendRequest = useCallback(
+    async (requestId: string, action: "accept" | "reject" | "cancel") => {
+      setFriendActionBusyId(requestId);
+      setFriendMessage(null);
+      try {
+        if (action === "accept") {
+          await acceptFriendRequest(requestId);
+          setFriendMessage("已添加好友。");
+        } else if (action === "reject") {
+          await rejectFriendRequest(requestId);
+          setFriendMessage("已拒绝好友请求。");
+        } else {
+          await cancelFriendRequest(requestId);
+          setFriendMessage("已取消好友请求。");
+        }
+        await refreshFriendPanelData();
+      } catch (error) {
+        setFriendMessage(error instanceof Error ? error.message : "好友请求处理失败。");
+      } finally {
+        setFriendActionBusyId(null);
+      }
+    },
+    [refreshFriendPanelData, setFriendMessage]
+  );
+
+  const handleDeleteFriend = useCallback(
+    async (friendUserId: string) => {
+      setFriendActionBusyId(friendUserId);
+      setFriendMessage(null);
+      try {
+        await deleteFriend(friendUserId);
+        setFriendMessage("已删除好友。");
+        await refreshFriendPanelData();
+      } catch (error) {
+        setFriendMessage(error instanceof Error ? error.message : "删除好友失败。");
+      } finally {
+        setFriendActionBusyId(null);
+      }
+    },
+    [refreshFriendPanelData, setFriendMessage]
+  );
+
+  const handleInviteFriendToListen = useCallback(
+    async (friendUserId: string) => {
+      if (!listenRoom) {
+        setFriendMessage("请先创建或加入一起听房间。");
+        return;
+      }
+      setFriendActionBusyId(friendUserId);
+      setFriendMessage(null);
+      try {
+        await inviteFriendToListenRoom(listenRoom.id, friendUserId);
+        setFriendMessage("一起听邀请已发送。");
+        await refreshFriendPanelData();
+      } catch (error) {
+        setFriendMessage(error instanceof Error ? error.message : "邀请好友失败。");
+      } finally {
+        setFriendActionBusyId(null);
+      }
+    },
+    [listenRoom, refreshFriendPanelData, setFriendMessage]
+  );
+
+  const handleRespondListenInvite = useCallback(
+    async (inviteId: string, action: "accept" | "reject") => {
+      setFriendActionBusyId(inviteId);
+      setFriendMessage(null);
+      try {
+        if (action === "accept") {
+          const result = await acceptListenInvite(inviteId);
+          listenLeavingRoomIdsRef.current.delete(result.room.id);
+          listenLastStrongPublishedRef.current = listenStateSignature(result.room.playbackState, "playback");
+          listenLastProgressPublishedAtRef.current = 0;
+          setListenRoom(result.room);
+          setListenConnectionState("connected");
+          applyListenPlaybackState(result.room.playbackState);
+          setFriendMessage("已加入好友的一起听。");
+        } else {
+          await rejectListenInvite(inviteId);
+          setFriendMessage("已拒绝一起听邀请。");
+        }
+        await refreshFriendPanelData();
+      } catch (error) {
+        setFriendMessage(error instanceof Error ? error.message : "处理一起听邀请失败。");
+      } finally {
+        setFriendActionBusyId(null);
+      }
+    },
+    [applyListenPlaybackState, listenStateSignature, refreshFriendPanelData, setFriendMessage, setListenConnectionState, setListenRoom]
+  );
 
   const handleAvatarFileChange = useCallback(async (file: File | null | undefined) => {
     if (!file) return;
@@ -2682,10 +2963,7 @@ export function PlayerApp() {
 
   useEffect(() => {
     if (detailPhase !== "open") return;
-    const focusFrameId = window.requestAnimationFrame(() => {
-      detailScreenRef.current?.focus({ preventScroll: true });
-    });
-    return () => window.cancelAnimationFrame(focusFrameId);
+    detailScreenRef.current?.focus({ preventScroll: true });
   }, [detailPhase]);
 
   const closeDetail = useCallback(() => {
@@ -2947,15 +3225,22 @@ export function PlayerApp() {
       roomId,
       sinceVersion,
       (event) => {
+        if (listenLeavingRoomIdsRef.current.has(roomId)) return;
         const currentRoom = useListenTogetherStore.getState().room;
         if (!currentRoom || currentRoom.id !== roomId || event.version <= currentRoom.version) return;
         if (event.type === "member") {
           void getListenRoom(roomId)
             .then((room) => {
+              const latestRoom = useListenTogetherStore.getState().room;
+              if (!latestRoom || latestRoom.id !== roomId || listenLeavingRoomIdsRef.current.has(roomId)) return;
               setListenRoom(room);
               setListenConnectionState("connected");
             })
-            .catch(() => setListenConnectionState("reconnecting"));
+            .catch(() => {
+              const latestRoom = useListenTogetherStore.getState().room;
+              if (!latestRoom || latestRoom.id !== roomId || listenLeavingRoomIdsRef.current.has(roomId)) return;
+              setListenConnectionState("reconnecting");
+            });
           return;
         }
         if (event.payload && typeof event.payload === "object" && "queue" in event.payload) {
@@ -2977,6 +3262,9 @@ export function PlayerApp() {
       abortController.signal
     ).catch((error) => {
       if (abortController.signal.aborted) return;
+      if (listenLeavingRoomIdsRef.current.has(roomId)) return;
+      const latestRoom = useListenTogetherStore.getState().room;
+      if (!latestRoom || latestRoom.id !== roomId) return;
       setListenConnectionState("reconnecting");
       setListenMessage(error instanceof Error ? error.message : "一起听连接中断，正在等待重连。");
     });
@@ -2999,45 +3287,54 @@ export function PlayerApp() {
     if (!roomId || authStatus !== "authenticated") return;
     const timerId = window.setInterval(() => {
       void heartbeatListenRoom(roomId)
-        .then((room) => setListenRoom(room))
-        .catch(() => setListenConnectionState("reconnecting"));
-    }, 20_000);
+        .then((room) => {
+          const currentRoom = useListenTogetherStore.getState().room;
+          if (!currentRoom || currentRoom.id !== roomId || listenLeavingRoomIdsRef.current.has(roomId)) return;
+          setListenRoom(room);
+        })
+        .catch(() => {
+          const currentRoom = useListenTogetherStore.getState().room;
+          if (!currentRoom || currentRoom.id !== roomId || listenLeavingRoomIdsRef.current.has(roomId)) return;
+          setListenConnectionState("reconnecting");
+        });
+    }, LISTEN_HEARTBEAT_INTERVAL_MS);
     return () => window.clearInterval(timerId);
   }, [authStatus, listenRoom?.id, setListenConnectionState, setListenRoom]);
 
   useEffect(() => {
     const roomId = listenRoom?.id;
     if (!roomId || authStatus !== "authenticated") return;
-    if (listenApplyingRemoteRef.current) return;
-    const ids = player.queue.map((track) => track.id).join(",");
-    const progressBucket = Math.floor(player.currentTimeMs / 5000);
-    const signature = JSON.stringify({
-      ids,
-      index: player.currentIndex,
-      playing: player.isPlaying,
-      mode: player.mode,
-      progressBucket
-    });
-    if (signature === listenLastPublishedRef.current) return;
-    listenLastPublishedRef.current = signature;
-    void sendListenRoomState(roomId, "playback", captureListenPlaybackState())
-      .then((room) => {
-        setListenRoom(room);
-        setListenConnectionState("connected");
-      })
-      .catch(() => setListenConnectionState("reconnecting"));
+    publishListenState("playback");
   }, [
     authStatus,
-    captureListenPlaybackState,
     listenRoom?.id,
     player.currentIndex,
-    player.currentTimeMs,
     player.isPlaying,
     player.mode,
     player.queue,
-    setListenConnectionState,
-    setListenRoom
+    publishListenState
   ]);
+
+  useEffect(() => {
+    const roomId = listenRoom?.id;
+    if (!roomId || authStatus !== "authenticated") return;
+    const timerId = window.setInterval(() => {
+      publishListenState("progress", {
+        minIntervalMs: LISTEN_PROGRESS_SYNC_INTERVAL_MS
+      });
+    }, LISTEN_PROGRESS_SYNC_INTERVAL_MS);
+    return () => window.clearInterval(timerId);
+  }, [authStatus, listenRoom?.id, publishListenState]);
+
+  useEffect(() => {
+    if (!listenPanelOpen) return;
+    void refreshFriendPanelData();
+  }, [listenPanelOpen, refreshFriendPanelData]);
+
+  useEffect(() => {
+    if (authStatus === "authenticated") return;
+    resetFriendPanel();
+  }, [authStatus, resetFriendPanel]);
 
   const markLyricUserInteraction = useCallback(() => {
     lyricUserScrollLockUntilRef.current = Date.now() + 1800;
@@ -3322,59 +3619,192 @@ export function PlayerApp() {
 
   const listenPanelContent = (
     <>
-      <div className="listen-card-head">
-        <span>一起听</span>
-        <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : listenConnectionState === "error" ? "连接异常" : "多人同步播放"}</small>
-      </div>
-      {listenPanelOpen ? (
-        <div className="listen-panel">
-          {listenRoom ? (
-            <>
-              <div className="listen-room-code">
-                <strong>{listenRoom.inviteCode}</strong>
-                <button type="button" onClick={() => void handleCopyListenInvite()}>
-                  复制
-                </button>
-              </div>
-              <div className="listen-member-row">
-                {listenRoom.members.slice(0, 6).map((member) => (
-                  <UserAvatar key={member.user.id} user={member.user} size="sm" className={member.online ? "online" : ""} />
-                ))}
-                {listenRoom.members.length > 6 ? <span className="listen-member-more">+{listenRoom.members.length - 6}</span> : null}
-              </div>
-              <p className="listen-status">
-                {listenConnectionState === "connected" ? "已同步" : listenConnectionState === "reconnecting" ? "重连中" : "连接中"}
-                {listenRoom.lastActor ? ` · 由 ${listenRoom.lastActor.nickname || listenRoom.lastActor.email} 更新` : ""}
-              </p>
-              <button type="button" className="ghost listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
-                离开房间
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
-                创建一起听
-              </button>
-              <div className="listen-join-row">
-                <input
-                  value={listenInviteInput}
-                  placeholder="输入邀请码"
-                  onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
-                />
-                <button type="button" onClick={() => void handleJoinListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
-                  加入
-                </button>
-              </div>
-              {authStatus !== "authenticated" ? <p className="listen-status">登录后可使用一起听。</p> : null}
-            </>
-          )}
-          {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+      <div className="listen-drawer-head">
+        <div>
+          <span>一起听</span>
+          <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : listenConnectionState === "error" ? "连接异常" : "好友邀请与多人同步"}</small>
         </div>
-      ) : (
-        <button type="button" className="listen-wide-btn" onClick={() => setListenPanelOpen(true)}>
-          {listenRoom ? "查看房间" : "开始一起听"}
+        <button type="button" className="ghost" onClick={() => setListenPanelOpen(false)}>
+          关闭
         </button>
-      )}
+      </div>
+      <div className="listen-panel">
+        {listenRoom ? (
+          <>
+            <div className="listen-room-code">
+              <strong>{listenRoom.inviteCode}</strong>
+              <button type="button" onClick={() => void handleCopyListenInvite()}>
+                复制
+              </button>
+            </div>
+            <div className="listen-member-row">
+              {listenRoom.members.slice(0, 8).map((member) => (
+                <UserAvatar key={member.user.id} user={member.user} size="sm" className={member.online ? "online" : ""} />
+              ))}
+              {listenRoom.members.length > 8 ? <span className="listen-member-more">+{listenRoom.members.length - 8}</span> : null}
+            </div>
+            <p className="listen-status">
+              {listenConnectionState === "connected" ? "已同步" : listenConnectionState === "reconnecting" ? "重连中" : "连接中"}
+              {listenRoom.lastActor ? ` · 由 ${listenRoom.lastActor.nickname || listenRoom.lastActor.email} 更新` : ""}
+            </p>
+            <button type="button" className="ghost listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
+              离开房间
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
+              创建一起听
+            </button>
+            <div className="listen-join-row">
+              <input
+                value={listenInviteInput}
+                placeholder="输入邀请码"
+                onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
+              />
+              <button type="button" onClick={() => void handleJoinListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
+                加入
+              </button>
+            </div>
+            {authStatus !== "authenticated" ? <p className="listen-status">登录后可使用一起听。</p> : null}
+          </>
+        )}
+        {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+      </div>
+
+      {authStatus === "authenticated" ? (
+        <>
+          <section className="listen-drawer-section">
+            <div className="listen-section-head">
+              <span>好友邀请</span>
+              <button type="button" className="ghost" onClick={() => void refreshFriendPanelData()} disabled={friendLoading}>
+                刷新
+              </button>
+            </div>
+            <div className="listen-list">
+              {listenInvites.length ? (
+                listenInvites.map((invite) => (
+                  <div className="listen-list-row" key={invite.id}>
+                    <UserAvatar user={invite.inviter} size="sm" />
+                    <div>
+                      <strong>{invite.inviter.nickname || invite.inviter.email}</strong>
+                      <small>{invite.memberCount} 人房间 · {invite.inviteCode}</small>
+                    </div>
+                    <button type="button" onClick={() => void handleRespondListenInvite(invite.id, "accept")} disabled={friendActionBusyId === invite.id}>
+                      加入
+                    </button>
+                    <button type="button" className="ghost" onClick={() => void handleRespondListenInvite(invite.id, "reject")} disabled={friendActionBusyId === invite.id}>
+                      拒绝
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="listen-status">暂无待处理邀请。</p>
+              )}
+            </div>
+          </section>
+
+          <section className="listen-drawer-section">
+            <div className="listen-section-head">
+              <span>邀请好友</span>
+              <small>{friendList.length} 位好友</small>
+            </div>
+            <div className="listen-list">
+              {friendList.length ? (
+                friendList.map((friend) => (
+                  <div className="listen-list-row" key={friend.user.id}>
+                    <UserAvatar user={friend.user} size="sm" />
+                    <div>
+                      <strong>{friend.user.nickname || friend.user.email}</strong>
+                      <small>{new Date(friend.since).toLocaleDateString()}</small>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleInviteFriendToListen(friend.user.id)}
+                      disabled={!listenRoom || friendActionBusyId === friend.user.id}
+                    >
+                      邀请
+                    </button>
+                    <button type="button" className="ghost" onClick={() => void handleDeleteFriend(friend.user.id)} disabled={friendActionBusyId === friend.user.id}>
+                      删除
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <p className="listen-status">还没有好友，先搜索添加一个吧。</p>
+              )}
+            </div>
+          </section>
+
+          <section className="listen-drawer-section">
+            <div className="listen-section-head">
+              <span>好友请求</span>
+              <small>{friendRequests.incoming.length + friendRequests.outgoing.length} 条待处理</small>
+            </div>
+            <div className="listen-list">
+              {friendRequests.incoming.map((request) => (
+                <div className="listen-list-row" key={request.id}>
+                  <UserAvatar user={request.requester} size="sm" />
+                  <div>
+                    <strong>{request.requester.nickname || request.requester.email}</strong>
+                    <small>请求添加你为好友</small>
+                  </div>
+                  <button type="button" onClick={() => void handleRespondFriendRequest(request.id, "accept")} disabled={friendActionBusyId === request.id}>
+                    同意
+                  </button>
+                  <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "reject")} disabled={friendActionBusyId === request.id}>
+                    拒绝
+                  </button>
+                </div>
+              ))}
+              {friendRequests.outgoing.map((request) => (
+                <div className="listen-list-row" key={request.id}>
+                  <UserAvatar user={request.addressee} size="sm" />
+                  <div>
+                    <strong>{request.addressee.nickname || request.addressee.email}</strong>
+                    <small>等待对方同意</small>
+                  </div>
+                  <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "cancel")} disabled={friendActionBusyId === request.id}>
+                    取消
+                  </button>
+                </div>
+              ))}
+              {!friendRequests.incoming.length && !friendRequests.outgoing.length ? <p className="listen-status">暂无待处理好友请求。</p> : null}
+            </div>
+          </section>
+
+          <section className="listen-drawer-section">
+            <div className="listen-section-head">
+              <span>添加好友</span>
+            </div>
+            <div className="listen-join-row">
+              <input value={friendSearchInput} placeholder="搜索邮箱或昵称" onChange={(event) => setFriendSearchInput(event.target.value)} />
+              <button type="button" onClick={() => void handleFriendSearch()} disabled={friendLoading}>
+                搜索
+              </button>
+            </div>
+            <div className="listen-list">
+              {friendSearchResults.map((result) => (
+                <div className="listen-list-row" key={result.user.id}>
+                  <UserAvatar user={result.user} size="sm" />
+                  <div>
+                    <strong>{result.user.nickname || result.user.email}</strong>
+                    <small>{result.relationStatus === "friend" ? "已是好友" : result.relationStatus === "outgoing_pending" ? "请求已发送" : result.relationStatus === "incoming_pending" ? "对方已请求添加你" : result.relationStatus === "self" ? "这是你自己" : "可发送好友请求"}</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleSendFriendRequest(result.user.id)}
+                    disabled={result.relationStatus !== "none" || friendActionBusyId === result.user.id}
+                  >
+                    添加
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+          {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
+        </>
+      ) : null}
     </>
   );
 
@@ -3395,10 +3825,23 @@ export function PlayerApp() {
       </div>
 
       <div className="spotify-player-center">
+        <div className="spotify-progress-row">
+          <span>{formatMs(player.currentTimeMs)}</span>
+          <input
+            className="range-slider range-progress"
+            type="range"
+            min={0}
+            max={Math.max(player.durationMs, 1)}
+            value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
+            style={{
+              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%, rgba(255,255,255,0.22) 100%)`
+            }}
+            onChange={(event) => handleSeekTo(Number(event.target.value))}
+            onClick={(event) => event.stopPropagation()}
+          />
+          <span>{formatMs(player.durationMs)}</span>
+        </div>
         <div className="spotify-player-controls">
-          <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
-            <span className="icon-text">听</span>
-          </IconButton>
           <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
             <QueueIcon />
           </IconButton>
@@ -3420,22 +3863,6 @@ export function PlayerApp() {
           <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
             {modeMeta.icon}
           </IconButton>
-        </div>
-        <div className="spotify-progress-row">
-          <span>{formatMs(player.currentTimeMs)}</span>
-          <input
-            className="range-slider range-progress"
-            type="range"
-            min={0}
-            max={Math.max(player.durationMs, 1)}
-            value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
-            style={{
-              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%, rgba(255,255,255,0.22) 100%)`
-            }}
-            onChange={(event) => controller.seekTo(Number(event.target.value))}
-            onClick={(event) => event.stopPropagation()}
-          />
-          <span>{formatMs(player.durationMs)}</span>
         </div>
       </div>
 
@@ -3522,9 +3949,6 @@ export function PlayerApp() {
       </div>
       <div className="now-playing-merged-actions">
         <div className="spotify-player-controls compact">
-          <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
-            <span className="icon-text">听</span>
-          </IconButton>
           {!isMobileUi ? (
             <IconButton
               ariaLabel={modeMeta.label}
@@ -3567,9 +3991,96 @@ export function PlayerApp() {
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
-      {listenPanelOpen && (isMobileUi || !isAccountEnabled) ? (
-        <section className="listen-floating-panel" aria-label="一起听房间">
-          {listenPanelContent}
+      {listenPanelOpen ? (
+        <section className="listen-drawer-overlay" aria-label="一起听房间" onClick={() => setListenPanelOpen(false)}>
+          <aside className="listen-drawer" role="dialog" aria-modal="true" aria-label="一起听" onClick={(event) => event.stopPropagation()}>
+            {listenPanelContent}
+          </aside>
+        </section>
+      ) : null}
+      {isMobileUi && mobileMenuOpen ? (
+        <section className="mobile-menu-overlay" aria-label="移动菜单" onClick={() => setMobileMenuOpen(false)}>
+          <aside className="mobile-menu-drawer" role="dialog" aria-modal="true" aria-label="菜单" onClick={(event) => event.stopPropagation()}>
+            <div className="listen-drawer-head">
+              <div>
+                <span>菜单</span>
+                <small>导航、账号和工具</small>
+              </div>
+              <button type="button" className="ghost" onClick={() => setMobileMenuOpen(false)}>
+                关闭
+              </button>
+            </div>
+            <div className="mobile-menu-nav">
+              <button
+                type="button"
+                className={activeTab === "home" ? "active" : ""}
+                onClick={() => {
+                  setHomePlaylistView("featured");
+                  goTab("home");
+                  setMobileMenuOpen(false);
+                }}
+              >
+                主页
+              </button>
+              <button
+                type="button"
+                className={activeTab === "search" ? "active" : ""}
+                onClick={() => {
+                  goTab("search");
+                  setMobileMenuOpen(false);
+                }}
+              >
+                搜索
+              </button>
+              <button
+                type="button"
+                className={activeTab === "library" ? "active" : ""}
+                onClick={() => {
+                  goTab("library", "library-favorites");
+                  setMobileMenuOpen(false);
+                }}
+              >
+                你的音乐库
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setListenPanelOpen(true);
+                  setMobileMenuOpen(false);
+                }}
+              >
+                一起听
+              </button>
+            </div>
+            <div className="mobile-menu-section">
+              <span>账号</span>
+              {isAccountEnabled ? (
+                authStatus === "authenticated" ? (
+                  <button type="button" className="mobile-menu-account" onClick={() => void handleLogout()}>
+                    <UserAvatar user={authUser} size="sm" />
+                    <span>{accountDisplayName}</span>
+                    <small>退出登录</small>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openLoginDialog();
+                      setMobileMenuOpen(false);
+                    }}
+                  >
+                    登录同步
+                  </button>
+                )
+              ) : (
+                <small>账号服务未启用</small>
+              )}
+            </div>
+            <div className="mobile-menu-section">
+              <span>主题</span>
+              <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
+            </div>
+          </aside>
         </section>
       ) : null}
 
@@ -3577,50 +4088,31 @@ export function PlayerApp() {
         <aside className="spotify-sidebar">
           <div className="spotify-logo">MiningQwQ Music</div>
           <div className="spotify-nav-row">
-            <nav className="spotify-nav">
-              <button
-                className={activeTab === "home" ? "active" : ""}
-                onClick={() => {
-                  setHomePlaylistView("featured");
-                  goTab("home");
-                }}
-              >
-                主页
-              </button>
-              <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
-                搜索
-              </button>
-              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
-                你的音乐库
-              </button>
-            </nav>
             {isMobileUi ? (
               <div className="sidebar-mobile-tools">
-                {isAccountEnabled ? (
-                  <button
-                    type="button"
-                    className="sidebar-mobile-account-toggle sidebar-mobile-account-btn"
-                    onClick={() => {
-                      if (authStatus === "authenticated") {
-                        void handleLogout();
-                        return;
-                      }
-                      openLoginDialog();
-                    }}
-                  >
-                    {authStatus === "authenticated" ? (
-                      <>
-                        <UserAvatar user={authUser} size="sm" />
-                        <span>退出登录</span>
-                      </>
-                    ) : (
-                      "登录同步"
-                    )}
-                  </button>
-                ) : null}
-                <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
+                <button type="button" className="sidebar-mobile-account-toggle sidebar-mobile-account-btn" onClick={() => setMobileMenuOpen(true)}>
+                  菜单
+                </button>
               </div>
-            ) : null}
+            ) : (
+              <nav className="spotify-nav">
+                <button
+                  className={activeTab === "home" ? "active" : ""}
+                  onClick={() => {
+                    setHomePlaylistView("featured");
+                    goTab("home");
+                  }}
+                >
+                  主页
+                </button>
+                <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
+                  搜索
+                </button>
+                <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
+                  你的音乐库
+                </button>
+              </nav>
+            )}
           </div>
           {isMobileUi && hasAuthRefreshIssue ? (
             <div className="account-refresh-warning mobile-inline">
@@ -3717,11 +4209,6 @@ export function PlayerApp() {
                     </button>
                   </div>
                 ) : null}
-              </div>
-            ) : null}
-            {isAccountEnabled ? (
-              <div className="listen-card">
-                {listenPanelContent}
               </div>
             ) : null}
             {!isMobileUi ? (
@@ -4682,7 +5169,7 @@ export function PlayerApp() {
                       <button
                         type="button"
                         className="meta-action-btn"
-                        onClick={() => controller.seekTo(trackInsight.chorusStartMs ?? 0)}
+                        onClick={() => handleSeekTo(trackInsight.chorusStartMs ?? 0)}
                       >
                         跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
                       </button>
@@ -4840,7 +5327,7 @@ export function PlayerApp() {
                   style={{
                     background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${progressPercent}%, var(--detail-range-inactive) ${progressPercent}%, var(--detail-range-inactive) 100%)`
                   }}
-                  onChange={(event) => controller.seekTo(Number(event.target.value))}
+                  onChange={(event) => handleSeekTo(Number(event.target.value))}
                 />
               </div>
 

@@ -100,6 +100,54 @@ export type ListenRoomEvent = {
   createdAt: string;
 };
 
+export type FriendRelationStatus = "self" | "friend" | "incoming_pending" | "outgoing_pending" | "none";
+
+export type FriendSearchResult = {
+  user: AccountUser;
+  relationStatus: FriendRelationStatus;
+};
+
+export type FriendSummary = {
+  user: AccountUser;
+  since: string;
+};
+
+export type FriendRequestSummary = {
+  id: string;
+  requester: AccountUser;
+  addressee: AccountUser;
+  status: "pending" | "accepted" | "rejected" | "canceled";
+  direction: "incoming" | "outgoing";
+  createdAt: string;
+  updatedAt: string;
+  respondedAt?: string | null;
+};
+
+export type FriendRequestsResult = {
+  incoming: FriendRequestSummary[];
+  outgoing: FriendRequestSummary[];
+};
+
+export type ListenRoomInviteSummary = {
+  id: string;
+  roomId: string;
+  inviteCode: string;
+  status: "pending" | "accepted" | "rejected" | "canceled";
+  inviter: AccountUser;
+  invitee: AccountUser;
+  roomStatus: ListenRoomSummary["status"];
+  memberCount: number;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+  respondedAt?: string | null;
+};
+
+export type AcceptListenInviteResult = {
+  invite: ListenRoomInviteSummary;
+  room: ListenRoomSummary;
+};
+
 export type ApiSuccess<T> = {
   code: 0;
   data: T;

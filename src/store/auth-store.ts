@@ -14,6 +14,7 @@ type AuthState = {
 type AuthActions = {
   setAuthenticating: () => void;
   setAuthenticated: (user: AccountUser, accessToken: string) => void;
+  updateUser: (user: AccountUser) => void;
   updateAccessToken: (accessToken: string) => void;
   setGuest: () => void;
   setError: (message: string) => void;
@@ -46,6 +47,12 @@ export const useAuthStore = create<AuthStore>()((set) => ({
       lastSyncState: "idle",
       errorMessage: null
     }),
+  updateUser: (user) =>
+    set((state) => ({
+      ...state,
+      user,
+      status: state.accessToken ? "authenticated" : state.status
+    })),
   updateAccessToken: (accessToken) =>
     set((state) => ({
       ...state,

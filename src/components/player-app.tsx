@@ -7,16 +7,25 @@ import {
   AccountApiError,
   addFavoriteTrack,
   addRecentTrack,
+  createListenRoom,
+  deleteAccountAvatar,
   detectAccountServiceEnabled,
   getLibraryChanges,
   getLibrarySnapshot,
+  getListenRoom,
   loadCurrentAccountUser,
   loginAccount,
   logoutAccount,
+  heartbeatListenRoom,
+  joinListenRoom,
+  leaveListenRoom,
+  openListenRoomStream,
   registerAccount,
   removeFavoriteTrack,
   removeImportedPlaylistCloud,
+  sendListenRoomState,
   tryRefreshAccessTokenDetailed,
+  uploadAccountAvatar,
   upsertImportedPlaylistCloud
 } from "@/src/lib/account-client";
 import {
@@ -49,9 +58,11 @@ import {
 } from "@/src/lib/player-ui";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { useAuthStore } from "@/src/store/auth-store";
+import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
-import type { AuthStatus, SyncState } from "@/src/types/account";
+import { UserAvatar } from "@/src/components/user-avatar";
+import type { AuthStatus, ListenPlaybackState, SyncState } from "@/src/types/account";
 import type {
   ArtistDetail,
   ArtistSearchItem,
@@ -75,6 +86,7 @@ type HomePlaylistView = "featured" | "more";
 type DetailViewTab = "lyric" | "meta";
 type DetailLyricMode = "origin" | "translated" | "karaoke";
 type DetailModalPhase = "closed" | "opening" | "open" | "closing";
+type DetailOpenInteraction = "pointer" | "keyboard";
 type PlaylistPanelPhase = "closed" | "opening" | "open" | "closing";
 type DetailPalette = {
   bgA: string;
@@ -103,8 +115,7 @@ type HistoryGuardState = {
 };
 type AuthFormMode = "login" | "register";
 
-const DETAIL_ANIMATION_MS = 340;
-const DETAIL_OPEN_FOCUS_DELAY_MS = 460;
+const DETAIL_ANIMATION_MS = 360;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
 const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
@@ -869,6 +880,14 @@ export function PlayerApp() {
   const setAuthGuest = useAuthStore((state) => state.setGuest);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthSyncState = useAuthStore((state) => state.setSyncState);
+  const listenRoom = useListenTogetherStore((state) => state.room);
+  const listenConnectionState = useListenTogetherStore((state) => state.connectionState);
+  const listenMessage = useListenTogetherStore((state) => state.message);
+  const setListenRoom = useListenTogetherStore((state) => state.setRoom);
+  const setListenConnectionState = useListenTogetherStore((state) => state.setConnectionState);
+  const setListenMessage = useListenTogetherStore((state) => state.setMessage);
+  const setListenApplyingRemote = useListenTogetherStore((state) => state.setApplyingRemote);
+  const leaveListenLocal = useListenTogetherStore((state) => state.leaveLocal);
 
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
@@ -941,6 +960,10 @@ export function PlayerApp() {
   const [authFormError, setAuthFormError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authRefreshIssue, setAuthRefreshIssue] = useState<string | null>(null);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [listenPanelOpen, setListenPanelOpen] = useState(false);
+  const [listenInviteInput, setListenInviteInput] = useState("");
+  const [listenBusy, setListenBusy] = useState(false);
   const [locatedPanelTrackId, setLocatedPanelTrackId] = useState<string | null>(null);
   const [displayedLibraryView, setDisplayedLibraryView] = useState<LibraryView>("library-favorites");
   const [libraryContentTransitionPhase, setLibraryContentTransitionPhase] = useState<LibraryContentTransitionPhase>("idle");
@@ -952,6 +975,7 @@ export function PlayerApp() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
   const accountDialogPanelRef = useRef<HTMLFormElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const detailScreenRef = useRef<HTMLElement>(null);
   const homePlaylistDrawerRef = useRef<HTMLElement>(null);
   const accountDialogReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -963,6 +987,9 @@ export function PlayerApp() {
   const libraryContentTransitionTimerRef = useRef<number | null>(null);
   const previousVolumeRef = useRef(0.8);
   const detailCloseTimerRef = useRef<number | null>(null);
+  const detailOpenFrameRef = useRef<number | null>(null);
+  const detailOpenSecondFrameRef = useRef<number | null>(null);
+  const detailOpenInteractionRef = useRef<DetailOpenInteraction>("pointer");
   const paletteTransitionTimerRef = useRef<number | null>(null);
   const homePlaylistCloseTimerRef = useRef<number | null>(null);
   const homePlaylistRequestIdRef = useRef(0);
@@ -1012,6 +1039,9 @@ export function PlayerApp() {
   const pullRetryBlockedUntilRef = useRef(0);
   const authBootstrapDoneRef = useRef(false);
   const syncReadyRef = useRef(false);
+  const listenStreamAbortRef = useRef<AbortController | null>(null);
+  const listenApplyingRemoteRef = useRef(false);
+  const listenLastPublishedRef = useRef("");
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -1047,6 +1077,136 @@ export function PlayerApp() {
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
   );
+
+  const captureListenPlaybackState = useCallback((): ListenPlaybackState => {
+    return {
+      queue: player.queue,
+      currentIndex: player.currentIndex,
+      currentTimeMs: Math.max(0, Math.floor(player.currentTimeMs)),
+      isPlaying: player.isPlaying,
+      mode: player.mode,
+      updatedAt: new Date().toISOString()
+    };
+  }, [player.currentIndex, player.currentTimeMs, player.isPlaying, player.mode, player.queue]);
+
+  const applyListenPlaybackState = useCallback(
+    (state: ListenPlaybackState) => {
+      listenApplyingRemoteRef.current = true;
+      setListenApplyingRemote(true);
+      player.setQueue(state.queue, state.currentIndex);
+      player.setPlaybackMode(state.mode);
+      player.setPlaying(state.isPlaying);
+      if (Math.abs(player.currentTimeMs - state.currentTimeMs) > 1200) {
+        player.setCurrentTimeMs(state.currentTimeMs);
+        window.setTimeout(() => controller.seekTo(state.currentTimeMs), 0);
+      }
+      window.setTimeout(() => {
+        listenApplyingRemoteRef.current = false;
+        setListenApplyingRemote(false);
+      }, 350);
+    },
+    [controller, player, setListenApplyingRemote]
+  );
+
+  const handleCreateListenRoom = useCallback(async () => {
+    if (authStatus !== "authenticated") {
+      setListenPanelOpen(true);
+      setListenMessage("请先登录后再使用一起听。");
+      return;
+    }
+    setListenBusy(true);
+    setListenMessage(null);
+    try {
+      const room = await createListenRoom(captureListenPlaybackState());
+      setListenRoom(room);
+      setListenConnectionState("connected");
+      setListenPanelOpen(true);
+    } catch (error) {
+      setListenMessage(error instanceof Error ? error.message : "创建一起听房间失败。");
+      setListenConnectionState("error");
+    } finally {
+      setListenBusy(false);
+    }
+  }, [authStatus, captureListenPlaybackState, setListenConnectionState, setListenMessage, setListenRoom]);
+
+  const handleJoinListenRoom = useCallback(async () => {
+    if (authStatus !== "authenticated") {
+      setListenMessage("请先登录后再加入一起听。");
+      return;
+    }
+    const inviteCode = listenInviteInput.trim();
+    if (!inviteCode) {
+      setListenMessage("请输入邀请码。");
+      return;
+    }
+    setListenBusy(true);
+    setListenMessage(null);
+    try {
+      const room = await joinListenRoom(inviteCode);
+      setListenRoom(room);
+      setListenConnectionState("connected");
+      applyListenPlaybackState(room.playbackState);
+      setListenInviteInput("");
+    } catch (error) {
+      setListenMessage(error instanceof Error ? error.message : "加入一起听失败。");
+      setListenConnectionState("error");
+    } finally {
+      setListenBusy(false);
+    }
+  }, [applyListenPlaybackState, authStatus, listenInviteInput, setListenConnectionState, setListenMessage, setListenRoom]);
+
+  const handleLeaveListenRoom = useCallback(async () => {
+    const roomId = listenRoom?.id;
+    listenStreamAbortRef.current?.abort();
+    if (roomId) {
+      try {
+        await leaveListenRoom(roomId);
+      } catch {
+        // Local leave should still clear the room if the server is already gone.
+      }
+    }
+    leaveListenLocal();
+  }, [leaveListenLocal, listenRoom?.id]);
+
+  const handleCopyListenInvite = useCallback(async () => {
+    if (!listenRoom) return;
+    try {
+      await navigator.clipboard.writeText(listenRoom.inviteCode);
+      setListenMessage("邀请码已复制。");
+    } catch {
+      setListenMessage(`邀请码：${listenRoom.inviteCode}`);
+    }
+  }, [listenRoom, setListenMessage]);
+
+  const handleAvatarFileChange = useCallback(async (file: File | null | undefined) => {
+    if (!file) return;
+    setAvatarUploading(true);
+    setAuthNotice(null);
+    try {
+      await uploadAccountAvatar(file);
+      setAuthNotice("头像已更新。");
+    } catch (error) {
+      setAuthNotice(error instanceof Error ? error.message : "头像上传失败。");
+    } finally {
+      setAvatarUploading(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = "";
+      }
+    }
+  }, []);
+
+  const handleDeleteAvatar = useCallback(async () => {
+    setAvatarUploading(true);
+    setAuthNotice(null);
+    try {
+      await deleteAccountAvatar();
+      setAuthNotice("已恢复默认头像。");
+    } catch (error) {
+      setAuthNotice(error instanceof Error ? error.message : "头像移除失败。");
+    } finally {
+      setAvatarUploading(false);
+    }
+  }, []);
 
   const resolveTrackCover = (track?: Track | null): string => {
     if (!track) return DEFAULT_COVER_URL;
@@ -2439,20 +2599,52 @@ export function PlayerApp() {
     });
   }, [homeSeedTracks, trackResult, player.queue, player.recent, player.favorites, currentTrack, artworkByTrackId]);
 
+  const finishDetailClose = useCallback(() => {
+    if (detailCloseTimerRef.current) {
+      window.clearTimeout(detailCloseTimerRef.current);
+      detailCloseTimerRef.current = null;
+    }
+    const returnFocusElement = detailReturnFocusRef.current;
+    detailReturnFocusRef.current = null;
+    setDetailPhase("closed");
+    if (returnFocusElement?.isConnected) {
+      returnFocusElement.focus({ preventScroll: true });
+    }
+  }, []);
+
   const closeDetailWithAnimation = useCallback(() => {
     if (detailPhaseRef.current === "closed" || detailPhaseRef.current === "closing") {
       return;
     }
+    if (detailOpenFrameRef.current) {
+      window.cancelAnimationFrame(detailOpenFrameRef.current);
+      detailOpenFrameRef.current = null;
+    }
+    if (detailOpenSecondFrameRef.current) {
+      window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
+      detailOpenSecondFrameRef.current = null;
+    }
     setDetailPhase("closing");
     detailCloseTimerRef.current = window.setTimeout(() => {
-      setDetailPhase("closed");
-      detailCloseTimerRef.current = null;
-      detailReturnFocusRef.current?.focus();
-      detailReturnFocusRef.current = null;
-    }, DETAIL_ANIMATION_MS);
-  }, []);
+      finishDetailClose();
+    }, DETAIL_ANIMATION_MS + 80);
+  }, [finishDetailClose]);
 
-  const openDetail = (returnFocusElement?: HTMLElement | null) => {
+  useEffect(() => {
+    if (detailPhase !== "closing") return;
+    const detailScreen = detailScreenRef.current;
+    if (!detailScreen) return;
+    const handleTransitionEnd = (event: TransitionEvent) => {
+      if (event.target !== detailScreen || event.propertyName !== "transform") return;
+      finishDetailClose();
+    };
+    detailScreen.addEventListener("transitionend", handleTransitionEnd);
+    return () => {
+      detailScreen.removeEventListener("transitionend", handleTransitionEnd);
+    };
+  }, [detailPhase, finishDetailClose]);
+
+  const openDetail = (returnFocusElement?: HTMLElement | null, interaction: DetailOpenInteraction = "pointer") => {
     if (!canOpenDetail) {
       return;
     }
@@ -2462,18 +2654,39 @@ export function PlayerApp() {
     const activeElement = document.activeElement;
     detailReturnFocusRef.current =
       returnFocusElement ?? (activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null);
+    detailOpenInteractionRef.current = interaction;
     if (detailCloseTimerRef.current) {
       window.clearTimeout(detailCloseTimerRef.current);
       detailCloseTimerRef.current = null;
+    }
+    if (detailOpenFrameRef.current) {
+      window.cancelAnimationFrame(detailOpenFrameRef.current);
+      detailOpenFrameRef.current = null;
+    }
+    if (detailOpenSecondFrameRef.current) {
+      window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
+      detailOpenSecondFrameRef.current = null;
     }
     if (!popstateHandlingRef.current) {
       pushHistoryGuardState("detail", activeTabRef.current);
     }
     setDetailPhase("opening");
-    window.requestAnimationFrame(() => {
-      setDetailPhase("open");
+    detailOpenFrameRef.current = window.requestAnimationFrame(() => {
+      detailOpenFrameRef.current = null;
+      detailOpenSecondFrameRef.current = window.requestAnimationFrame(() => {
+        detailOpenSecondFrameRef.current = null;
+        setDetailPhase("open");
+      });
     });
   };
+
+  useEffect(() => {
+    if (detailPhase !== "open") return;
+    const focusFrameId = window.requestAnimationFrame(() => {
+      detailScreenRef.current?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(focusFrameId);
+  }, [detailPhase]);
 
   const closeDetail = useCallback(() => {
     const guard = readHistoryGuardState();
@@ -2571,14 +2784,6 @@ export function PlayerApp() {
     if (homePlaylistPhase !== "open") return;
     focusFirstInteractive(homePlaylistDrawerRef.current);
   }, [homePlaylistPhase, homePlaylistPanel?.id]);
-
-  useEffect(() => {
-    if (detailPhase !== "open") return;
-    const focusTimerId = window.setTimeout(() => {
-      focusFirstInteractive(detailScreenRef.current);
-    }, DETAIL_OPEN_FOCUS_DELAY_MS);
-    return () => window.clearTimeout(focusTimerId);
-  }, [detailPhase]);
 
   useEffect(() => {
     let createdNode: HTMLElement | null = null;
@@ -2698,6 +2903,12 @@ export function PlayerApp() {
       if (detailCloseTimerRef.current) {
         window.clearTimeout(detailCloseTimerRef.current);
       }
+      if (detailOpenFrameRef.current) {
+        window.cancelAnimationFrame(detailOpenFrameRef.current);
+      }
+      if (detailOpenSecondFrameRef.current) {
+        window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
+      }
       if (paletteTransitionTimerRef.current) {
         window.clearTimeout(paletteTransitionTimerRef.current);
       }
@@ -2719,8 +2930,114 @@ export function PlayerApp() {
       if (libraryContentTransitionTimerRef.current) {
         window.clearTimeout(libraryContentTransitionTimerRef.current);
       }
+      listenStreamAbortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    const roomId = listenRoom?.id;
+    if (!roomId || authStatus !== "authenticated") return;
+    listenStreamAbortRef.current?.abort();
+    const abortController = new AbortController();
+    listenStreamAbortRef.current = abortController;
+    setListenConnectionState("connecting");
+    const sinceVersion = useListenTogetherStore.getState().room?.version ?? 0;
+
+    void openListenRoomStream(
+      roomId,
+      sinceVersion,
+      (event) => {
+        const currentRoom = useListenTogetherStore.getState().room;
+        if (!currentRoom || currentRoom.id !== roomId || event.version <= currentRoom.version) return;
+        if (event.type === "member") {
+          void getListenRoom(roomId)
+            .then((room) => {
+              setListenRoom(room);
+              setListenConnectionState("connected");
+            })
+            .catch(() => setListenConnectionState("reconnecting"));
+          return;
+        }
+        if (event.payload && typeof event.payload === "object" && "queue" in event.payload) {
+          const playbackState = event.payload as ListenPlaybackState;
+          setListenRoom({
+            ...currentRoom,
+            version: event.version,
+            playbackState,
+            lastActor: event.actor,
+            updatedAt: event.createdAt
+          });
+          setListenConnectionState("connected");
+          if (event.actor.id !== authUser?.id) {
+            applyListenPlaybackState(playbackState);
+            setListenMessage(`由 ${event.actor.nickname || event.actor.email} 更新播放`);
+          }
+        }
+      },
+      abortController.signal
+    ).catch((error) => {
+      if (abortController.signal.aborted) return;
+      setListenConnectionState("reconnecting");
+      setListenMessage(error instanceof Error ? error.message : "一起听连接中断，正在等待重连。");
+    });
+
+    return () => {
+      abortController.abort();
+    };
+  }, [
+    applyListenPlaybackState,
+    authStatus,
+    authUser?.id,
+    listenRoom?.id,
+    setListenConnectionState,
+    setListenMessage,
+    setListenRoom
+  ]);
+
+  useEffect(() => {
+    const roomId = listenRoom?.id;
+    if (!roomId || authStatus !== "authenticated") return;
+    const timerId = window.setInterval(() => {
+      void heartbeatListenRoom(roomId)
+        .then((room) => setListenRoom(room))
+        .catch(() => setListenConnectionState("reconnecting"));
+    }, 20_000);
+    return () => window.clearInterval(timerId);
+  }, [authStatus, listenRoom?.id, setListenConnectionState, setListenRoom]);
+
+  useEffect(() => {
+    const roomId = listenRoom?.id;
+    if (!roomId || authStatus !== "authenticated") return;
+    if (listenApplyingRemoteRef.current) return;
+    const ids = player.queue.map((track) => track.id).join(",");
+    const progressBucket = Math.floor(player.currentTimeMs / 5000);
+    const signature = JSON.stringify({
+      ids,
+      index: player.currentIndex,
+      playing: player.isPlaying,
+      mode: player.mode,
+      progressBucket
+    });
+    if (signature === listenLastPublishedRef.current) return;
+    listenLastPublishedRef.current = signature;
+    void sendListenRoomState(roomId, "playback", captureListenPlaybackState())
+      .then((room) => {
+        setListenRoom(room);
+        setListenConnectionState("connected");
+      })
+      .catch(() => setListenConnectionState("reconnecting"));
+  }, [
+    authStatus,
+    captureListenPlaybackState,
+    listenRoom?.id,
+    player.currentIndex,
+    player.currentTimeMs,
+    player.isPlaying,
+    player.mode,
+    player.queue,
+    setListenConnectionState,
+    setListenRoom
+  ]);
 
   const markLyricUserInteraction = useCallback(() => {
     lyricUserScrollLockUntilRef.current = Date.now() + 1800;
@@ -3003,14 +3320,72 @@ export function PlayerApp() {
     };
   }, [currentTrackId, currentTrackName, currentCoverUrl]);
 
+  const listenPanelContent = (
+    <>
+      <div className="listen-card-head">
+        <span>一起听</span>
+        <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : listenConnectionState === "error" ? "连接异常" : "多人同步播放"}</small>
+      </div>
+      {listenPanelOpen ? (
+        <div className="listen-panel">
+          {listenRoom ? (
+            <>
+              <div className="listen-room-code">
+                <strong>{listenRoom.inviteCode}</strong>
+                <button type="button" onClick={() => void handleCopyListenInvite()}>
+                  复制
+                </button>
+              </div>
+              <div className="listen-member-row">
+                {listenRoom.members.slice(0, 6).map((member) => (
+                  <UserAvatar key={member.user.id} user={member.user} size="sm" className={member.online ? "online" : ""} />
+                ))}
+                {listenRoom.members.length > 6 ? <span className="listen-member-more">+{listenRoom.members.length - 6}</span> : null}
+              </div>
+              <p className="listen-status">
+                {listenConnectionState === "connected" ? "已同步" : listenConnectionState === "reconnecting" ? "重连中" : "连接中"}
+                {listenRoom.lastActor ? ` · 由 ${listenRoom.lastActor.nickname || listenRoom.lastActor.email} 更新` : ""}
+              </p>
+              <button type="button" className="ghost listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
+                离开房间
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
+                创建一起听
+              </button>
+              <div className="listen-join-row">
+                <input
+                  value={listenInviteInput}
+                  placeholder="输入邀请码"
+                  onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
+                />
+                <button type="button" onClick={() => void handleJoinListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
+                  加入
+                </button>
+              </div>
+              {authStatus !== "authenticated" ? <p className="listen-status">登录后可使用一起听。</p> : null}
+            </>
+          )}
+          {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+        </div>
+      ) : (
+        <button type="button" className="listen-wide-btn" onClick={() => setListenPanelOpen(true)}>
+          {listenRoom ? "查看房间" : "开始一起听"}
+        </button>
+      )}
+    </>
+  );
+
   const playerDock = (
     <footer
       ref={playerDockRef}
       className={`spotify-player-bar ${canOpenDetail ? "clickable" : "empty"}`.trim()}
-      aria-disabled={!canOpenDetail}
+      data-disabled={!canOpenDetail}
       onClick={(event) => {
         if (canOpenDetail) {
-          openDetail(event.currentTarget);
+          openDetail(event.currentTarget, event.detail === 0 ? "keyboard" : "pointer");
         }
       }}
     >
@@ -3021,6 +3396,9 @@ export function PlayerApp() {
 
       <div className="spotify-player-center">
         <div className="spotify-player-controls">
+          <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
+            <span className="icon-text">听</span>
+          </IconButton>
           <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
             <QueueIcon />
           </IconButton>
@@ -3144,6 +3522,9 @@ export function PlayerApp() {
       </div>
       <div className="now-playing-merged-actions">
         <div className="spotify-player-controls compact">
+          <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
+            <span className="icon-text">听</span>
+          </IconButton>
           {!isMobileUi ? (
             <IconButton
               ariaLabel={modeMeta.label}
@@ -3171,7 +3552,7 @@ export function PlayerApp() {
           ) : null}
         </div>
         {canOpenDetail ? (
-          <button className="now-playing-merged-detail-btn" onClick={(event) => openDetail(event.currentTarget)}>
+          <button className="now-playing-merged-detail-btn" onClick={(event) => openDetail(event.currentTarget, event.detail === 0 ? "keyboard" : "pointer")}>
             展开详情
           </button>
         ) : (
@@ -3186,6 +3567,11 @@ export function PlayerApp() {
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
+      {listenPanelOpen && (isMobileUi || !isAccountEnabled) ? (
+        <section className="listen-floating-panel" aria-label="一起听房间">
+          {listenPanelContent}
+        </section>
+      ) : null}
 
       <section className="spotify-layout">
         <aside className="spotify-sidebar">
@@ -3222,7 +3608,14 @@ export function PlayerApp() {
                       openLoginDialog();
                     }}
                   >
-                    {authStatus === "authenticated" ? "退出登录" : "登录同步"}
+                    {authStatus === "authenticated" ? (
+                      <>
+                        <UserAvatar user={authUser} size="sm" />
+                        <span>退出登录</span>
+                      </>
+                    ) : (
+                      "登录同步"
+                    )}
                   </button>
                 ) : null}
                 <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
@@ -3270,12 +3663,28 @@ export function PlayerApp() {
               <div className="account-switch-card">
                 <span>账号同步</span>
                 <div className="account-switch-body">
+                  <UserAvatar user={authUser} size="md" />
                   <div className="account-switch-meta">
                     <strong>{accountDisplayName}</strong>
                     <small>{accountStateText}</small>
                   </div>
                   {authStatus === "authenticated" ? (
                     <div className="account-switch-actions">
+                      <input
+                        ref={avatarInputRef}
+                        className="account-avatar-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
+                      />
+                      <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
+                        {avatarUploading ? "上传中" : "头像"}
+                      </button>
+                      {authUser?.avatarUrl ? (
+                        <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
+                          移除
+                        </button>
+                      ) : null}
                       <button type="button" className="ghost" onClick={() => void handleLogout()}>
                         退出
                       </button>
@@ -3308,6 +3717,11 @@ export function PlayerApp() {
                     </button>
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+            {isAccountEnabled ? (
+              <div className="listen-card">
+                {listenPanelContent}
               </div>
             ) : null}
             {!isMobileUi ? (
@@ -4441,6 +4855,9 @@ export function PlayerApp() {
                 ) : null}
 
                 <div className="detail-dock-controls">
+                  <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
+                    <span className="icon-text">听</span>
+                  </IconButton>
                   <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
                     <QueueIcon />
                   </IconButton>

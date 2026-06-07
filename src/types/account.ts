@@ -4,6 +4,9 @@ export type AccountUser = {
   id: string;
   email: string;
   nickname?: string | null;
+  avatarUrl?: string | null;
+  avatarFallbackText?: string;
+  avatarFallbackBg?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -14,6 +17,7 @@ export type SyncState = "idle" | "syncing" | "failed" | "success";
 
 export type AuthTokenData = {
   accessToken: string;
+  user?: AccountUser;
 };
 
 export type AuthPayload = AuthTokenData & {
@@ -55,6 +59,45 @@ export type LibraryChangesResult = {
 export type LibraryRevisionResult = {
   revision: number;
   updatedAt: string;
+};
+
+export type ListenPlaybackState = {
+  queue: Track[];
+  currentIndex: number;
+  currentTimeMs: number;
+  isPlaying: boolean;
+  mode: "sequence" | "loop-one" | "shuffle";
+  updatedAt: string;
+};
+
+export type ListenRoomMemberSummary = {
+  user: AccountUser;
+  role: "host" | "member";
+  joinedAt: string;
+  lastSeenAt: string;
+  online: boolean;
+};
+
+export type ListenRoomSummary = {
+  id: string;
+  inviteCode: string;
+  hostUserId: string;
+  status: "open" | "closed" | "expired";
+  version: number;
+  playbackState: ListenPlaybackState;
+  members: ListenRoomMemberSummary[];
+  lastActor?: AccountUser | null;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ListenRoomEvent = {
+  version: number;
+  type: string;
+  payload: ListenPlaybackState | Record<string, unknown> | null;
+  actor: AccountUser;
+  createdAt: string;
 };
 
 export type ApiSuccess<T> = {

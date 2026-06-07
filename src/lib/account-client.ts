@@ -5,6 +5,9 @@ import type {
   AuthPayload,
   AuthTokenData,
   ChangePasswordInput,
+  ListenPlaybackState,
+  ListenRoomEvent,
+  ListenRoomSummary,
   LibraryChangesResult,
   LibraryRevisionResult,
   LibrarySnapshot,
@@ -143,6 +146,52 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
   throw normalizeFailure(response, payload);
 }
 
+async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
+  const token = useAuthStore.getState().accessToken;
+  const headers = new Headers();
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+  let response = await fetch(path, {
+    method: "POST",
+    headers,
+    body: form,
+    cache: "no-store"
+  });
+  let payload: ApiResult<T> | unknown;
+  try {
+    payload = await parseResult<T>(response);
+  } catch {
+    throw new AccountApiError(`请求失败（HTTP ${response.status}）`, {
+      code: 5000,
+      status: response.status,
+      retryable: false
+    });
+  }
+  if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {
+    return payload.data as T;
+  }
+  if (response.status === 401) {
+    const refreshed = await tryRefreshAccessToken();
+    if (refreshed) {
+      const retryToken = useAuthStore.getState().accessToken;
+      const retryHeaders = new Headers();
+      if (retryToken) retryHeaders.set("authorization", `Bearer ${retryToken}`);
+      response = await fetch(path, {
+        method: "POST",
+        headers: retryHeaders,
+        body: form,
+        cache: "no-store"
+      });
+      payload = await parseResult<T>(response);
+      if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {
+        return payload.data as T;
+      }
+    }
+  }
+  throw normalizeFailure(response, payload);
+}
+
 export async function tryRefreshAccessToken(): Promise<boolean> {
   const result = await tryRefreshAccessTokenDetailed();
   return result.ok;
@@ -155,6 +204,9 @@ export async function tryRefreshAccessTokenDetailed(): Promise<RefreshAttemptRes
       retryOnUnauthorized: false
     });
     useAuthStore.getState().updateAccessToken(data.accessToken);
+    if (data.user) {
+      useAuthStore.getState().updateUser(data.user);
+    }
     return { ok: true };
   } catch (error) {
     if (error instanceof AccountApiError) {
@@ -191,6 +243,115 @@ export async function loadCurrentAccountUser() {
   return fetchAccount<AuthPayload["user"]>("/api/account/auth/me", {
     method: "GET"
   });
+}
+
+export async function uploadAccountAvatar(file: File): Promise<AuthPayload["user"]> {
+  const form = new FormData();
+  form.set("avatar", file);
+  const user = await fetchAccountForm<AuthPayload["user"]>("/api/account/profile/avatar", form);
+  useAuthStore.getState().updateUser(user);
+  return user;
+}
+
+export async function deleteAccountAvatar(): Promise<AuthPayload["user"]> {
+  const user = await fetchAccount<AuthPayload["user"]>("/api/account/profile/avatar", {
+    method: "DELETE"
+  });
+  useAuthStore.getState().updateUser(user);
+  return user;
+}
+
+export async function createListenRoom(playbackState: ListenPlaybackState): Promise<ListenRoomSummary> {
+  return fetchAccount<ListenRoomSummary>("/api/account/listen/rooms", {
+    method: "POST",
+    body: { playbackState }
+  });
+}
+
+export async function joinListenRoom(inviteCode: string): Promise<ListenRoomSummary> {
+  return fetchAccount<ListenRoomSummary>("/api/account/listen/rooms/join", {
+    method: "POST",
+    body: { inviteCode }
+  });
+}
+
+export async function getListenRoom(roomId: string): Promise<ListenRoomSummary> {
+  return fetchAccount<ListenRoomSummary>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}`, {
+    method: "GET"
+  });
+}
+
+export async function sendListenRoomState(
+  roomId: string,
+  type: "playback" | "queue" | "seek" | "mode",
+  playbackState: ListenPlaybackState
+): Promise<ListenRoomSummary> {
+  return fetchAccount<ListenRoomSummary>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/state`, {
+    method: "POST",
+    body: { type, playbackState }
+  });
+}
+
+export async function heartbeatListenRoom(roomId: string): Promise<ListenRoomSummary> {
+  return fetchAccount<ListenRoomSummary>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/heartbeat`, {
+    method: "POST"
+  });
+}
+
+export async function leaveListenRoom(roomId: string): Promise<void> {
+  await fetchAccount<{ ok: true }>(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/leave`, {
+    method: "POST"
+  });
+}
+
+export async function openListenRoomStream(
+  roomId: string,
+  sinceVersion: number,
+  onEvent: (event: ListenRoomEvent) => void,
+  signal: AbortSignal
+): Promise<void> {
+  const token = useAuthStore.getState().accessToken;
+  const headers = new Headers();
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  const response = await fetch(`/api/account/listen/rooms/${encodeURIComponent(roomId)}/stream?sinceVersion=${Math.max(0, sinceVersion)}`, {
+    method: "GET",
+    headers,
+    cache: "no-store",
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new AccountApiError(`一起听连接失败（HTTP ${response.status}）`, {
+      code: 5506,
+      status: response.status,
+      retryable: true
+    });
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const eventLine = chunk.split("\n").find((line) => line.startsWith("event:"));
+      const dataLine = chunk.split("\n").find((line) => line.startsWith("data:"));
+      const eventName = eventLine?.slice("event:".length).trim();
+      if (!dataLine || eventName === "ready") continue;
+      if (eventName === "closed") {
+        throw new AccountApiError("一起听房间已关闭", {
+          code: 5505,
+          status: 410,
+          retryable: false
+        });
+      }
+      const payload = JSON.parse(dataLine.slice("data:".length).trim()) as ListenRoomEvent;
+      onEvent(payload);
+    }
+  }
 }
 
 export async function logoutAccount(): Promise<void> {

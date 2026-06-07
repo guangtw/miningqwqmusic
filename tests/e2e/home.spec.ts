@@ -281,6 +281,21 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   await seedPlaybackFromPlaylist(page, "100100101", "E2E 移动详情歌单");
   await page.getByRole("button", { name: "展开详情" }).first().click();
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
+  const detailScreen = page.locator(".player-detail-screen");
+  await expect(detailScreen).toHaveClass(/phase-open/);
+  const pointerFocusState = await detailScreen.evaluate((node) => {
+    const collapseButton = node.querySelector(".detail-collapse-btn");
+    return {
+      activeIsDetailScreen: document.activeElement === node,
+      collapseButtonFocusVisible: collapseButton?.matches(":focus-visible") ?? false
+    };
+  });
+  expect(pointerFocusState.activeIsDetailScreen).toBe(true);
+  expect(pointerFocusState.collapseButtonFocusVisible).toBe(false);
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "收起播放器" })).toBeFocused();
+  const keyboardFocusVisible = await page.getByRole("button", { name: "收起播放器" }).evaluate((node) => node.matches(":focus-visible"));
+  expect(keyboardFocusVisible).toBe(true);
   await expect(page.getByRole("button", { name: "原文" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "翻译" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "逐字" })).toHaveCount(0);
@@ -291,7 +306,6 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   await page.getByRole("button", { name: "歌词" }).click();
   const lyricScroll = page.locator(".detail-lyric-scroll");
   await expect(lyricScroll).toBeVisible();
-  const detailScreen = page.locator(".player-detail-screen");
   const detailTransition = await detailScreen.evaluate((node) => ({
     property: getComputedStyle(node).transitionProperty,
     timing: getComputedStyle(node).transitionTimingFunction,
@@ -300,7 +314,27 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   expect(detailTransition.property).toContain("transform");
   expect(detailTransition.property).not.toContain("opacity");
   expect(detailTransition.timing).toContain("cubic-bezier(0.2, 0.86, 0.16, 1)");
-  expect(detailTransition.duration).toContain("0.82s");
+  expect(detailTransition.duration).toContain("0.62s");
+  const backdropMotion = await page.locator(".player-detail-backdrop").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      backgroundColor: style.backgroundColor,
+      opacity: style.opacity,
+      transitionDelay: style.transitionDelay
+    };
+  });
+  expect(backdropMotion.backgroundColor).toContain("0.46");
+  expect(backdropMotion.opacity).toBe("0.72");
+  expect(backdropMotion.transitionDelay).toContain("0.16s");
+  const backgroundLayerMotion = await detailScreen.locator(".detail-bg-layer.current").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      animationName: style.animationName,
+      filter: style.filter
+    };
+  });
+  expect(backgroundLayerMotion.animationName).toBe("none");
+  expect(backgroundLayerMotion.filter).toBe("none");
   const nestedEntryAnimations = await detailScreen.evaluate((node) =>
     [".detail-topbar", ".detail-stage-left", ".detail-stage-right", ".detail-dock"].map((selector) => {
       const target = node.querySelector(selector);
@@ -362,6 +396,7 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   }
 
   await page.getByRole("button", { name: "收起播放器" }).click();
+  await expect(detailScreen).toHaveClass(/phase-closing/);
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeHidden();
 });
 
@@ -696,11 +731,12 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
   await page.goto("/");
   const dockControlButtons = page.locator(".spotify-player-bar .spotify-player-controls .icon-btn");
   const dockOrder = await dockControlButtons.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  expect(dockOrder).toHaveLength(5);
-  expect(dockOrder[0]).toBe("打开播放队列");
-  expect(dockOrder[1]).toBe("上一首");
-  expect(["播放", "暂停"]).toContain(dockOrder[2]);
-  expect(dockOrder[3]).toBe("下一首");
+  expect(dockOrder).toHaveLength(6);
+  expect(dockOrder[0]).toBe("一起听");
+  expect(dockOrder[1]).toBe("打开播放队列");
+  expect(dockOrder[2]).toBe("上一首");
+  expect(["播放", "暂停"]).toContain(dockOrder[3]);
+  expect(dockOrder[4]).toBe("下一首");
 
   const dockCenters = await dockControlButtons.evaluateAll((nodes) =>
     nodes.map((node) => {
@@ -708,7 +744,7 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
       return rect.left + rect.width / 2;
     })
   );
-  expect(Math.abs((dockCenters[1] + dockCenters[3]) / 2 - dockCenters[2])).toBeLessThanOrEqual(1.2);
+  expect(Math.abs((dockCenters[2] + dockCenters[4]) / 2 - dockCenters[3])).toBeLessThanOrEqual(1.2);
 
   const playerBar = page.locator(".spotify-player-bar:visible").first();
   const playerBarBox = await playerBar.boundingBox();
@@ -722,12 +758,13 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
   await expect(detailDialog).toBeVisible();
 
   const detailOrder = await page.locator(".detail-dock-controls .icon-btn").evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
-  expect(detailOrder).toHaveLength(5);
-  expect(detailOrder[0]).toBe("打开播放队列");
-  expect(detailOrder[1]).toBe("上一首");
-  expect(["播放", "暂停"]).toContain(detailOrder[2]);
-  expect(detailOrder[3]).toBe("下一首");
-  expect(detailOrder[4]).toBe("循环");
+  expect(detailOrder).toHaveLength(6);
+  expect(detailOrder[0]).toBe("一起听");
+  expect(detailOrder[1]).toBe("打开播放队列");
+  expect(detailOrder[2]).toBe("上一首");
+  expect(["播放", "暂停"]).toContain(detailOrder[3]);
+  expect(detailOrder[4]).toBe("下一首");
+  expect(detailOrder[5]).toBe("循环");
 
   const detailCenters = await page.locator(".detail-dock-controls .icon-btn").evaluateAll((nodes) =>
     nodes.map((node) => {
@@ -735,7 +772,7 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
       return rect.left + rect.width / 2;
     })
   );
-  expect(Math.abs((detailCenters[1] + detailCenters[3]) / 2 - detailCenters[2])).toBeLessThanOrEqual(1.2);
+  expect(Math.abs((detailCenters[2] + detailCenters[4]) / 2 - detailCenters[3])).toBeLessThanOrEqual(1.2);
 });
 
 test("search assist hot and suggestion are capped within two rows", async ({ page }) => {

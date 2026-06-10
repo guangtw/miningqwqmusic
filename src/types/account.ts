@@ -24,6 +24,12 @@ export type AuthPayload = AuthTokenData & {
   user: AccountUser;
 };
 
+export type MusicUnblockEntitlement = {
+  enabled: boolean;
+  redeemedAt?: string;
+  inviteLabel?: string | null;
+};
+
 export type RegisterInput = {
   email: string;
   password: string;
@@ -38,6 +44,10 @@ export type LoginInput = {
 export type ChangePasswordInput = {
   oldPassword: string;
   newPassword: string;
+};
+
+export type UpdateProfileInput = {
+  nickname: string;
 };
 
 export type LibrarySnapshot = {

@@ -18,12 +18,14 @@ import type {
   LibraryRevisionResult,
   LibrarySnapshot,
   LoginInput,
-  RegisterInput
+  MusicUnblockEntitlement,
+  RegisterInput,
+  UpdateProfileInput
 } from "@/src/types/account";
 import type { ImportedPlaylist, Track } from "@/src/types/music";
 
 type RequestOptions = {
-  method: "GET" | "POST" | "PUT" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   authorization?: string | null;
   retryOnUnauthorized?: boolean;
@@ -436,6 +438,19 @@ export async function openListenRoomStream(
   }
 }
 
+export async function getMusicUnblockEntitlement(): Promise<MusicUnblockEntitlement> {
+  return fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/entitlement", {
+    method: "GET"
+  });
+}
+
+export async function redeemMusicUnblockInvite(inviteCode: string): Promise<MusicUnblockEntitlement> {
+  return fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/redeem", {
+    method: "POST",
+    body: { inviteCode }
+  });
+}
+
 export async function logoutAccount(): Promise<void> {
   await fetchAccount<{ ok: true }>("/api/account/auth/logout", {
     method: "POST",
@@ -456,6 +471,15 @@ export async function changeAccountPassword(input: ChangePasswordInput): Promise
     method: "POST",
     body: input
   });
+}
+
+export async function updateAccountProfile(input: UpdateProfileInput): Promise<AuthPayload["user"]> {
+  const user = await fetchAccount<AuthPayload["user"]>("/api/account/profile", {
+    method: "PATCH",
+    body: input
+  });
+  useAuthStore.getState().updateUser(user);
+  return user;
 }
 
 export async function getLibrarySnapshot(): Promise<LibrarySnapshot> {

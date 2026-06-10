@@ -52,7 +52,11 @@ export async function searchArtists(keyword: string, page = 1, pageSize = 20): P
   return readResult<PagedResult<ArtistSearchItem>>(response);
 }
 
-export async function getTrackPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
+export async function getTrackPlaySource(
+  trackId: string,
+  options?: PlaySourceRequestOptions,
+  accessToken?: string | null
+): Promise<PlaySource> {
   const search = new URLSearchParams();
   if (options?.level) {
     search.set("level", options.level);
@@ -61,8 +65,13 @@ export async function getTrackPlaySource(trackId: string, options?: PlaySourceRe
     search.set("unblockMode", options.unblockMode);
   }
   const query = search.size ? `?${search.toString()}` : "";
+  const headers = new Headers();
+  if (accessToken) {
+    headers.set("authorization", `Bearer ${accessToken}`);
+  }
   const response = await fetch(`/api/music/track/${trackId}/play-url${query}`, {
-    method: "GET"
+    method: "GET",
+    headers
   });
   return readResult<PlaySource>(response);
 }

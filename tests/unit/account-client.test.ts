@@ -7,6 +7,7 @@ import {
   createListenRoom,
   deleteFriend,
   detectAccountServiceEnabled,
+  getMusicUnblockEntitlement,
   inviteFriendToListenRoom,
   joinListenRoom,
   listFriendRequests,
@@ -15,10 +16,12 @@ import {
   loadCurrentAccountUser,
   rejectFriendRequest,
   rejectListenInvite,
+  redeemMusicUnblockInvite,
   searchFriends,
   sendFriendRequest,
   sendListenRoomState,
   tryRefreshAccessToken,
+  updateAccountProfile,
   uploadAccountAvatar
 } from "@/src/lib/account-client";
 import { useAuthStore } from "@/src/store/auth-store";
@@ -283,6 +286,82 @@ describe("account client", () => {
       type: "progress",
       playbackState
     });
+  });
+
+  it("gets and redeems music unblock entitlement with auth headers", async () => {
+    useAuthStore.getState().setAuthenticated(
+      {
+        id: "u1",
+        email: "user@example.com"
+      },
+      "unblock-token"
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(successPayload({ enabled: false })), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify(successPayload({ enabled: true, redeemedAt: "2026-06-10T00:00:00.000Z", inviteLabel: "alpha" })),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
+
+    const entitlement = await getMusicUnblockEntitlement();
+    const redeemed = await redeemMusicUnblockInvite("ABC123");
+
+    expect(entitlement.enabled).toBe(false);
+    expect(redeemed.enabled).toBe(true);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "/api/account/music/unblock/entitlement",
+      "/api/account/music/unblock/redeem"
+    ]);
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("authorization")).toBe("Bearer unblock-token");
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({ inviteCode: "ABC123" });
+  });
+
+  it("updates account profile and stores the returned user", async () => {
+    useAuthStore.getState().setAuthenticated(
+      {
+        id: "u1",
+        email: "user@example.com",
+        nickname: "Old"
+      },
+      "profile-token"
+    );
+    const updatedUser = {
+      id: "u1",
+      email: "user@example.com",
+      nickname: "New",
+      avatarFallbackText: "N",
+      avatarFallbackBg: "#22c55e"
+    };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(successPayload(updatedUser)), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    const user = await updateAccountProfile({ nickname: "New" });
+
+    expect(user.nickname).toBe("New");
+    expect(useAuthStore.getState().user?.nickname).toBe("New");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/account/profile",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ nickname: "New" })
+      })
+    );
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("authorization")).toBe("Bearer profile-token");
   });
 
   it("sends friend and listen invite requests with auth headers", async () => {

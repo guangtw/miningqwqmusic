@@ -21,6 +21,33 @@ const PLAY_QUALITY_LEVELS: PlayQualityLevel[] = [
 ];
 const PLAY_UNBLOCK_MODES: PlayUnblockMode[] = ["auto", "force_on", "force_off"];
 
+async function hasMusicUnblockEntitlement(request: Request): Promise<boolean> {
+  const authorization = request.headers.get("authorization");
+  if (!authorization) return false;
+
+  try {
+    const entitlementUrl = new URL("/api/account/music/unblock/entitlement", request.url);
+    const response = await fetch(entitlementUrl.toString(), {
+      method: "GET",
+      headers: {
+        authorization
+      },
+      cache: "no-store"
+    });
+    if (!response.ok) return false;
+
+    const payload = (await response.json()) as {
+      code?: number;
+      data?: {
+        enabled?: boolean;
+      };
+    };
+    return payload.code === 0 && payload.data?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 function toPlayQualityLevel(input: string | null): PlayQualityLevel | undefined {
   if (!input) return undefined;
   const normalized = input.trim();
@@ -40,9 +67,11 @@ export async function GET(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
+    const requestedUnblockMode = toPlayUnblockMode(searchParams.get("unblockMode"));
+    const canUseUnblock = await hasMusicUnblockEntitlement(request);
     const data = await getPlaySource(id, {
       level: toPlayQualityLevel(searchParams.get("level")),
-      unblockMode: toPlayUnblockMode(searchParams.get("unblockMode"))
+      unblockMode: canUseUnblock ? requestedUnblockMode : "force_off"
     });
     return success(data, traceId);
   } catch (error) {

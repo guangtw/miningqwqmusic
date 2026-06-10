@@ -1,4 +1,17 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function usesMobileShell(page: Page) {
+  return page
+    .evaluate(() => window.matchMedia("(max-width: 899px), (pointer: coarse), (hover: none)").matches)
+    .catch(() => false);
+}
+
+async function openMobileTabIfNeeded(page: Page, name: "搜索" | "我的") {
+  if (!(await usesMobileShell(page))) return;
+  const tab = page.locator(".mobile-bottom-tabs").getByRole("tab", { name, exact: true }).first();
+  await tab.waitFor({ state: "visible" });
+  await tab.click();
+}
 
 test("site metadata assets are available", async ({ page }) => {
   const paths = [
@@ -35,7 +48,11 @@ test("manifest exposes png and maskable icons", async ({ page }) => {
 
 test("empty search gives explicit feedback", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "搜索" }).first().click();
+  if (await usesMobileShell(page)) {
+    await openMobileTabIfNeeded(page, "搜索");
+  } else {
+    await page.getByRole("button", { name: "搜索" }).first().click();
+  }
   await page.locator(".spotify-search-panel button").click();
   await expect(page.getByText("请输入关键词后再搜索。")).toBeVisible();
 });
@@ -68,6 +85,7 @@ test("account dialog traps focus and returns focus after escape", async ({ page 
 
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
+  await openMobileTabIfNeeded(page, "我的");
   const loginButton = page.getByRole("button", { name: "登录同步" }).first();
   await expect(loginButton).toBeVisible();
   await loginButton.click();

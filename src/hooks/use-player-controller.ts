@@ -11,6 +11,7 @@ import {
   shouldStartPlayback
 } from "@/src/lib/playback-guard";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
+import { useAuthStore } from "@/src/store/auth-store";
 import type { LyricLine, PlaySource, PlaybackMode, PlaySourceRequestOptions, Track } from "@/src/types/music";
 
 type TransitionPhase = "idle" | "fadingOut" | "switching" | "fadingIn";
@@ -87,6 +88,7 @@ export function usePlayerController(): ControllerState {
   const playTrackNow = usePlayerStore((state) => state.playTrackNow);
   const playQualityLevel = usePlayerStore((state) => state.playQualityLevel);
   const playUnblockMode = usePlayerStore((state) => state.playUnblockMode);
+  const accessToken = useAuthStore((state) => state.accessToken);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
   const currentTrackId = queueTrack?.id ?? null;
@@ -178,9 +180,13 @@ export function usePlayerController(): ControllerState {
   }, [currentTrackId]);
 
   const requestTrackPlaySource = useCallback(
-    (trackId: string, options: PlaySourceRequestOptions | undefined) =>
-      options ? getTrackPlaySource(trackId, options) : getTrackPlaySource(trackId),
-    []
+    (trackId: string, options: PlaySourceRequestOptions | undefined) => {
+      if (options && accessToken) return getTrackPlaySource(trackId, options, accessToken);
+      if (options) return getTrackPlaySource(trackId, options);
+      if (accessToken) return getTrackPlaySource(trackId, undefined, accessToken);
+      return getTrackPlaySource(trackId);
+    },
+    [accessToken]
   );
 
   const applyGain = useCallback((nextVolume: number, smoothMs = 80) => {
@@ -860,7 +866,7 @@ export function usePlayerController(): ControllerState {
   useEffect(() => {
     prefetchedSourceRef.current.clear();
     prefetchSourcePromiseRef.current.clear();
-  }, [playSourceOptions]);
+  }, [playSourceOptions, accessToken]);
 
   useEffect(() => {
     const trackId = currentTrackIdRef.current;

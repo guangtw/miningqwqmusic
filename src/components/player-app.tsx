@@ -10,6 +10,7 @@ import {
   addFavoriteTrack,
   addRecentTrack,
   cancelFriendRequest,
+  changeAccountPassword,
   createListenRoom,
   deleteFriend,
   deleteAccountAvatar,
@@ -17,6 +18,7 @@ import {
   getLibraryChanges,
   getLibrarySnapshot,
   getListenRoom,
+  getMusicUnblockEntitlement,
   loadCurrentAccountUser,
   loginAccount,
   logoutAccount,
@@ -31,12 +33,14 @@ import {
   registerAccount,
   rejectFriendRequest,
   rejectListenInvite,
+  redeemMusicUnblockInvite,
   removeFavoriteTrack,
   removeImportedPlaylistCloud,
   searchFriends,
   sendFriendRequest,
   sendListenRoomState,
   tryRefreshAccessTokenDetailed,
+  updateAccountProfile,
   uploadAccountAvatar,
   upsertImportedPlaylistCloud
 } from "@/src/lib/account-client";
@@ -75,7 +79,7 @@ import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
 import { UserAvatar } from "@/src/components/user-avatar";
-import type { AuthStatus, ListenPlaybackState, SyncState } from "@/src/types/account";
+import type { AuthStatus, ListenPlaybackState, MusicUnblockEntitlement, SyncState } from "@/src/types/account";
 import type {
   ArtistDetail,
   ArtistSearchItem,
@@ -523,6 +527,44 @@ function QueueIcon() {
       <rect x="9.2" y="5.5" width="10.8" height="2" rx="1" fill="currentColor" />
       <rect x="9.2" y="11" width="10.8" height="2" rx="1" fill="currentColor" />
       <rect x="9.2" y="16.5" width="10.8" height="2" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M4.2 10.8 12 4.2l7.8 6.6v8.4a1.6 1.6 0 0 1-1.6 1.6h-4.1v-5.9H9.9v5.9H5.8a1.6 1.6 0 0 1-1.6-1.6v-8.4z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="10.7" cy="10.7" r="6" fill="none" stroke="currentColor" strokeWidth="2.1" />
+      <path d="m15.3 15.3 4.1 4.1" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.1" />
+    </svg>
+  );
+}
+
+function LibraryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M5 5.2h9.8a2.2 2.2 0 0 1 2.2 2.2v11.4H7.2A2.2 2.2 0 0 1 5 16.6V5.2z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path d="M8.2 9h5.6M8.2 12.6h5.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
     </svg>
   );
 }
@@ -979,6 +1021,7 @@ export function PlayerApp() {
   const [isMobileUi, setIsMobileUi] = useState(false);
   const [isAccountEnabled, setIsAccountEnabled] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [accountManagerOpen, setAccountManagerOpen] = useState(false);
   const [authFormMode, setAuthFormMode] = useState<AuthFormMode>("login");
   const [authFormState, setAuthFormState] = useState({
     email: "",
@@ -990,10 +1033,23 @@ export function PlayerApp() {
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [authRefreshIssue, setAuthRefreshIssue] = useState<string | null>(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [profileNicknameInput, setProfileNicknameInput] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [passwordFormState, setPasswordFormState] = useState({
+    oldPassword: "",
+    newPassword: ""
+  });
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [accountManagerMessage, setAccountManagerMessage] = useState<string | null>(null);
+  const [accountManagerError, setAccountManagerError] = useState<string | null>(null);
+  const [musicUnblockEntitlement, setMusicUnblockEntitlement] = useState<MusicUnblockEntitlement | null>(null);
+  const [musicUnblockLoading, setMusicUnblockLoading] = useState(false);
+  const [musicUnblockInviteInput, setMusicUnblockInviteInput] = useState("");
+  const [musicUnblockMessage, setMusicUnblockMessage] = useState<string | null>(null);
+  const [musicUnblockError, setMusicUnblockError] = useState<string | null>(null);
   const [listenPanelOpen, setListenPanelOpen] = useState(false);
   const [listenInviteInput, setListenInviteInput] = useState("");
   const [listenBusy, setListenBusy] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [friendSearchInput, setFriendSearchInput] = useState("");
   const [friendActionBusyId, setFriendActionBusyId] = useState<string | null>(null);
   const [locatedPanelTrackId, setLocatedPanelTrackId] = useState<string | null>(null);
@@ -1007,10 +1063,13 @@ export function PlayerApp() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
   const accountDialogPanelRef = useRef<HTMLFormElement>(null);
+  const accountManagerDrawerRef = useRef<HTMLElement>(null);
+  const listenDrawerRef = useRef<HTMLElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const detailScreenRef = useRef<HTMLElement>(null);
   const homePlaylistDrawerRef = useRef<HTMLElement>(null);
   const accountDialogReturnFocusRef = useRef<HTMLElement | null>(null);
+  const accountManagerReturnFocusRef = useRef<HTMLElement | null>(null);
   const detailReturnFocusRef = useRef<HTMLElement | null>(null);
   const playlistReturnFocusRef = useRef<HTMLElement | null>(null);
   const librarySegmentedRef = useRef<HTMLDivElement>(null);
@@ -1730,6 +1789,30 @@ export function PlayerApp() {
     setAccountDialogOpen(true);
   }, []);
 
+  const closeAccountManager = useCallback(() => {
+    setAccountManagerOpen(false);
+    setAccountManagerMessage(null);
+    setAccountManagerError(null);
+    window.setTimeout(() => {
+      accountManagerReturnFocusRef.current?.focus();
+      accountManagerReturnFocusRef.current = null;
+    }, 0);
+  }, []);
+
+  const openAccountManager = useCallback(() => {
+    if (authStatus !== "authenticated") {
+      openLoginDialog();
+      return;
+    }
+    const activeElement = document.activeElement;
+    accountManagerReturnFocusRef.current = activeElement instanceof HTMLElement ? activeElement : null;
+    setProfileNicknameInput(authUser?.nickname?.trim() || "");
+    setPasswordFormState({ oldPassword: "", newPassword: "" });
+    setAccountManagerMessage(null);
+    setAccountManagerError(null);
+    setAccountManagerOpen(true);
+  }, [authStatus, authUser?.nickname, openLoginDialog]);
+
   const submitAuthForm = useCallback(async () => {
     const email = authFormState.email.trim();
     const password = authFormState.password;
@@ -1782,6 +1865,7 @@ export function PlayerApp() {
     try {
       await logoutAccount();
       setAuthNotice("已退出登录，已切换到本地游客模式。");
+      setAccountManagerOpen(false);
       setAuthRefreshIssue(null);
       setAuthGuest();
       setAuthSyncState("idle");
@@ -1790,6 +1874,49 @@ export function PlayerApp() {
       setAuthNotice("退出失败，请稍后重试。");
     }
   }, [resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
+
+  const handleUpdateProfile = useCallback(async () => {
+    const nickname = profileNicknameInput.trim();
+    if (!nickname) {
+      setAccountManagerError("请输入昵称。");
+      return;
+    }
+    setProfileSaving(true);
+    setAccountManagerMessage(null);
+    setAccountManagerError(null);
+    try {
+      await updateAccountProfile({ nickname });
+      setProfileNicknameInput(nickname);
+      setAccountManagerMessage("昵称已更新。");
+    } catch (error) {
+      setAccountManagerError(error instanceof Error ? error.message : "昵称更新失败。");
+    } finally {
+      setProfileSaving(false);
+    }
+  }, [profileNicknameInput]);
+
+  const handleChangePassword = useCallback(async () => {
+    if (!passwordFormState.oldPassword || !passwordFormState.newPassword) {
+      setAccountManagerError("请输入当前密码和新密码。");
+      return;
+    }
+    if (!hasStrongPassword(passwordFormState.newPassword)) {
+      setAccountManagerError("新密码至少 10 位，并包含大小写字母、数字和符号。");
+      return;
+    }
+    setPasswordSaving(true);
+    setAccountManagerMessage(null);
+    setAccountManagerError(null);
+    try {
+      await changeAccountPassword(passwordFormState);
+      setPasswordFormState({ oldPassword: "", newPassword: "" });
+      setAccountManagerMessage("密码已更新。");
+    } catch (error) {
+      setAccountManagerError(error instanceof Error ? error.message : "密码修改失败。");
+    } finally {
+      setPasswordSaving(false);
+    }
+  }, [passwordFormState]);
 
   const handleAuthRefreshRetry = useCallback(async () => {
     if (!isAccountEnabled) return;
@@ -1820,6 +1947,55 @@ export function PlayerApp() {
       setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
     }
   }, [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+
+  const refreshMusicUnblockEntitlement = useCallback(async () => {
+    if (!isAccountEnabled || authStatus !== "authenticated") {
+      setMusicUnblockEntitlement(null);
+      return;
+    }
+
+    setMusicUnblockLoading(true);
+    setMusicUnblockError(null);
+    try {
+      const entitlement = await getMusicUnblockEntitlement();
+      setMusicUnblockEntitlement(entitlement);
+    } catch {
+      setMusicUnblockEntitlement({ enabled: false });
+      setMusicUnblockError("资格状态暂时无法确认，播放会使用正常来源。");
+    } finally {
+      setMusicUnblockLoading(false);
+    }
+  }, [authStatus, isAccountEnabled]);
+
+  const handleRedeemMusicUnblockInvite = useCallback(async () => {
+    if (authStatus !== "authenticated") {
+      setMusicUnblockError("请先登录账号后再兑换。");
+      return;
+    }
+    const inviteCode = musicUnblockInviteInput.trim();
+    if (!inviteCode) {
+      setMusicUnblockError("请输入兑换码。");
+      return;
+    }
+
+    setMusicUnblockLoading(true);
+    setMusicUnblockMessage(null);
+    setMusicUnblockError(null);
+    try {
+      const entitlement = await redeemMusicUnblockInvite(inviteCode);
+      setMusicUnblockEntitlement(entitlement);
+      setMusicUnblockInviteInput("");
+      setMusicUnblockMessage("高级功能已启用。");
+    } catch (error) {
+      if (error instanceof AccountApiError && error.status === 404) {
+        setMusicUnblockError("兑换码无效、已禁用或已过期。");
+      } else {
+        setMusicUnblockError("兑换失败，请稍后重试。");
+      }
+    } finally {
+      setMusicUnblockLoading(false);
+    }
+  }, [authStatus, musicUnblockInviteInput]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -1912,6 +2088,19 @@ export function PlayerApp() {
       active = false;
     };
   }, [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]);
+
+  useEffect(() => {
+    setMusicUnblockMessage(null);
+    setMusicUnblockError(null);
+    if (!isAccountEnabled || authStatus !== "authenticated") {
+      setMusicUnblockEntitlement(null);
+      setMusicUnblockInviteInput("");
+      setAccountManagerOpen(false);
+      return;
+    }
+
+    void refreshMusicUnblockEntitlement();
+  }, [authStatus, authUser?.id, isAccountEnabled, refreshMusicUnblockEntitlement]);
 
   useEffect(() => {
     if (activeTab !== "library") return;
@@ -2182,11 +2371,11 @@ export function PlayerApp() {
     };
   }, [keyword]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setVisibleHotAssistCount(hotAssistCandidates.length);
   }, [hotAssistCandidates.length]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setVisibleSuggestAssistCount(suggestAssistCandidates.length);
   }, [suggestAssistCandidates.length]);
 
@@ -2201,7 +2390,7 @@ export function PlayerApp() {
     };
   }, [hotAssistCandidates.length, suggestAssistCandidates.length]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const measureVisibleCount = (container: HTMLDivElement | null) => {
       if (!container) return 0;
       const buttons = Array.from(container.querySelectorAll("button"));
@@ -3031,6 +3220,14 @@ export function PlayerApp() {
         closeAccountDialog();
         return;
       }
+      if (accountManagerOpen) {
+        closeAccountManager();
+        return;
+      }
+      if (listenPanelOpen) {
+        setListenPanelOpen(false);
+        return;
+      }
       const currentDetailPhase = detailPhaseRef.current;
       const detailOpen = currentDetailPhase === "open" || currentDetailPhase === "opening";
       if (detailOpen) {
@@ -3049,7 +3246,19 @@ export function PlayerApp() {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [accountDialogOpen, homePlaylistPanel, closeAccountDialog, closeDetail, closeHomePlaylistPanel, restoreHomeTab, controlDisabled, player]);
+  }, [
+    accountDialogOpen,
+    accountManagerOpen,
+    listenPanelOpen,
+    homePlaylistPanel,
+    closeAccountDialog,
+    closeAccountManager,
+    closeDetail,
+    closeHomePlaylistPanel,
+    restoreHomeTab,
+    controlDisabled,
+    player
+  ]);
 
   useEffect(() => {
     if (!accountDialogOpen) return;
@@ -3057,6 +3266,20 @@ export function PlayerApp() {
       focusFirstInteractive(accountDialogPanelRef.current);
     }, 0);
   }, [accountDialogOpen]);
+
+  useEffect(() => {
+    if (!accountManagerOpen) return;
+    window.setTimeout(() => {
+      focusFirstInteractive(accountManagerDrawerRef.current);
+    }, 0);
+  }, [accountManagerOpen]);
+
+  useEffect(() => {
+    if (!listenPanelOpen) return;
+    window.setTimeout(() => {
+      focusFirstInteractive(listenDrawerRef.current);
+    }, 0);
+  }, [listenPanelOpen]);
 
   useEffect(() => {
     if (homePlaylistPhase !== "open") return;
@@ -3808,6 +4031,30 @@ export function PlayerApp() {
     </>
   );
 
+  const mobilePrimaryTabs: Array<{ tab: NavTab; label: string; icon: ReactNode; onSelect: () => void }> = [
+    {
+      tab: "home",
+      label: "首页",
+      icon: <HomeIcon />,
+      onSelect: () => {
+        setHomePlaylistView("featured");
+        goTab("home");
+      }
+    },
+    {
+      tab: "search",
+      label: "搜索",
+      icon: <SearchIcon />,
+      onSelect: () => goTab("search")
+    },
+    {
+      tab: "library",
+      label: "我的",
+      icon: <LibraryIcon />,
+      onSelect: () => goTab("library", "library-favorites")
+    }
+  ];
+
   const playerDock = (
     <footer
       ref={playerDockRef}
@@ -3887,6 +4134,30 @@ export function PlayerApp() {
           <span>{Math.round(player.volume * 100)}%</span>
         </div>
       ) : null}
+
+      {isMobileUi ? (
+        <nav className="mobile-bottom-tabs" role="tablist" aria-label="页面切换">
+          {mobilePrimaryTabs.map((item) => {
+            const active = activeTab === item.tab;
+            return (
+              <button
+                key={item.tab}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={active ? "active" : ""}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  item.onSelect();
+                }}
+              >
+                <span className="mobile-bottom-tab-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
     </footer>
   );
 
@@ -3913,7 +4184,217 @@ export function PlayerApp() {
   const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
   const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
   const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
+  const musicUnblockEnabled = musicUnblockEntitlement?.enabled === true;
+  const accountTierText = musicUnblockEnabled ? "高级用户" : "普通用户";
+  const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : accountStateText;
+  const musicUnblockStatusText = !isAccountEnabled
+    ? "账号服务未启用"
+    : authStatus !== "authenticated"
+      ? "登录后兑换"
+      : musicUnblockLoading
+        ? "检查中"
+        : musicUnblockEnabled
+          ? "已启用"
+          : "未兑换";
   const showMainNowPlaying = isMobileUi && activeTab === "search";
+
+  const accountManagerContent = authStatus === "authenticated" ? (
+    <>
+      <header className="home-playlist-drawer-head account-manager-head">
+        <UserAvatar user={authUser} size="lg" />
+        <div className="home-playlist-drawer-meta account-manager-meta">
+          <span>账户管理</span>
+          <h3>{accountDisplayName}</h3>
+          <p>{authUser?.email}</p>
+          <p className={`account-tier ${musicUnblockEnabled ? "advanced" : ""}`}>{accountTierText}</p>
+        </div>
+      </header>
+      <div className="home-playlist-drawer-actions account-manager-actions">
+        <input
+          ref={avatarInputRef}
+          className="account-avatar-input"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
+        />
+        <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
+          {avatarUploading ? "上传中" : "更改头像"}
+        </button>
+        {authUser?.avatarUrl ? (
+          <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
+            移除头像
+          </button>
+        ) : null}
+        <button type="button" className="ghost" onClick={() => void handleLogout()}>
+          退出登录
+        </button>
+        <button type="button" className="ghost" onClick={closeAccountManager}>
+          关闭
+        </button>
+      </div>
+      <div className="account-manager-body">
+        <section className="account-manager-section">
+          <div className="account-manager-section-head">
+            <span>账户资料</span>
+            <small>昵称会显示在好友与一起听中</small>
+          </div>
+          <form
+            className="account-manager-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleUpdateProfile();
+            }}
+          >
+            <label className="account-form-label">
+              昵称
+              <input
+                type="text"
+                value={profileNicknameInput}
+                maxLength={64}
+                disabled={profileSaving}
+                onChange={(event) => setProfileNicknameInput(event.target.value)}
+              />
+            </label>
+            <button type="submit" className="account-form-submit" disabled={profileSaving || !profileNicknameInput.trim()}>
+              {profileSaving ? "保存中..." : "保存昵称"}
+            </button>
+          </form>
+        </section>
+
+        <section className="account-manager-section">
+          <div className="account-manager-section-head">
+            <span>修改密码</span>
+            <small>新密码至少 10 位，包含大小写字母、数字和符号</small>
+          </div>
+          <form
+            className="account-manager-form two"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleChangePassword();
+            }}
+          >
+            <label className="account-form-label">
+              当前密码
+              <input
+                type="password"
+                value={passwordFormState.oldPassword}
+                disabled={passwordSaving}
+                onChange={(event) => setPasswordFormState((previous) => ({ ...previous, oldPassword: event.target.value }))}
+              />
+            </label>
+            <label className="account-form-label">
+              新密码
+              <input
+                type="password"
+                value={passwordFormState.newPassword}
+                disabled={passwordSaving}
+                onChange={(event) => setPasswordFormState((previous) => ({ ...previous, newPassword: event.target.value }))}
+              />
+            </label>
+            <button type="submit" className="account-form-submit" disabled={passwordSaving}>
+              {passwordSaving ? "修改中..." : "修改密码"}
+            </button>
+          </form>
+        </section>
+
+        <section className="account-manager-section">
+          <div className="account-manager-section-head">
+            <span>高级功能</span>
+            <small>{musicUnblockStatusText}</small>
+          </div>
+          {musicUnblockEnabled ? (
+            <p className="music-unblock-status enabled">
+              已启用{musicUnblockEntitlement?.inviteLabel ? ` · ${musicUnblockEntitlement.inviteLabel}` : ""}
+            </p>
+          ) : (
+            <form
+              className="music-unblock-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleRedeemMusicUnblockInvite();
+              }}
+            >
+              <input
+                value={musicUnblockInviteInput}
+                onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
+                placeholder="输入兑换码"
+                disabled={musicUnblockLoading}
+                autoComplete="off"
+              />
+              <button type="submit" disabled={musicUnblockLoading || !musicUnblockInviteInput.trim()}>
+                {musicUnblockLoading ? "兑换中" : "兑换"}
+              </button>
+            </form>
+          )}
+          {musicUnblockMessage ? <p className="music-unblock-status">{musicUnblockMessage}</p> : null}
+          {musicUnblockError ? <p className="music-unblock-status error">{musicUnblockError}</p> : null}
+        </section>
+
+        {accountManagerMessage ? <p className="account-manager-status">{accountManagerMessage}</p> : null}
+        {accountManagerError ? <p className="account-manager-status error">{accountManagerError}</p> : null}
+        {authNotice ? <p className="account-manager-status">{authNotice}</p> : null}
+        {authErrorMessage ? <p className="account-manager-status error">{authErrorMessage}</p> : null}
+      </div>
+    </>
+  ) : null;
+
+  const mobileLibraryTools = isMobileUi ? (
+    <section className="mobile-library-tools" aria-label="我的工具">
+      <article className="mobile-library-tool-card account">
+        <div className="mobile-library-tool-title">
+          <span>账号</span>
+          <small>{accountEntryStatusText}</small>
+        </div>
+        {isAccountEnabled ? (
+          authStatus === "authenticated" ? (
+            <button type="button" className="mobile-library-account-row" onClick={openAccountManager}>
+              <UserAvatar user={authUser} size="sm" />
+              <span>
+                <strong>{accountDisplayName}</strong>
+                <small>账户管理 · {accountTierText}</small>
+              </span>
+            </button>
+          ) : (
+            <div className="mobile-library-account-row passive">
+              <UserAvatar user={authUser} size="sm" />
+              <span>
+                <strong>{accountDisplayName}</strong>
+                <small>{accountStateText}</small>
+              </span>
+              <button type="button" onClick={openLoginDialog}>
+                登录同步
+              </button>
+            </div>
+          )
+        ) : (
+          <p className="mobile-library-tool-note">账号服务未启用</p>
+        )}
+        {hasAuthRefreshIssue ? (
+          <div className="account-refresh-warning mobile-inline">
+            <p>{authRefreshIssue}</p>
+            <button type="button" onClick={() => void handleAuthRefreshRetry()}>
+              重试连接
+            </button>
+          </div>
+        ) : null}
+      </article>
+
+      <div className="mobile-library-compact-tools">
+        <article className="mobile-library-tool-card split compact">
+          <div className="mobile-library-tool-title">
+            <span>主题</span>
+            <small>{theme === "dark" ? "暗色" : "明亮"}</small>
+          </div>
+          <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
+        </article>
+
+        <button type="button" className="mobile-library-tool-card listen-action compact" onClick={() => setListenPanelOpen(true)}>
+          <span>一起听</span>
+          <small>{listenRoom ? `${listenRoom.members.length} 人在线` : "好友邀请与多人同步"}</small>
+        </button>
+      </div>
+    </section>
+  ) : null;
 
   const librarySegmentedPillStyle = {
     "--lib-seg-thumb-x": `${librarySegmentedThumb.x}px`,
@@ -3992,136 +4473,63 @@ export function PlayerApp() {
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
       {listenPanelOpen ? (
-        <section className="listen-drawer-overlay" aria-label="一起听房间" onClick={() => setListenPanelOpen(false)}>
-          <aside className="listen-drawer" role="dialog" aria-modal="true" aria-label="一起听" onClick={(event) => event.stopPropagation()}>
+        <section className="home-playlist-drawer-overlay phase-open utility-drawer-overlay" aria-label="一起听房间" onClick={() => setListenPanelOpen(false)}>
+          <div className="home-playlist-drawer-backdrop phase-open" />
+          <aside
+            ref={listenDrawerRef}
+            className="home-playlist-drawer phase-open utility-drawer listen-utility-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="一起听"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => trapTabWithin(listenDrawerRef.current, event)}
+          >
             {listenPanelContent}
           </aside>
         </section>
       ) : null}
-      {isMobileUi && mobileMenuOpen ? (
-        <section className="mobile-menu-overlay" aria-label="移动菜单" onClick={() => setMobileMenuOpen(false)}>
-          <aside className="mobile-menu-drawer" role="dialog" aria-modal="true" aria-label="菜单" onClick={(event) => event.stopPropagation()}>
-            <div className="listen-drawer-head">
-              <div>
-                <span>菜单</span>
-                <small>导航、账号和工具</small>
-              </div>
-              <button type="button" className="ghost" onClick={() => setMobileMenuOpen(false)}>
-                关闭
-              </button>
-            </div>
-            <div className="mobile-menu-nav">
-              <button
-                type="button"
-                className={activeTab === "home" ? "active" : ""}
-                onClick={() => {
-                  setHomePlaylistView("featured");
-                  goTab("home");
-                  setMobileMenuOpen(false);
-                }}
-              >
-                主页
-              </button>
-              <button
-                type="button"
-                className={activeTab === "search" ? "active" : ""}
-                onClick={() => {
-                  goTab("search");
-                  setMobileMenuOpen(false);
-                }}
-              >
-                搜索
-              </button>
-              <button
-                type="button"
-                className={activeTab === "library" ? "active" : ""}
-                onClick={() => {
-                  goTab("library", "library-favorites");
-                  setMobileMenuOpen(false);
-                }}
-              >
-                你的音乐库
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setListenPanelOpen(true);
-                  setMobileMenuOpen(false);
-                }}
-              >
-                一起听
-              </button>
-            </div>
-            <div className="mobile-menu-section">
-              <span>账号</span>
-              {isAccountEnabled ? (
-                authStatus === "authenticated" ? (
-                  <button type="button" className="mobile-menu-account" onClick={() => void handleLogout()}>
-                    <UserAvatar user={authUser} size="sm" />
-                    <span>{accountDisplayName}</span>
-                    <small>退出登录</small>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      openLoginDialog();
-                      setMobileMenuOpen(false);
-                    }}
-                  >
-                    登录同步
-                  </button>
-                )
-              ) : (
-                <small>账号服务未启用</small>
-              )}
-            </div>
-            <div className="mobile-menu-section">
-              <span>主题</span>
-              <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
-            </div>
+      {accountManagerOpen && accountManagerContent ? (
+        <section className="home-playlist-drawer-overlay phase-open utility-drawer-overlay" aria-label="账户管理" onClick={closeAccountManager}>
+          <div className="home-playlist-drawer-backdrop phase-open" />
+          <aside
+            ref={accountManagerDrawerRef}
+            className="home-playlist-drawer phase-open utility-drawer account-manager-drawer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="账户管理"
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => trapTabWithin(accountManagerDrawerRef.current, event)}
+          >
+            {accountManagerContent}
           </aside>
         </section>
       ) : null}
 
       <section className="spotify-layout">
+        {!isMobileUi ? (
         <aside className="spotify-sidebar">
           <div className="spotify-logo">MiningQwQ Music</div>
           <div className="spotify-nav-row">
-            {isMobileUi ? (
-              <div className="sidebar-mobile-tools">
-                <button type="button" className="sidebar-mobile-account-toggle sidebar-mobile-account-btn" onClick={() => setMobileMenuOpen(true)}>
-                  菜单
-                </button>
-              </div>
-            ) : (
-              <nav className="spotify-nav">
-                <button
-                  className={activeTab === "home" ? "active" : ""}
-                  onClick={() => {
-                    setHomePlaylistView("featured");
-                    goTab("home");
-                  }}
-                >
-                  主页
-                </button>
-                <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
-                  搜索
-                </button>
-                <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
-                  你的音乐库
-                </button>
-              </nav>
-            )}
-          </div>
-          {isMobileUi && hasAuthRefreshIssue ? (
-            <div className="account-refresh-warning mobile-inline">
-              <p>{authRefreshIssue}</p>
-              <button type="button" onClick={() => void handleAuthRefreshRetry()}>
-                重试连接
+            <nav className="spotify-nav">
+              <button
+                className={activeTab === "home" ? "active" : ""}
+                onClick={() => {
+                  setHomePlaylistView("featured");
+                  goTab("home");
+                }}
+              >
+                主页
               </button>
-            </div>
-          ) : null}
+              <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
+                搜索
+              </button>
+              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
+                你的音乐库
+              </button>
+            </nav>
+          </div>
 
           <section className="spotify-collections">
             <h3>我的音乐</h3>
@@ -4158,27 +4566,12 @@ export function PlayerApp() {
                   <UserAvatar user={authUser} size="md" />
                   <div className="account-switch-meta">
                     <strong>{accountDisplayName}</strong>
-                    <small>{accountStateText}</small>
+                    <small>{accountEntryStatusText}</small>
                   </div>
                   {authStatus === "authenticated" ? (
                     <div className="account-switch-actions">
-                      <input
-                        ref={avatarInputRef}
-                        className="account-avatar-input"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
-                      />
-                      <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
-                        {avatarUploading ? "上传中" : "头像"}
-                      </button>
-                      {authUser?.avatarUrl ? (
-                        <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
-                          移除
-                        </button>
-                      ) : null}
-                      <button type="button" className="ghost" onClick={() => void handleLogout()}>
-                        退出
+                      <button type="button" onClick={openAccountManager}>
+                        账户管理
                       </button>
                     </div>
                   ) : (
@@ -4212,6 +4605,13 @@ export function PlayerApp() {
               </div>
             ) : null}
             {!isMobileUi ? (
+              <button type="button" className={`sidebar-entry listen-sidebar-entry ${listenRoom ? "active" : ""}`.trim()} onClick={() => setListenPanelOpen(true)}>
+                <span>一起听</span>
+                <small>{listenRoom ? `${listenRoom.members.length} 人在线` : "好友邀请与多人同步"}</small>
+                <em>›</em>
+              </button>
+            ) : null}
+            {!isMobileUi ? (
               <div className="theme-switch-card">
                 <span>网页主题</span>
                 {themeSwitchControl}
@@ -4219,6 +4619,7 @@ export function PlayerApp() {
             ) : null}
           </section>
         </aside>
+        ) : null}
 
         <section className={`spotify-main tab-${activeTab} ${showMainNowPlaying ? "has-now-playing" : ""}`.trim()}>
           {showMainNowPlaying ? nowPlayingMergedPanel : null}
@@ -4621,6 +5022,8 @@ export function PlayerApp() {
                   })}
                 </div>
               </header>
+
+              {mobileLibraryTools}
 
               <div className={`library-content-switcher phase-${libraryContentTransitionPhase}`.trim()}>
                 {displayedLibraryView === "library-favorites" ? (
@@ -5188,10 +5591,11 @@ export function PlayerApp() {
                             </option>
                           ))}
                         </select>
-                        <label htmlFor="playback-unblock">解灰模式</label>
+                        <label htmlFor="playback-unblock">高级模式</label>
                         <select
                           id="playback-unblock"
                           value={player.playUnblockMode}
+                          disabled={!musicUnblockEnabled}
                           onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
                         >
                           {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
@@ -5201,6 +5605,9 @@ export function PlayerApp() {
                           ))}
                         </select>
                       </div>
+                    ) : null}
+                    {!isMobileUi && !musicUnblockEnabled ? (
+                      <p className="music-unblock-hint">登录并输入兑换码后可使用高级模式；当前播放会自动使用正常来源。</p>
                     ) : null}
                     {!isMobileUi ? (
                       <div className="download-row">
@@ -5244,10 +5651,11 @@ export function PlayerApp() {
                             </option>
                           ))}
                         </select>
-                        <label htmlFor="playback-unblock-mobile">解灰模式</label>
+                        <label htmlFor="playback-unblock-mobile">高级模式</label>
                         <select
                           id="playback-unblock-mobile"
                           value={player.playUnblockMode}
+                          disabled={!musicUnblockEnabled}
                           onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
                         >
                           {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
@@ -5257,6 +5665,9 @@ export function PlayerApp() {
                           ))}
                         </select>
                       </div>
+                    ) : null}
+                    {isMobileUi && !musicUnblockEnabled ? (
+                      <p className="music-unblock-hint">登录并输入兑换码后可使用高级模式；当前播放会自动使用正常来源。</p>
                     ) : null}
                     {downloadState.message ? <p>{downloadState.message}</p> : null}
                   </div>
@@ -5342,9 +5753,6 @@ export function PlayerApp() {
                 ) : null}
 
                 <div className="detail-dock-controls">
-                  <IconButton ariaLabel="一起听" title="一起听" onClick={() => setListenPanelOpen((previous) => !previous)} className={listenRoom ? "active" : "ghost"}>
-                    <span className="icon-text">听</span>
-                  </IconButton>
                   <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
                     <QueueIcon />
                   </IconButton>

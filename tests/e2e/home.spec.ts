@@ -322,15 +322,37 @@ test("short desktop sidebar keeps account warning, retry and theme switch visibl
     await expect(themeSwitch).toBeVisible();
 
     const playerBox = await page.locator(".spotify-player-bar:visible").first().boundingBox();
+    const sidebarBox = await page.locator(".spotify-sidebar:visible").first().boundingBox();
+    const loginBox = await loginButton.boundingBox();
     const retryBox = await retryButton.boundingBox();
     const themeBox = await themeSwitch.boundingBox();
+    const themePosition = await themeSwitch.evaluate((node) => getComputedStyle(node.closest(".theme-switch-card") ?? node).position);
     expect(playerBox).not.toBeNull();
+    expect(sidebarBox).not.toBeNull();
+    expect(loginBox).not.toBeNull();
     expect(retryBox).not.toBeNull();
     expect(themeBox).not.toBeNull();
-    if (playerBox && retryBox && themeBox) {
+    expect(themePosition).not.toBe("fixed");
+    if (playerBox && sidebarBox && loginBox && retryBox && themeBox) {
+      expect(themeBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
+      expect(themeBox.x + themeBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 1);
       expect(retryBox.y + retryBox.height).toBeLessThan(playerBox.y);
-      expect(themeBox.y + themeBox.height).toBeLessThan(playerBox.y);
+      expect(themeBox.y).toBeGreaterThanOrEqual(retryBox.y + retryBox.height - 1);
+      expect(themeBox.y).toBeGreaterThanOrEqual(loginBox.y + loginBox.height - 1);
       expect(Math.round(retryBox.height)).toBeGreaterThanOrEqual(36);
+    }
+
+    const collections = page.locator(".spotify-collections:visible").first();
+    await collections.evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    await expect(themeSwitch).toBeInViewport();
+    const scrolledThemeBox = await themeSwitch.boundingBox();
+    expect(scrolledThemeBox).not.toBeNull();
+    if (playerBox && sidebarBox && scrolledThemeBox) {
+      expect(scrolledThemeBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
+      expect(scrolledThemeBox.x + scrolledThemeBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 1);
+      expect(scrolledThemeBox.y + scrolledThemeBox.height).toBeLessThan(playerBox.y);
     }
   }
 });

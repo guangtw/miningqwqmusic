@@ -5585,6 +5585,8 @@ input:focus-visible {
     gap: 10px;
     height: 100%;
     max-height: calc(100dvh - var(--player-bar-height-actual, var(--player-bar-height)) - var(--player-safe-bottom) - (var(--shell-gap) * 2) - 8px);
+    min-height: 0;
+    overflow: hidden;
   }
 
   .spotify-logo {
@@ -5613,22 +5615,20 @@ input:focus-visible {
   }
 
   .theme-switch-card {
-    position: fixed;
-    left: calc(var(--shell-gap) + 12px);
-    bottom: calc(var(--player-bar-height-actual, var(--player-bar-height)) + var(--player-safe-bottom) + var(--shell-gap) + 10px);
-    z-index: 69;
-    width: calc(clamp(14rem, 14vw + 8rem, 17.5rem) - 24px);
-    padding: 7px 8px;
-    border: 1px solid var(--line-soft);
-    border-radius: var(--radius-md);
-    background:
-      linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
-      var(--bg-elev-2);
-    backdrop-filter: blur(12px);
+    position: static;
+    z-index: auto;
+    width: auto;
+    padding: 5px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
+    backdrop-filter: none;
   }
 
   .spotify-collections {
-    padding-bottom: 58px;
+    min-height: 0;
+    padding-bottom: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 
   .account-switch-body {

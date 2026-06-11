@@ -1022,6 +1022,7 @@ export function PlayerApp() {
   const [isAccountEnabled, setIsAccountEnabled] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountManagerOpen, setAccountManagerOpen] = useState(false);
+  const [accountManagerPhase, setAccountManagerPhase] = useState<PlaylistPanelPhase>("closed");
   const [authFormMode, setAuthFormMode] = useState<AuthFormMode>("login");
   const [authFormState, setAuthFormState] = useState({
     email: "",
@@ -1048,6 +1049,7 @@ export function PlayerApp() {
   const [musicUnblockMessage, setMusicUnblockMessage] = useState<string | null>(null);
   const [musicUnblockError, setMusicUnblockError] = useState<string | null>(null);
   const [listenPanelOpen, setListenPanelOpen] = useState(false);
+  const [listenPanelPhase, setListenPanelPhase] = useState<PlaylistPanelPhase>("closed");
   const [listenInviteInput, setListenInviteInput] = useState("");
   const [listenBusy, setListenBusy] = useState(false);
   const [friendSearchInput, setFriendSearchInput] = useState("");
@@ -1070,6 +1072,7 @@ export function PlayerApp() {
   const homePlaylistDrawerRef = useRef<HTMLElement>(null);
   const accountDialogReturnFocusRef = useRef<HTMLElement | null>(null);
   const accountManagerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const listenPanelReturnFocusRef = useRef<HTMLElement | null>(null);
   const detailReturnFocusRef = useRef<HTMLElement | null>(null);
   const playlistReturnFocusRef = useRef<HTMLElement | null>(null);
   const librarySegmentedRef = useRef<HTMLDivElement>(null);
@@ -1083,12 +1086,16 @@ export function PlayerApp() {
   const detailOpenInteractionRef = useRef<DetailOpenInteraction>("pointer");
   const paletteTransitionTimerRef = useRef<number | null>(null);
   const homePlaylistCloseTimerRef = useRef<number | null>(null);
+  const accountManagerCloseTimerRef = useRef<number | null>(null);
+  const listenPanelCloseTimerRef = useRef<number | null>(null);
   const homePlaylistRequestIdRef = useRef(0);
   const pendingArtworkRef = useRef<Set<string>>(new Set());
   const popstateHandlingRef = useRef(false);
   const activeTabRef = useRef<NavTab>("home");
   const detailPhaseRef = useRef<DetailModalPhase>("closed");
   const homePlaylistPhaseRef = useRef<PlaylistPanelPhase>("closed");
+  const accountManagerPhaseRef = useRef<PlaylistPanelPhase>("closed");
+  const listenPanelPhaseRef = useRef<PlaylistPanelPhase>("closed");
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null);
   const [playlistPortalTarget, setPlaylistPortalTarget] = useState<HTMLElement | null>(null);
   const homeChannelGridRef = useRef<HTMLElement>(null);
@@ -1135,6 +1142,46 @@ export function PlayerApp() {
   const listenLeavingRoomIdsRef = useRef<Set<string>>(new Set());
   const listenLastStrongPublishedRef = useRef("");
   const listenLastProgressPublishedAtRef = useRef(0);
+
+  const openListenPanel = useCallback(() => {
+    const activeElement = document.activeElement;
+    listenPanelReturnFocusRef.current = activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null;
+    if (listenPanelCloseTimerRef.current) {
+      window.clearTimeout(listenPanelCloseTimerRef.current);
+      listenPanelCloseTimerRef.current = null;
+    }
+    setListenPanelOpen(true);
+    const currentPhase = listenPanelPhaseRef.current;
+    if (currentPhase === "open" || currentPhase === "opening") {
+      return;
+    }
+    listenPanelPhaseRef.current = "opening";
+    setListenPanelPhase("opening");
+    window.requestAnimationFrame(() => {
+      listenPanelPhaseRef.current = "open";
+      setListenPanelPhase("open");
+    });
+  }, []);
+
+  const closeListenPanel = useCallback(() => {
+    const currentPhase = listenPanelPhaseRef.current;
+    if (currentPhase === "closed" || currentPhase === "closing") {
+      return;
+    }
+    if (listenPanelCloseTimerRef.current) {
+      window.clearTimeout(listenPanelCloseTimerRef.current);
+    }
+    listenPanelPhaseRef.current = "closing";
+    setListenPanelPhase("closing");
+    listenPanelCloseTimerRef.current = window.setTimeout(() => {
+      listenPanelPhaseRef.current = "closed";
+      setListenPanelPhase("closed");
+      setListenPanelOpen(false);
+      listenPanelCloseTimerRef.current = null;
+      listenPanelReturnFocusRef.current?.focus();
+      listenPanelReturnFocusRef.current = null;
+    }, PLAYLIST_PANEL_ANIMATION_MS);
+  }, []);
 
   const queueTrack = useMemo(() => getCurrentTrack(player), [player]);
   const currentTrack = controller.currentTrack ?? queueTrack;
@@ -1276,7 +1323,7 @@ export function PlayerApp() {
 
   const handleCreateListenRoom = useCallback(async () => {
     if (authStatus !== "authenticated") {
-      setListenPanelOpen(true);
+      openListenPanel();
       setListenMessage("请先登录后再使用一起听。");
       return;
     }
@@ -1289,14 +1336,14 @@ export function PlayerApp() {
       listenLastProgressPublishedAtRef.current = 0;
       setListenRoom(room);
       setListenConnectionState("connected");
-      setListenPanelOpen(true);
+      openListenPanel();
     } catch (error) {
       setListenMessage(error instanceof Error ? error.message : "创建一起听房间失败。");
       setListenConnectionState("error");
     } finally {
       setListenBusy(false);
     }
-  }, [authStatus, captureListenPlaybackState, listenStateSignature, setListenConnectionState, setListenMessage, setListenRoom]);
+  }, [authStatus, captureListenPlaybackState, listenStateSignature, openListenPanel, setListenConnectionState, setListenMessage, setListenRoom]);
 
   const handleJoinListenRoom = useCallback(async () => {
     if (authStatus !== "authenticated") {
@@ -1789,14 +1836,57 @@ export function PlayerApp() {
     setAccountDialogOpen(true);
   }, []);
 
-  const closeAccountManager = useCallback(() => {
+  const closeAccountManagerDirectly = useCallback(() => {
+    if (accountManagerCloseTimerRef.current) {
+      window.clearTimeout(accountManagerCloseTimerRef.current);
+      accountManagerCloseTimerRef.current = null;
+    }
+    accountManagerPhaseRef.current = "closed";
+    setAccountManagerPhase("closed");
     setAccountManagerOpen(false);
     setAccountManagerMessage(null);
     setAccountManagerError(null);
-    window.setTimeout(() => {
+    accountManagerReturnFocusRef.current = null;
+  }, []);
+
+  const closeAccountManager = useCallback(() => {
+    const currentPhase = accountManagerPhaseRef.current;
+    if (currentPhase === "closed" || currentPhase === "closing") {
+      return;
+    }
+    if (accountManagerCloseTimerRef.current) {
+      window.clearTimeout(accountManagerCloseTimerRef.current);
+    }
+    accountManagerPhaseRef.current = "closing";
+    setAccountManagerPhase("closing");
+    accountManagerCloseTimerRef.current = window.setTimeout(() => {
+      accountManagerPhaseRef.current = "closed";
+      setAccountManagerPhase("closed");
+      setAccountManagerOpen(false);
+      setAccountManagerMessage(null);
+      setAccountManagerError(null);
+      accountManagerCloseTimerRef.current = null;
       accountManagerReturnFocusRef.current?.focus();
       accountManagerReturnFocusRef.current = null;
-    }, 0);
+    }, PLAYLIST_PANEL_ANIMATION_MS);
+  }, []);
+
+  const openAccountManagerWithAnimation = useCallback(() => {
+    if (accountManagerCloseTimerRef.current) {
+      window.clearTimeout(accountManagerCloseTimerRef.current);
+      accountManagerCloseTimerRef.current = null;
+    }
+    setAccountManagerOpen(true);
+    const currentPhase = accountManagerPhaseRef.current;
+    if (currentPhase === "open" || currentPhase === "opening") {
+      return;
+    }
+    accountManagerPhaseRef.current = "opening";
+    setAccountManagerPhase("opening");
+    window.requestAnimationFrame(() => {
+      accountManagerPhaseRef.current = "open";
+      setAccountManagerPhase("open");
+    });
   }, []);
 
   const openAccountManager = useCallback(() => {
@@ -1810,8 +1900,8 @@ export function PlayerApp() {
     setPasswordFormState({ oldPassword: "", newPassword: "" });
     setAccountManagerMessage(null);
     setAccountManagerError(null);
-    setAccountManagerOpen(true);
-  }, [authStatus, authUser?.nickname, openLoginDialog]);
+    openAccountManagerWithAnimation();
+  }, [authStatus, authUser?.nickname, openAccountManagerWithAnimation, openLoginDialog]);
 
   const submitAuthForm = useCallback(async () => {
     const email = authFormState.email.trim();
@@ -1865,7 +1955,7 @@ export function PlayerApp() {
     try {
       await logoutAccount();
       setAuthNotice("已退出登录，已切换到本地游客模式。");
-      setAccountManagerOpen(false);
+      closeAccountManagerDirectly();
       setAuthRefreshIssue(null);
       setAuthGuest();
       setAuthSyncState("idle");
@@ -1873,7 +1963,7 @@ export function PlayerApp() {
     } catch {
       setAuthNotice("退出失败，请稍后重试。");
     }
-  }, [resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
+  }, [closeAccountManagerDirectly, resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
 
   const handleUpdateProfile = useCallback(async () => {
     const nickname = profileNicknameInput.trim();
@@ -2095,12 +2185,12 @@ export function PlayerApp() {
     if (!isAccountEnabled || authStatus !== "authenticated") {
       setMusicUnblockEntitlement(null);
       setMusicUnblockInviteInput("");
-      setAccountManagerOpen(false);
+      closeAccountManagerDirectly();
       return;
     }
 
     void refreshMusicUnblockEntitlement();
-  }, [authStatus, authUser?.id, isAccountEnabled, refreshMusicUnblockEntitlement]);
+  }, [authStatus, authUser?.id, closeAccountManagerDirectly, isAccountEnabled, refreshMusicUnblockEntitlement]);
 
   useEffect(() => {
     if (activeTab !== "library") return;
@@ -2307,6 +2397,14 @@ export function PlayerApp() {
   useEffect(() => {
     homePlaylistPhaseRef.current = homePlaylistPhase;
   }, [homePlaylistPhase]);
+
+  useEffect(() => {
+    accountManagerPhaseRef.current = accountManagerPhase;
+  }, [accountManagerPhase]);
+
+  useEffect(() => {
+    listenPanelPhaseRef.current = listenPanelPhase;
+  }, [listenPanelPhase]);
 
   useEffect(() => {
     let active = true;
@@ -3225,7 +3323,7 @@ export function PlayerApp() {
         return;
       }
       if (listenPanelOpen) {
-        setListenPanelOpen(false);
+        closeListenPanel();
         return;
       }
       const currentDetailPhase = detailPhaseRef.current;
@@ -3253,6 +3351,7 @@ export function PlayerApp() {
     homePlaylistPanel,
     closeAccountDialog,
     closeAccountManager,
+    closeListenPanel,
     closeDetail,
     closeHomePlaylistPanel,
     restoreHomeTab,
@@ -3268,18 +3367,14 @@ export function PlayerApp() {
   }, [accountDialogOpen]);
 
   useEffect(() => {
-    if (!accountManagerOpen) return;
-    window.setTimeout(() => {
-      focusFirstInteractive(accountManagerDrawerRef.current);
-    }, 0);
-  }, [accountManagerOpen]);
+    if (accountManagerPhase !== "open") return;
+    focusFirstInteractive(accountManagerDrawerRef.current);
+  }, [accountManagerPhase]);
 
   useEffect(() => {
-    if (!listenPanelOpen) return;
-    window.setTimeout(() => {
-      focusFirstInteractive(listenDrawerRef.current);
-    }, 0);
-  }, [listenPanelOpen]);
+    if (listenPanelPhase !== "open") return;
+    focusFirstInteractive(listenDrawerRef.current);
+  }, [listenPanelPhase]);
 
   useEffect(() => {
     if (homePlaylistPhase !== "open") return;
@@ -3415,6 +3510,12 @@ export function PlayerApp() {
       }
       if (homePlaylistCloseTimerRef.current) {
         window.clearTimeout(homePlaylistCloseTimerRef.current);
+      }
+      if (accountManagerCloseTimerRef.current) {
+        window.clearTimeout(accountManagerCloseTimerRef.current);
+      }
+      if (listenPanelCloseTimerRef.current) {
+        window.clearTimeout(listenPanelCloseTimerRef.current);
       }
       if (lyricAutoScrollRafRef.current) {
         window.cancelAnimationFrame(lyricAutoScrollRafRef.current);
@@ -3847,7 +3948,7 @@ export function PlayerApp() {
           <span>一起听</span>
           <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : listenConnectionState === "error" ? "连接异常" : "好友邀请与多人同步"}</small>
         </div>
-        <button type="button" className="ghost" onClick={() => setListenPanelOpen(false)}>
+        <button type="button" className="ghost" onClick={closeListenPanel}>
           关闭
         </button>
       </div>
@@ -4388,7 +4489,7 @@ export function PlayerApp() {
           <div className="theme-switch-mobile compact">{themeSwitchControl}</div>
         </article>
 
-        <button type="button" className="mobile-library-tool-card listen-action compact" onClick={() => setListenPanelOpen(true)}>
+        <button type="button" className="mobile-library-tool-card listen-action compact" onClick={openListenPanel}>
           <span>一起听</span>
           <small>{listenRoom ? `${listenRoom.members.length} 人在线` : "好友邀请与多人同步"}</small>
         </button>
@@ -4472,12 +4573,16 @@ export function PlayerApp() {
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
-      {listenPanelOpen ? (
-        <section className="home-playlist-drawer-overlay phase-open utility-drawer-overlay" aria-label="一起听房间" onClick={() => setListenPanelOpen(false)}>
-          <div className="home-playlist-drawer-backdrop phase-open" />
+      {listenPanelOpen && listenPanelPhase !== "closed" ? (
+        <section
+          className={`home-playlist-drawer-overlay phase-${listenPanelPhase} utility-drawer-overlay`}
+          aria-label="一起听房间"
+          onClick={closeListenPanel}
+        >
+          <div className={`home-playlist-drawer-backdrop phase-${listenPanelPhase}`} />
           <aside
             ref={listenDrawerRef}
-            className="home-playlist-drawer phase-open utility-drawer listen-utility-drawer"
+            className={`home-playlist-drawer phase-${listenPanelPhase} utility-drawer listen-utility-drawer`}
             role="dialog"
             aria-modal="true"
             aria-label="一起听"
@@ -4489,12 +4594,12 @@ export function PlayerApp() {
           </aside>
         </section>
       ) : null}
-      {accountManagerOpen && accountManagerContent ? (
-        <section className="home-playlist-drawer-overlay phase-open utility-drawer-overlay" aria-label="账户管理" onClick={closeAccountManager}>
-          <div className="home-playlist-drawer-backdrop phase-open" />
+      {accountManagerOpen && accountManagerContent && accountManagerPhase !== "closed" ? (
+        <section className={`home-playlist-drawer-overlay phase-${accountManagerPhase} utility-drawer-overlay`} aria-label="账户管理" onClick={closeAccountManager}>
+          <div className={`home-playlist-drawer-backdrop phase-${accountManagerPhase}`} />
           <aside
             ref={accountManagerDrawerRef}
-            className="home-playlist-drawer phase-open utility-drawer account-manager-drawer"
+            className={`home-playlist-drawer phase-${accountManagerPhase} utility-drawer account-manager-drawer`}
             role="dialog"
             aria-modal="true"
             aria-label="账户管理"
@@ -4605,7 +4710,7 @@ export function PlayerApp() {
               </div>
             ) : null}
             {!isMobileUi ? (
-              <button type="button" className={`sidebar-entry listen-sidebar-entry ${listenRoom ? "active" : ""}`.trim()} onClick={() => setListenPanelOpen(true)}>
+              <button type="button" className={`sidebar-entry listen-sidebar-entry ${listenRoom ? "active" : ""}`.trim()} onClick={openListenPanel}>
                 <span>一起听</span>
                 <small>{listenRoom ? `${listenRoom.members.length} 人在线` : "好友邀请与多人同步"}</small>
                 <em>›</em>

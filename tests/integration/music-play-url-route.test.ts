@@ -68,6 +68,30 @@ describe("GET /api/music/track/:id/play-url", () => {
     });
   });
 
+  it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: 0, data: { enabled: true }, message: "ok", traceId: "trace" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/music/track/1004/play-url", {
+        headers: {
+          authorization: "Bearer token"
+        }
+      }),
+      context("1004")
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("1004", {
+      level: undefined,
+      unblockMode: "force_on"
+    });
+  });
+
   it("falls back to normal source when entitlement service fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ code: 5403, message: "Bad gateway", traceId: "trace", retryable: true }), {

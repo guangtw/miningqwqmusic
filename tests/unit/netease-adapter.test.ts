@@ -206,6 +206,89 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps attempting unblock in force_on mode when primary source is still preview", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/preview-force-on.mp3", time: 30000 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/full-force-on.mp3", time: 220000 }]
+      })
+    );
+
+    const result = await adapter.getPlaySource("108485", { unblockMode: "force_on" });
+    expect(result.url).toBe("https://cdn.test/full-force-on.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const primaryUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(primaryUrl.searchParams.get("unblock")).toBe("true");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/match");
+  });
+
+  it.each([
+    {
+      name: "freeTrialInfo",
+      primary: {
+        data: [{ url: "https://cdn.test/restricted-free-trial-info.mp3", time: 220000, freeTrialInfo: { start: 0 } }]
+      }
+    },
+    {
+      name: "freeTrialPrivilege",
+      primary: {
+        data: [
+          {
+            url: "https://cdn.test/restricted-free-trial-privilege.mp3",
+            time: 220000,
+            freeTrialPrivilege: { cannotListenReason: 1 }
+          }
+        ]
+      }
+    },
+    {
+      name: "freeTimeTrialPrivilege",
+      primary: {
+        data: [
+          {
+            url: "https://cdn.test/restricted-free-time-trial.mp3",
+            time: 220000,
+            freeTimeTrialPrivilege: { remainTime: 30, type: 1 }
+          }
+        ]
+      }
+    },
+    {
+      name: "restriction message",
+      primary: {
+        data: [{ url: "https://cdn.test/restricted-message.mp3", time: 220000, message: "仅可试听片段" }]
+      }
+    }
+  ])("attempts unblock when primary source contains $name restriction signal", async ({ primary }) => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo"]
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(jsonResponse(primary));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/full-after-restriction.mp3", time: 230000 }]
+      })
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/full-after-restriction.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/match");
+  });
+
   it("falls back to default preview source when all unblock attempts fail", async () => {
     const adapter = createAdapter({
       pathPlayUrlUnblock: "/song/url/match",
@@ -224,6 +307,35 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485");
     expect(result.url).toBe("https://cdn.test/preview-default.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("prefers the least restricted candidate when all unblock attempts remain limited", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["kuwo", "kugou"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/preview-unblock.mp3", time: 45000 }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        data: [{ url: "https://cdn.test/restricted-no-preview.mp3", time: 220000, freeTrialPrivilege: { playReason: "vip" } }]
+      })
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/restricted-no-preview.mp3");
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 

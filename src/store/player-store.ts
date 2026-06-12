@@ -73,7 +73,7 @@ export const usePlayerStore = create<PlayerStore>()(
       recent: [],
       importedPlaylists: {},
       playQualityLevel: "standard",
-      playUnblockMode: "auto",
+      playUnblockMode: "force_on",
       playSourceGeneration: 0,
       hasHydrated: false,
       setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
@@ -303,23 +303,28 @@ export const usePlayerStore = create<PlayerStore>()(
       migrate: (persistedState, version) => {
         if (!persistedState || typeof persistedState !== "object") return persistedState as PlayerStore;
         const state = persistedState as Partial<PlayerStore>;
-        if (version < 2) {
-          return {
-            ...state,
-            importedPlaylists: {}
-          } as PlayerStore;
-        }
+        const normalizedState =
+          version < 2
+            ? {
+                ...state,
+                importedPlaylists: {}
+              }
+            : state;
+        const migratedPlayUnblockMode =
+          version < 4 && (normalizedState.playUnblockMode === undefined || normalizedState.playUnblockMode === "auto")
+            ? "force_on"
+            : (normalizedState.playUnblockMode ?? "force_on");
         return {
-          ...state,
-          importedPlaylists: state.importedPlaylists ?? {},
-          playQualityLevel: state.playQualityLevel ?? "standard",
-          playUnblockMode: state.playUnblockMode ?? "auto"
+          ...normalizedState,
+          importedPlaylists: normalizedState.importedPlaylists ?? {},
+          playQualityLevel: normalizedState.playQualityLevel ?? "standard",
+          playUnblockMode: migratedPlayUnblockMode
         } as PlayerStore;
       },
       onRehydrateStorage: () => (state) => {
         state?.setHydrated(true);
       },
-      version: 3
+      version: 4
     }
   )
 );

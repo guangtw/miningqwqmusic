@@ -69,9 +69,10 @@ export async function GET(request: Request, context: Context) {
     const { searchParams } = new URL(request.url);
     const requestedUnblockMode = toPlayUnblockMode(searchParams.get("unblockMode"));
     const canUseUnblock = await hasMusicUnblockEntitlement(request);
+    const effectiveUnblockMode = canUseUnblock ? (requestedUnblockMode ?? "force_on") : "force_off";
     const data = await getPlaySource(id, {
       level: toPlayQualityLevel(searchParams.get("level")),
-      unblockMode: canUseUnblock ? requestedUnblockMode : "force_off"
+      unblockMode: effectiveUnblockMode
     });
     const response = success(data, traceId);
     response.headers.set("Cache-Control", "no-store");

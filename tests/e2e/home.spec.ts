@@ -109,6 +109,70 @@ async function openHomeTab(page: Page) {
   });
 }
 
+async function installDesktopHostMock(page: Page) {
+  await page.addInitScript(() => {
+    const listeners = new Set<(event: { data: unknown }) => void>();
+    const desktopContext = {
+      platform: "windows-webview2",
+      appVersion: "1.2.3",
+      homeUrl: "https://echo.miningqwq.cn/",
+      profileFolder: "C:\\Users\\Tester\\AppData\\Local\\MiningQwQ Music\\WebView2Profile",
+      downloadUrl: "https://echo.miningqwq.cn/",
+      capabilities: {
+        openProfileFolder: true,
+        clearWebCache: true,
+        openDownloadPage: true,
+        openHomeInBrowser: true
+      }
+    };
+    const dispatch = (payload: unknown) => {
+      listeners.forEach((listener) => listener({ data: payload }));
+    };
+
+    const chromeHost = (window as Window & { chrome?: Record<string, unknown> }).chrome ?? {};
+    (window as Window & { chrome?: Record<string, unknown> }).chrome = {
+      ...chromeHost,
+      webview: {
+        addEventListener: (_type: "message", listener: (event: { data: unknown }) => void) => {
+          listeners.add(listener);
+        },
+        removeEventListener: (_type: "message", listener: (event: { data: unknown }) => void) => {
+          listeners.delete(listener);
+        },
+        postMessage: (message: string) => {
+          const payload = JSON.parse(message) as { action?: string; requestId?: string; type?: string };
+          if (payload.type !== "miningqwq-desktop-action") return;
+          if (payload.action === "ready") {
+            queueMicrotask(() => {
+              dispatch({
+                type: "miningqwq-desktop-context",
+                data: desktopContext
+              });
+            });
+            return;
+          }
+
+          queueMicrotask(() => {
+            dispatch({
+              type: "miningqwq-desktop-action-result",
+              requestId: payload.requestId,
+              ok: true,
+              message:
+                payload.action === "clear-web-cache"
+                  ? "正在清理网页缓存并重载。"
+                  : payload.action === "open-profile-folder"
+                    ? "已打开缓存目录。"
+                    : payload.action === "open-download-page"
+                      ? "已打开下载页。"
+                      : "已在系统浏览器打开网页版。"
+            });
+          });
+        }
+      }
+    };
+  });
+}
+
 test("home page renders player shell", async ({ page }, testInfo) => {
   await page.goto("/");
   if (!testInfo.project.name.includes("mobile")) {
@@ -138,6 +202,13 @@ test("account entry stays hidden when account proxy is not configured", async ({
   });
   await page.goto("/");
   await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+});
+
+test("browser environment keeps desktop-only settings hidden", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "桌面专属设置只在桌面布局验证。");
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "桌面设置" })).toHaveCount(0);
+  await expect(page.getByText("桌面客户端")).toHaveCount(0);
 });
 
 test("account entry is available when account proxy responds and can open dialog", async ({ page }) => {
@@ -250,13 +321,18 @@ test("logged-in account entry opens account management drawer", async ({ page })
 
   const drawer = page.getByRole("dialog", { name: "账户管理" });
   await expect(drawer).toBeVisible();
-  await expect(drawer.getByText("高级功能")).toBeVisible();
-  await expect(drawer.getByPlaceholder("输入兑换码")).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "资料" })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "安全" })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "高级" })).toBeVisible();
+  await expect(drawer.getByText("账户总览")).toBeVisible();
   await expect(page.getByText("解灰")).toHaveCount(0);
 
   await drawer.getByLabel("昵称").fill("新昵称");
   await drawer.getByRole("button", { name: "保存昵称" }).click();
   await expect(drawer.getByText("昵称已更新。")).toBeVisible();
+
+  await drawer.getByRole("tab", { name: "高级" }).click();
+  await expect(drawer.getByPlaceholder("输入兑换码")).toBeVisible();
 });
 
 test("empty player state offers search CTA instead of opening detail", async ({ page }, testInfo) => {
@@ -291,6 +367,182 @@ test("desktop listen entry opens playlist-style drawer from sidebar", async ({ p
   await expect(drawer).toBeVisible();
   await expect(page.locator(".listen-utility-drawer")).toBeVisible();
   await expect(page.locator(".listen-drawer-overlay")).toHaveCount(0);
+});
+
+test("listen drawer groups room friends and activity with partial friend search", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "桌面抽屉重构在桌面布局验证。");
+  const user = {
+    id: "listen-e2e-user",
+    email: "listen@example.com",
+    nickname: "一起听用户",
+    avatarFallbackText: "听",
+    avatarFallbackBg: "#22c55e"
+  };
+  const successPayload = (data: unknown) =>
+    JSON.stringify({
+      code: 0,
+      data,
+      message: "ok",
+      traceId: "e2e-listen-drawer"
+    });
+
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5203,
+        message: "Refresh token invalid or expired",
+        traceId: "e2e-listen-refresh",
+        retryable: false
+      })
+    });
+  });
+  await page.route("**/api/account/auth/login", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ user, accessToken: "listen-token" })
+    });
+  });
+  await page.route("**/api/account/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload(user)
+    });
+  });
+  await page.route("**/api/account/library/snapshot", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ revision: 1, favorites: {}, recent: [], importedPlaylists: {}, updatedAt: new Date(0).toISOString() })
+    });
+  });
+  await page.route("**/api/account/music/unblock/entitlement", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ enabled: false })
+    });
+  });
+  await page.route("**/api/account/friends", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload([])
+    });
+  });
+  await page.route("**/api/account/friends/requests", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({
+        incoming: [
+          {
+            id: "request-1",
+            requester: {
+              id: "partial-friend",
+              email: "partial@example.com",
+              nickname: "Partial Friend"
+            },
+            addressee: user,
+            status: "pending",
+            direction: "incoming",
+            createdAt: new Date(0).toISOString(),
+            updatedAt: new Date(0).toISOString()
+          }
+        ],
+        outgoing: []
+      })
+    });
+  });
+  await page.route("**/api/account/listen/invites", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload([])
+    });
+  });
+  await page.route("**/api/account/friends/search?**", async (route) => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get("q");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload(
+        query
+          ? [
+              {
+                user: {
+                  id: "partial-friend",
+                  email: "partial@example.com",
+                  nickname: "Partial Friend"
+                },
+                relationStatus: "incoming_pending"
+              }
+            ]
+          : []
+      )
+    });
+  });
+  await page.route("**/api/account/friends/requests/request-1/accept", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({
+        id: "request-1",
+        requester: {
+          id: "partial-friend",
+          email: "partial@example.com",
+          nickname: "Partial Friend"
+        },
+        addressee: user,
+        status: "accepted",
+        direction: "incoming",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+    });
+  });
+
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "登录同步" }).first().click();
+  await page.getByLabel("邮箱").fill("listen@example.com");
+  await page.getByLabel("密码").fill("StrongP@ss1");
+  await page.getByRole("button", { name: "登录并同步" }).click();
+
+  await page.locator(".listen-sidebar-entry").first().click();
+  const drawer = page.getByRole("dialog", { name: "一起听" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "房间" })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "好友" })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "动态" })).toBeVisible();
+
+  await drawer.getByRole("tab", { name: "好友" }).click();
+  await drawer.getByPlaceholder("例如：昵称片段 / 邮箱片段").fill("par");
+  await expect(drawer.getByText("Partial Friend")).toBeVisible();
+  await expect(drawer.getByText("等待你处理")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "同意" }).first()).toBeVisible();
+
+  await drawer.getByRole("tab", { name: "动态" }).click();
+  await expect(drawer.getByRole("tab", { name: /一起听邀请/ })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: /好友请求/ })).toBeVisible();
+});
+
+test("search errors stay user-friendly when network requests fail", async ({ page }) => {
+  await page.route("**/api/music/search?**", async (route) => {
+    await route.abort("failed");
+  });
+
+  await page.goto("/");
+  await openSearchTab(page);
+  await page.locator(".spotify-search-panel input").fill("网络异常测试");
+  await page.locator(".spotify-search-panel button").click();
+
+  await expect(page.getByText("网络连接异常，请稍后重试")).toBeVisible();
+  await expect(page.getByText("Failed to fetch")).toHaveCount(0);
 });
 
 test("short desktop sidebar keeps account warning, retry and theme switch visible", async ({ page }, testInfo) => {
@@ -355,6 +607,41 @@ test("short desktop sidebar keeps account warning, retry and theme switch visibl
       expect(scrolledThemeBox.y + scrolledThemeBox.height).toBeLessThan(playerBox.y);
     }
   }
+});
+
+test("desktop host exposes desktop settings for signed-out users", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "桌面宿主入口只在桌面布局验证。");
+  await installDesktopHostMock(page);
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5203,
+        message: "Refresh token invalid or expired",
+        traceId: "e2e-desktop-settings",
+        retryable: true
+      })
+    });
+  });
+
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto("/");
+
+  const desktopButton = page.getByRole("button", { name: "桌面设置" }).first();
+  await expect(desktopButton).toBeVisible();
+  await desktopButton.click();
+
+  const drawer = page.getByRole("dialog", { name: "账户管理" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("桌面客户端", { exact: true })).toBeVisible();
+  await expect(drawer.getByText("当前版本")).toBeVisible();
+  await expect(drawer.getByText(/^1\.2\.3$/)).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "打开缓存目录" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "清理缓存并重载" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "打开下载页" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "在浏览器打开网页版" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
 });
 
 test("escape closes detail overlay and returns search tab to home", async ({ page }) => {

@@ -64,7 +64,9 @@ import { computeHomeGridPlan } from "@/src/lib/home-grid";
 import { extractPlaylistId } from "@/src/lib/playlist-import";
 import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransition, type DetailForegroundTone } from "@/src/lib/detail-palette-transition";
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
+import { installDesktopHostBridge, requestDesktopHostAction, useDesktopHost } from "@/src/lib/desktop-host";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
+import { installShellChromeBridge } from "@/src/lib/shell-chrome";
 import {
   canOpenPlayerDetail,
   countItemsWithinRows,
@@ -73,13 +75,14 @@ import {
   shouldTogglePlaybackBySpace
 } from "@/src/lib/player-ui";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
+import { toUserFacingMessage } from "@/src/lib/user-facing-error";
 import { useAuthStore } from "@/src/store/auth-store";
 import { useFriendStore } from "@/src/store/friend-store";
 import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
 import { UserAvatar } from "@/src/components/user-avatar";
-import type { AuthStatus, ListenPlaybackState, MusicUnblockEntitlement, SyncState } from "@/src/types/account";
+import type { AuthStatus, FriendRelationStatus, ListenPlaybackState, MusicUnblockEntitlement, SyncState } from "@/src/types/account";
 import type {
   ArtistDetail,
   ArtistSearchItem,
@@ -132,6 +135,10 @@ type HistoryGuardState = {
 };
 type AuthFormMode = "login" | "register";
 type ListenStatePublishType = "playback" | "queue" | "seek" | "mode" | "progress";
+type DesktopHostUserAction = "open-profile-folder" | "clear-web-cache" | "open-download-page" | "open-home-in-browser";
+type AccountManagerTab = "profile" | "security" | "advanced" | "desktop";
+type ListenDrawerTab = "room" | "friends" | "activity";
+type ListenActivityTab = "listen-invites" | "friend-requests";
 
 const DETAIL_ANIMATION_MS = 360;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
@@ -145,6 +152,7 @@ const ACCOUNT_SYNC_DEBOUNCE_MS = 180;
 const ACCOUNT_PULL_POLLING_MS = 30_000;
 const ACCOUNT_PULL_THROTTLE_MS = 1_800;
 const ACCOUNT_PULL_RETRY_BLOCK_MS = 4_000;
+const FRIEND_SEARCH_DEBOUNCE_MS = 280;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
@@ -182,6 +190,30 @@ const PLAY_UNBLOCK_MODE_OPTIONS: Array<{ value: PlayUnblockMode; label: string }
   { value: "force_on", label: "强制开启" },
   { value: "force_off", label: "强制关闭" }
 ];
+
+function desktopActionBusyLabel(action: DesktopHostUserAction | null): string | null {
+  if (action === "open-profile-folder") return "正在打开缓存目录...";
+  if (action === "clear-web-cache") return "正在清理网页缓存并重载...";
+  if (action === "open-download-page") return "正在打开下载页...";
+  if (action === "open-home-in-browser") return "正在打开网页版...";
+  return null;
+}
+
+function friendRelationLabel(status: FriendRelationStatus): string {
+  if (status === "friend") return "已是好友";
+  if (status === "outgoing_pending") return "已发送";
+  if (status === "incoming_pending") return "等待你处理";
+  if (status === "self") return "自己";
+  return "可添加";
+}
+
+function friendRelationActionLabel(status: FriendRelationStatus): string {
+  if (status === "incoming_pending") return "同意";
+  if (status === "outgoing_pending") return "已发送";
+  if (status === "friend") return "已是好友";
+  if (status === "self") return "自己";
+  return "添加";
+}
 
 function readHistoryGuardState(): HistoryGuardState["__mqmGuard"] | undefined {
   if (typeof window === "undefined") return undefined;
@@ -938,6 +970,7 @@ export function PlayerApp() {
   const setAuthGuest = useAuthStore((state) => state.setGuest);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthSyncState = useAuthStore((state) => state.setSyncState);
+  const bumpPlaySourceGeneration = usePlayerStore((state) => state.bumpPlaySourceGeneration);
   const listenRoom = useListenTogetherStore((state) => state.room);
   const listenConnectionState = useListenTogetherStore((state) => state.connectionState);
   const listenMessage = useListenTogetherStore((state) => state.message);
@@ -959,6 +992,7 @@ export function PlayerApp() {
   const setFriendLoading = useFriendStore((state) => state.setLoading);
   const setFriendMessage = useFriendStore((state) => state.setMessage);
   const resetFriendPanel = useFriendStore((state) => state.reset);
+  const desktopHost = useDesktopHost();
 
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
@@ -1023,6 +1057,7 @@ export function PlayerApp() {
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountManagerOpen, setAccountManagerOpen] = useState(false);
   const [accountManagerPhase, setAccountManagerPhase] = useState<PlaylistPanelPhase>("closed");
+  const [accountManagerTab, setAccountManagerTab] = useState<AccountManagerTab>("profile");
   const [authFormMode, setAuthFormMode] = useState<AuthFormMode>("login");
   const [authFormState, setAuthFormState] = useState({
     email: "",
@@ -1043,6 +1078,15 @@ export function PlayerApp() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [accountManagerMessage, setAccountManagerMessage] = useState<string | null>(null);
   const [accountManagerError, setAccountManagerError] = useState<string | null>(null);
+  const [desktopActionState, setDesktopActionState] = useState<{
+    action: DesktopHostUserAction | null;
+    message: string | null;
+    error: string | null;
+  }>({
+    action: null,
+    message: null,
+    error: null
+  });
   const [musicUnblockEntitlement, setMusicUnblockEntitlement] = useState<MusicUnblockEntitlement | null>(null);
   const [musicUnblockLoading, setMusicUnblockLoading] = useState(false);
   const [musicUnblockInviteInput, setMusicUnblockInviteInput] = useState("");
@@ -1050,8 +1094,11 @@ export function PlayerApp() {
   const [musicUnblockError, setMusicUnblockError] = useState<string | null>(null);
   const [listenPanelOpen, setListenPanelOpen] = useState(false);
   const [listenPanelPhase, setListenPanelPhase] = useState<PlaylistPanelPhase>("closed");
+  const [listenDrawerTab, setListenDrawerTab] = useState<ListenDrawerTab>("room");
+  const [listenActivityTab, setListenActivityTab] = useState<ListenActivityTab>("listen-invites");
   const [listenInviteInput, setListenInviteInput] = useState("");
   const [listenBusy, setListenBusy] = useState(false);
+  const [listenReconnectToken, setListenReconnectToken] = useState(0);
   const [friendSearchInput, setFriendSearchInput] = useState("");
   const [friendActionBusyId, setFriendActionBusyId] = useState<string | null>(null);
   const [locatedPanelTrackId, setLocatedPanelTrackId] = useState<string | null>(null);
@@ -1137,11 +1184,15 @@ export function PlayerApp() {
   const pullRetryBlockedUntilRef = useRef(0);
   const authBootstrapDoneRef = useRef(false);
   const syncReadyRef = useRef(false);
+  const musicUnblockEnabledRef = useRef<boolean | undefined>(undefined);
   const listenStreamAbortRef = useRef<AbortController | null>(null);
+  const listenReconnectTimerRef = useRef<number | null>(null);
+  const listenReconnectAttemptRef = useRef(0);
   const listenApplyingRemoteRef = useRef(false);
   const listenLeavingRoomIdsRef = useRef<Set<string>>(new Set());
   const listenLastStrongPublishedRef = useRef("");
   const listenLastProgressPublishedAtRef = useRef(0);
+  const friendSearchRequestIdRef = useRef(0);
 
   const openListenPanel = useCallback(() => {
     const activeElement = document.activeElement;
@@ -1255,6 +1306,7 @@ export function PlayerApp() {
         if (listenApplyingRemoteRef.current) return;
         const room = useListenTogetherStore.getState().room;
         if (!room || listenLeavingRoomIdsRef.current.has(room.id)) return;
+        if (type === "progress" && room.hostUserId !== authUser?.id) return;
         const now = Date.now();
         if (type === "progress") {
           const intervalMs = options.minIntervalMs ?? LISTEN_PROGRESS_SYNC_INTERVAL_MS;
@@ -1288,7 +1340,7 @@ export function PlayerApp() {
       }
       run();
     },
-    [authStatus, captureListenPlaybackState, listenStateSignature, setListenConnectionState, setListenRoom]
+    [authStatus, authUser?.id, captureListenPlaybackState, listenStateSignature, setListenConnectionState, setListenRoom]
   );
 
   const applyListenPlaybackState = useCallback(
@@ -1332,13 +1384,18 @@ export function PlayerApp() {
     try {
       const room = await createListenRoom(captureListenPlaybackState());
       listenLeavingRoomIdsRef.current.delete(room.id);
+      if (listenReconnectTimerRef.current) {
+        window.clearTimeout(listenReconnectTimerRef.current);
+        listenReconnectTimerRef.current = null;
+      }
+      listenReconnectAttemptRef.current = 0;
       listenLastStrongPublishedRef.current = listenStateSignature(room.playbackState, "playback");
       listenLastProgressPublishedAtRef.current = 0;
       setListenRoom(room);
       setListenConnectionState("connected");
       openListenPanel();
     } catch (error) {
-      setListenMessage(error instanceof Error ? error.message : "创建一起听房间失败。");
+      setListenMessage(toUserFacingMessage(error, "创建一起听房间失败，请稍后重试"));
       setListenConnectionState("error");
     } finally {
       setListenBusy(false);
@@ -1360,6 +1417,11 @@ export function PlayerApp() {
     try {
       const room = await joinListenRoom(inviteCode);
       listenLeavingRoomIdsRef.current.delete(room.id);
+      if (listenReconnectTimerRef.current) {
+        window.clearTimeout(listenReconnectTimerRef.current);
+        listenReconnectTimerRef.current = null;
+      }
+      listenReconnectAttemptRef.current = 0;
       listenLastStrongPublishedRef.current = listenStateSignature(room.playbackState, "playback");
       listenLastProgressPublishedAtRef.current = 0;
       setListenRoom(room);
@@ -1367,7 +1429,7 @@ export function PlayerApp() {
       applyListenPlaybackState(room.playbackState);
       setListenInviteInput("");
     } catch (error) {
-      setListenMessage(error instanceof Error ? error.message : "加入一起听失败。");
+      setListenMessage(toUserFacingMessage(error, "加入一起听失败，请稍后重试"));
       setListenConnectionState("error");
     } finally {
       setListenBusy(false);
@@ -1377,6 +1439,11 @@ export function PlayerApp() {
   const handleLeaveListenRoom = useCallback(async () => {
     const roomId = listenRoom?.id;
     listenStreamAbortRef.current?.abort();
+    if (listenReconnectTimerRef.current) {
+      window.clearTimeout(listenReconnectTimerRef.current);
+      listenReconnectTimerRef.current = null;
+    }
+    listenReconnectAttemptRef.current = 0;
     if (!roomId) {
       leaveListenLocal();
       setListenMessage("已离开房间。");
@@ -1425,33 +1492,52 @@ export function PlayerApp() {
       setFriendRequests(requests);
       setListenInvites(invites);
     } catch (error) {
-      setFriendMessage(error instanceof Error ? error.message : "好友信息加载失败。");
+      setFriendMessage(toUserFacingMessage(error, "好友信息加载失败，请稍后重试"));
     } finally {
       setFriendLoading(false);
     }
   }, [authStatus, resetFriendPanel, setFriendList, setFriendLoading, setFriendMessage, setFriendRequests, setListenInvites]);
 
-  const handleFriendSearch = useCallback(async () => {
+  const runFriendSearch = useCallback(async (rawQuery: string) => {
     if (authStatus !== "authenticated") {
       setFriendMessage("请先登录后再添加好友。");
-      return;
-    }
-    const query = friendSearchInput.trim();
-    if (!query) {
       setFriendSearchResults([]);
       return;
     }
+    const query = rawQuery.trim();
+    if (!query) {
+      setFriendSearchResults([]);
+      setFriendMessage(null);
+      return;
+    }
+    if (query.length < 2) {
+      setFriendSearchResults([]);
+      return;
+    }
+    const requestId = friendSearchRequestIdRef.current + 1;
+    friendSearchRequestIdRef.current = requestId;
     setFriendLoading(true);
     setFriendMessage(null);
     try {
       const results = await searchFriends(query);
+      if (friendSearchRequestIdRef.current !== requestId) return;
       setFriendSearchResults(results);
+      if (!results.length) {
+        setFriendMessage("没有找到匹配的用户，试试输入昵称片段或邮箱片段。");
+      }
     } catch (error) {
-      setFriendMessage(error instanceof Error ? error.message : "搜索好友失败。");
+      if (friendSearchRequestIdRef.current !== requestId) return;
+      setFriendMessage(toUserFacingMessage(error, "搜索好友失败，请稍后重试"));
     } finally {
-      setFriendLoading(false);
+      if (friendSearchRequestIdRef.current === requestId) {
+        setFriendLoading(false);
+      }
     }
-  }, [authStatus, friendSearchInput, setFriendLoading, setFriendMessage, setFriendSearchResults]);
+  }, [authStatus, setFriendLoading, setFriendMessage, setFriendSearchResults]);
+
+  const handleFriendSearch = useCallback(async () => {
+    await runFriendSearch(friendSearchInput);
+  }, [friendSearchInput, runFriendSearch]);
 
   const handleSendFriendRequest = useCallback(
     async (userId: string) => {
@@ -1462,16 +1548,15 @@ export function PlayerApp() {
         setFriendMessage("好友请求已发送。");
         await refreshFriendPanelData();
         if (friendSearchInput.trim()) {
-          const results = await searchFriends(friendSearchInput);
-          setFriendSearchResults(results);
+          await runFriendSearch(friendSearchInput);
         }
       } catch (error) {
-        setFriendMessage(error instanceof Error ? error.message : "发送好友请求失败。");
+        setFriendMessage(toUserFacingMessage(error, "发送好友请求失败，请稍后重试"));
       } finally {
         setFriendActionBusyId(null);
       }
     },
-    [friendSearchInput, refreshFriendPanelData, setFriendMessage, setFriendSearchResults]
+    [friendSearchInput, refreshFriendPanelData, runFriendSearch, setFriendMessage]
   );
 
   const handleRespondFriendRequest = useCallback(
@@ -1491,7 +1576,7 @@ export function PlayerApp() {
         }
         await refreshFriendPanelData();
       } catch (error) {
-        setFriendMessage(error instanceof Error ? error.message : "好友请求处理失败。");
+        setFriendMessage(toUserFacingMessage(error, "好友请求处理失败，请稍后重试"));
       } finally {
         setFriendActionBusyId(null);
       }
@@ -1508,7 +1593,7 @@ export function PlayerApp() {
         setFriendMessage("已删除好友。");
         await refreshFriendPanelData();
       } catch (error) {
-        setFriendMessage(error instanceof Error ? error.message : "删除好友失败。");
+        setFriendMessage(toUserFacingMessage(error, "删除好友失败，请稍后重试"));
       } finally {
         setFriendActionBusyId(null);
       }
@@ -1529,7 +1614,7 @@ export function PlayerApp() {
         setFriendMessage("一起听邀请已发送。");
         await refreshFriendPanelData();
       } catch (error) {
-        setFriendMessage(error instanceof Error ? error.message : "邀请好友失败。");
+        setFriendMessage(toUserFacingMessage(error, "邀请好友失败，请稍后重试"));
       } finally {
         setFriendActionBusyId(null);
       }
@@ -1557,7 +1642,7 @@ export function PlayerApp() {
         }
         await refreshFriendPanelData();
       } catch (error) {
-        setFriendMessage(error instanceof Error ? error.message : "处理一起听邀请失败。");
+        setFriendMessage(toUserFacingMessage(error, "处理一起听邀请失败，请稍后重试"));
       } finally {
         setFriendActionBusyId(null);
       }
@@ -1573,7 +1658,7 @@ export function PlayerApp() {
       await uploadAccountAvatar(file);
       setAuthNotice("头像已更新。");
     } catch (error) {
-      setAuthNotice(error instanceof Error ? error.message : "头像上传失败。");
+      setAuthNotice(toUserFacingMessage(error, "头像上传失败，请稍后重试"));
     } finally {
       setAvatarUploading(false);
       if (avatarInputRef.current) {
@@ -1589,7 +1674,7 @@ export function PlayerApp() {
       await deleteAccountAvatar();
       setAuthNotice("已恢复默认头像。");
     } catch (error) {
-      setAuthNotice(error instanceof Error ? error.message : "头像移除失败。");
+      setAuthNotice(toUserFacingMessage(error, "头像移除失败，请稍后重试"));
     } finally {
       setAvatarUploading(false);
     }
@@ -1846,6 +1931,11 @@ export function PlayerApp() {
     setAccountManagerOpen(false);
     setAccountManagerMessage(null);
     setAccountManagerError(null);
+    setDesktopActionState({
+      action: null,
+      message: null,
+      error: null
+    });
     accountManagerReturnFocusRef.current = null;
   }, []);
 
@@ -1865,6 +1955,11 @@ export function PlayerApp() {
       setAccountManagerOpen(false);
       setAccountManagerMessage(null);
       setAccountManagerError(null);
+      setDesktopActionState({
+        action: null,
+        message: null,
+        error: null
+      });
       accountManagerCloseTimerRef.current = null;
       accountManagerReturnFocusRef.current?.focus();
       accountManagerReturnFocusRef.current = null;
@@ -1889,8 +1984,9 @@ export function PlayerApp() {
     });
   }, []);
 
-  const openAccountManager = useCallback(() => {
-    if (authStatus !== "authenticated") {
+  const openAccountManagerPanel = useCallback((options?: { allowGuest?: boolean; initialTab?: AccountManagerTab }) => {
+    const allowGuest = options?.allowGuest ?? false;
+    if (authStatus !== "authenticated" && !allowGuest) {
       openLoginDialog();
       return;
     }
@@ -1900,8 +1996,52 @@ export function PlayerApp() {
     setPasswordFormState({ oldPassword: "", newPassword: "" });
     setAccountManagerMessage(null);
     setAccountManagerError(null);
+    setDesktopActionState({
+      action: null,
+      message: null,
+      error: null
+    });
+    setAccountManagerTab(
+      options?.initialTab ?? (authStatus === "authenticated" ? "profile" : desktopHost.isDesktopHost && Boolean(desktopHost.context) && !isMobileUi ? "desktop" : "profile")
+    );
     openAccountManagerWithAnimation();
-  }, [authStatus, authUser?.nickname, openAccountManagerWithAnimation, openLoginDialog]);
+  }, [authStatus, authUser?.nickname, desktopHost.context, desktopHost.isDesktopHost, isMobileUi, openAccountManagerWithAnimation, openLoginDialog]);
+
+  const openAccountManager = useCallback(() => {
+    openAccountManagerPanel({
+      allowGuest: false,
+      initialTab: "profile"
+    });
+  }, [openAccountManagerPanel]);
+
+  const openDesktopSettings = useCallback(() => {
+    openAccountManagerPanel({
+      allowGuest: true,
+      initialTab: "desktop"
+    });
+  }, [openAccountManagerPanel]);
+
+  const handleDesktopHostAction = useCallback(async (action: DesktopHostUserAction) => {
+    setDesktopActionState({
+      action,
+      message: desktopActionBusyLabel(action),
+      error: null
+    });
+    try {
+      const result = await requestDesktopHostAction(action);
+      setDesktopActionState({
+        action: null,
+        message: result.ok ? result.message ?? desktopActionBusyLabel(action) : null,
+        error: result.ok ? null : result.message ?? "桌面客户端操作失败，请稍后重试。"
+      });
+    } catch (error) {
+      setDesktopActionState({
+        action: null,
+        message: null,
+        error: toUserFacingMessage(error, "桌面客户端操作失败，请稍后重试")
+      });
+    }
+  }, []);
 
   const submitAuthForm = useCallback(async () => {
     const email = authFormState.email.trim();
@@ -1979,7 +2119,7 @@ export function PlayerApp() {
       setProfileNicknameInput(nickname);
       setAccountManagerMessage("昵称已更新。");
     } catch (error) {
-      setAccountManagerError(error instanceof Error ? error.message : "昵称更新失败。");
+      setAccountManagerError(toUserFacingMessage(error, "昵称更新失败，请稍后重试"));
     } finally {
       setProfileSaving(false);
     }
@@ -2002,7 +2142,7 @@ export function PlayerApp() {
       setPasswordFormState({ oldPassword: "", newPassword: "" });
       setAccountManagerMessage("密码已更新。");
     } catch (error) {
-      setAccountManagerError(error instanceof Error ? error.message : "密码修改失败。");
+      setAccountManagerError(toUserFacingMessage(error, "密码修改失败，请稍后重试"));
     } finally {
       setPasswordSaving(false);
     }
@@ -2057,6 +2197,21 @@ export function PlayerApp() {
     }
   }, [authStatus, isAccountEnabled]);
 
+  useEffect(() => {
+    const enabled = musicUnblockEntitlement?.enabled === true;
+    const previous = musicUnblockEnabledRef.current;
+    musicUnblockEnabledRef.current = enabled;
+    if (previous === undefined) {
+      if (enabled) {
+        bumpPlaySourceGeneration();
+      }
+      return;
+    }
+    if (previous !== enabled) {
+      bumpPlaySourceGeneration();
+    }
+  }, [bumpPlaySourceGeneration, musicUnblockEntitlement?.enabled]);
+
   const handleRedeemMusicUnblockInvite = useCallback(async () => {
     if (authStatus !== "authenticated") {
       setMusicUnblockError("请先登录账号后再兑换。");
@@ -2080,7 +2235,7 @@ export function PlayerApp() {
       if (error instanceof AccountApiError && error.status === 404) {
         setMusicUnblockError("兑换码无效、已禁用或已过期。");
       } else {
-        setMusicUnblockError("兑换失败，请稍后重试。");
+        setMusicUnblockError(toUserFacingMessage(error, "兑换失败，请稍后重试"));
       }
     } finally {
       setMusicUnblockLoading(false);
@@ -2110,6 +2265,15 @@ export function PlayerApp() {
     document.documentElement.dataset.theme = theme;
     writeThemePreference(theme, window.localStorage);
   }, [theme]);
+
+  useEffect(() => {
+    const cleanupShellChrome = installShellChromeBridge();
+    const cleanupDesktopHost = installDesktopHostBridge();
+    return () => {
+      cleanupDesktopHost();
+      cleanupShellChrome();
+    };
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 899px), (pointer: coarse), (hover: none)");
@@ -2185,12 +2349,11 @@ export function PlayerApp() {
     if (!isAccountEnabled || authStatus !== "authenticated") {
       setMusicUnblockEntitlement(null);
       setMusicUnblockInviteInput("");
-      closeAccountManagerDirectly();
       return;
     }
 
     void refreshMusicUnblockEntitlement();
-  }, [authStatus, authUser?.id, closeAccountManagerDirectly, isAccountEnabled, refreshMusicUnblockEntitlement]);
+  }, [authStatus, authUser?.id, isAccountEnabled, refreshMusicUnblockEntitlement]);
 
   useEffect(() => {
     if (activeTab !== "library") return;
@@ -2417,7 +2580,7 @@ export function PlayerApp() {
       })
       .catch((error) => {
         if (!active) return;
-        setDiscoverError(error instanceof Error ? error.message : "发现页加载失败");
+        setDiscoverError(toUserFacingMessage(error, "发现页加载失败，请稍后重试"));
         getSearchAssist("")
           .then((assist) => {
             if (!active) return;
@@ -2681,7 +2844,7 @@ export function PlayerApp() {
         return {
           ...previous,
           loading: false,
-          error: error instanceof Error ? error.message : "歌单加载失败，请稍后重试。"
+          error: toUserFacingMessage(error, "歌单加载失败，请稍后重试")
         };
       });
     }
@@ -2771,7 +2934,7 @@ export function PlayerApp() {
       setImportPlaylistState({
         loading: false,
         message: null,
-        error: error instanceof Error ? error.message : "导入歌单失败，请稍后重试。"
+        error: toUserFacingMessage(error, "导入歌单失败，请稍后重试")
       });
     }
   };
@@ -2808,7 +2971,7 @@ export function PlayerApp() {
       setTrackResult([]);
       setArtistResult([]);
       setSearchStatus("error");
-      setSearchError(error instanceof Error ? error.message : "网络异常，搜索失败，请稍后重试。");
+      setSearchError(toUserFacingMessage(error, "搜索失败，请稍后重试"));
     }
   };
 
@@ -2833,7 +2996,7 @@ export function PlayerApp() {
       const detail = await getArtistDetail(artist.id);
       setSearchArtistDetail(detail);
     } catch (error) {
-      setSearchArtistDetailError(error instanceof Error ? error.message : "歌手详情加载失败，请稍后重试。");
+      setSearchArtistDetailError(toUserFacingMessage(error, "歌手详情加载失败，请稍后重试"));
     } finally {
       setSearchArtistDetailLoading(false);
     }
@@ -2917,8 +3080,8 @@ export function PlayerApp() {
         player.setPlaying(true);
         return;
       }
-    } catch {
-      setDiscoverError("该推荐项暂时不可用，请稍后重试。");
+    } catch (error) {
+      setDiscoverError(toUserFacingMessage(error, "该推荐项暂时不可用，请稍后重试"));
     }
   };
 
@@ -2991,7 +3154,7 @@ export function PlayerApp() {
       setDownloadState((previous) => ({
         ...previous,
         loading: false,
-        message: error instanceof Error ? error.message : "下载链接获取失败"
+        message: toUserFacingMessage(error, "下载链接获取失败，请稍后重试")
       }));
     }
   };
@@ -3529,6 +3692,9 @@ export function PlayerApp() {
       if (locatedPanelTrackTimerRef.current) {
         window.clearTimeout(locatedPanelTrackTimerRef.current);
       }
+      if (listenReconnectTimerRef.current) {
+        window.clearTimeout(listenReconnectTimerRef.current);
+      }
       if (libraryContentTransitionTimerRef.current) {
         window.clearTimeout(libraryContentTransitionTimerRef.current);
       }
@@ -3538,12 +3704,41 @@ export function PlayerApp() {
 
   useEffect(() => {
     const roomId = listenRoom?.id;
-    if (!roomId || authStatus !== "authenticated") return;
+    if (!roomId || authStatus !== "authenticated") {
+      if (listenReconnectTimerRef.current) {
+        window.clearTimeout(listenReconnectTimerRef.current);
+        listenReconnectTimerRef.current = null;
+      }
+      listenReconnectAttemptRef.current = 0;
+      return;
+    }
     listenStreamAbortRef.current?.abort();
+    if (listenReconnectTimerRef.current) {
+      window.clearTimeout(listenReconnectTimerRef.current);
+      listenReconnectTimerRef.current = null;
+    }
     const abortController = new AbortController();
     listenStreamAbortRef.current = abortController;
-    setListenConnectionState("connecting");
+    setListenConnectionState(listenReconnectAttemptRef.current > 0 ? "reconnecting" : "connecting");
     const sinceVersion = useListenTogetherStore.getState().room?.version ?? 0;
+    const scheduleReconnect = (message: string) => {
+      if (abortController.signal.aborted) return;
+      if (listenLeavingRoomIdsRef.current.has(roomId)) return;
+      const latestRoom = useListenTogetherStore.getState().room;
+      if (!latestRoom || latestRoom.id !== roomId) return;
+      const attempt = Math.min(listenReconnectAttemptRef.current + 1, 4);
+      listenReconnectAttemptRef.current = attempt;
+      setListenConnectionState("reconnecting");
+      setListenMessage(message);
+      const baseDelay = Math.min(15_000, 2_000 * 2 ** (attempt - 1));
+      const jitter = Math.floor(Math.random() * 500);
+      listenReconnectTimerRef.current = window.setTimeout(() => {
+        listenReconnectTimerRef.current = null;
+        const currentRoom = useListenTogetherStore.getState().room;
+        if (!currentRoom || currentRoom.id !== roomId || listenLeavingRoomIdsRef.current.has(roomId)) return;
+        setListenReconnectToken((value) => value + 1);
+      }, baseDelay + jitter);
+    };
 
     void openListenRoomStream(
       roomId,
@@ -3583,24 +3778,36 @@ export function PlayerApp() {
           }
         }
       },
-      abortController.signal
+      abortController.signal,
+      () => {
+        listenReconnectAttemptRef.current = 0;
+        setListenConnectionState("connected");
+      }
     ).catch((error) => {
       if (abortController.signal.aborted) return;
       if (listenLeavingRoomIdsRef.current.has(roomId)) return;
       const latestRoom = useListenTogetherStore.getState().room;
       if (!latestRoom || latestRoom.id !== roomId) return;
-      setListenConnectionState("reconnecting");
-      setListenMessage(error instanceof Error ? error.message : "一起听连接中断，正在等待重连。");
+      if (error instanceof AccountApiError && !error.retryable) {
+        listenReconnectAttemptRef.current = 0;
+        setListenConnectionState("error");
+        setListenMessage(toUserFacingMessage(error, "一起听已断开，请稍后重试"));
+        leaveListenLocal();
+        return;
+      }
+      scheduleReconnect(toUserFacingMessage(error, "一起听连接中断，正在等待重连"));
     });
 
     return () => {
       abortController.abort();
     };
   }, [
+    leaveListenLocal,
     applyListenPlaybackState,
     authStatus,
     authUser?.id,
     listenRoom?.id,
+    listenReconnectToken,
     setListenConnectionState,
     setListenMessage,
     setListenRoom
@@ -3654,6 +3861,36 @@ export function PlayerApp() {
     if (!listenPanelOpen) return;
     void refreshFriendPanelData();
   }, [listenPanelOpen, refreshFriendPanelData]);
+
+  useEffect(() => {
+    if (!listenPanelOpen || authStatus !== "authenticated") return;
+    const query = friendSearchInput.trim();
+    if (!query) {
+      friendSearchRequestIdRef.current += 1;
+      setFriendLoading(false);
+      setFriendSearchResults([]);
+      return;
+    }
+    if (query.length < 2) {
+      friendSearchRequestIdRef.current += 1;
+      setFriendLoading(false);
+      setFriendSearchResults([]);
+      return;
+    }
+    const timerId = window.setTimeout(() => {
+      void runFriendSearch(query);
+    }, FRIEND_SEARCH_DEBOUNCE_MS);
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [authStatus, friendSearchInput, listenPanelOpen, runFriendSearch, setFriendLoading, setFriendSearchResults]);
+
+  useEffect(() => {
+    const hasDesktopSettings = desktopHost.isDesktopHost && Boolean(desktopHost.context) && !isMobileUi;
+    if (accountManagerTab === "desktop" && !hasDesktopSettings) {
+      setAccountManagerTab(authStatus === "authenticated" ? "profile" : "advanced");
+    }
+  }, [accountManagerTab, authStatus, desktopHost.context, desktopHost.isDesktopHost, isMobileUi]);
 
   useEffect(() => {
     if (authStatus === "authenticated") return;
@@ -3941,194 +4178,412 @@ export function PlayerApp() {
     };
   }, [currentTrackId, currentTrackName, currentCoverUrl]);
 
+  const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
+  const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
+  const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
+  const musicUnblockEnabled = musicUnblockEntitlement?.enabled === true;
+  const accountTierText = musicUnblockEnabled ? "高级用户" : "普通用户";
+  const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : accountStateText;
+  const desktopContext = desktopHost.context;
+  const showDesktopSettings = !isMobileUi && desktopHost.isDesktopHost && Boolean(desktopContext);
+  const desktopActionPending = desktopActionState.action;
+  const desktopCapabilities = desktopContext?.capabilities;
+  const accountManagerTabs = [
+    { id: "profile" as const, label: "资料", visible: true, disabled: authStatus !== "authenticated" },
+    { id: "security" as const, label: "安全", visible: true, disabled: authStatus !== "authenticated" },
+    { id: "advanced" as const, label: "高级", visible: true, disabled: authStatus !== "authenticated" },
+    { id: "desktop" as const, label: "桌面", visible: showDesktopSettings, disabled: !showDesktopSettings }
+  ].filter((tab) => tab.visible);
+  const listenDrawerTabs = [
+    { id: "room" as const, label: "房间" },
+    { id: "friends" as const, label: "好友" },
+    { id: "activity" as const, label: "动态" }
+  ];
+  const listenActivityTabs = [
+    { id: "listen-invites" as const, label: "一起听邀请", count: listenInvites.length },
+    {
+      id: "friend-requests" as const,
+      label: "好友请求",
+      count: friendRequests.incoming.length + friendRequests.outgoing.length
+    }
+  ];
+  const incomingFriendRequestByUserId = useMemo(
+    () => new Map(friendRequests.incoming.map((request) => [request.requester.id, request])),
+    [friendRequests.incoming]
+  );
+  const listenLastActorName = listenRoom?.lastActor?.nickname || listenRoom?.lastActor?.email || "你";
+  const listenStatusText =
+    listenConnectionState === "connected"
+      ? "同步正常"
+      : listenConnectionState === "reconnecting"
+        ? "正在重连"
+        : listenConnectionState === "error"
+          ? "连接异常"
+          : "准备连接";
+  const friendSearchQuery = friendSearchInput.trim();
+  const friendSearchHint =
+    !friendSearchQuery
+      ? "支持昵称片段或邮箱片段，输入 2 个字符后会自动搜索。"
+      : friendSearchQuery.length < 2
+        ? "请至少输入 2 个字符。"
+        : friendLoading
+          ? "正在搜索匹配的用户..."
+          : null;
+  const accountFeedbackMessage = accountManagerError || authErrorMessage || accountManagerMessage || authNotice;
+  const accountFeedbackTone = accountManagerError || authErrorMessage ? "error" : "info";
+  const musicUnblockStatusText = !isAccountEnabled
+    ? "账号服务未启用"
+    : authStatus !== "authenticated"
+      ? "登录后兑换"
+      : musicUnblockLoading
+        ? "检查中"
+        : musicUnblockEnabled
+          ? "已启用"
+          : "未兑换";
+  const showMainNowPlaying = isMobileUi && activeTab === "search";
+
   const listenPanelContent = (
     <>
       <div className="listen-drawer-head">
         <div>
           <span>一起听</span>
-          <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : listenConnectionState === "error" ? "连接异常" : "好友邀请与多人同步"}</small>
+          <small>{listenRoom ? `${listenRoom.members.length} 人房间` : "更轻松地邀请好友一起听歌"}</small>
         </div>
         <button type="button" className="ghost" onClick={closeListenPanel}>
           关闭
         </button>
       </div>
-      <div className="listen-panel">
-        {listenRoom ? (
-          <>
-            <div className="listen-room-code">
-              <strong>{listenRoom.inviteCode}</strong>
-              <button type="button" onClick={() => void handleCopyListenInvite()}>
-                复制
-              </button>
+      <div className="utility-drawer-body">
+        <section className="listen-panel listen-room-summary-card">
+          <div className="listen-room-summary-head">
+            <div>
+              <strong>{listenRoom ? "当前房间" : "还没有一起听房间"}</strong>
+              <p className="listen-status">
+                {listenRoom
+                  ? `${listenStatusText} · 最近由 ${listenLastActorName} 更新`
+                  : authStatus === "authenticated"
+                    ? "创建房间后即可邀请好友实时同步播放"
+                    : "登录后可创建房间、加入房间并接收邀请"}
+              </p>
             </div>
-            <div className="listen-member-row">
-              {listenRoom.members.slice(0, 8).map((member) => (
-                <UserAvatar key={member.user.id} user={member.user} size="sm" className={member.online ? "online" : ""} />
-              ))}
-              {listenRoom.members.length > 8 ? <span className="listen-member-more">+{listenRoom.members.length - 8}</span> : null}
-            </div>
-            <p className="listen-status">
-              {listenConnectionState === "connected" ? "已同步" : listenConnectionState === "reconnecting" ? "重连中" : "连接中"}
-              {listenRoom.lastActor ? ` · 由 ${listenRoom.lastActor.nickname || listenRoom.lastActor.email} 更新` : ""}
+            <span className={`drawer-status-chip ${listenConnectionState}`}>{listenStatusText}</span>
+          </div>
+          <div className="listen-room-summary-grid">
+            <p className="drawer-meta-stat">
+              <span>邀请码</span>
+              <strong>{listenRoom?.inviteCode ?? "未创建"}</strong>
             </p>
-            <button type="button" className="ghost listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
-              离开房间
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
-              创建一起听
-            </button>
-            <div className="listen-join-row">
-              <input
-                value={listenInviteInput}
-                placeholder="输入邀请码"
-                onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
-              />
-              <button type="button" onClick={() => void handleJoinListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
-                加入
+            <p className="drawer-meta-stat">
+              <span>成员数</span>
+              <strong>{listenRoom ? `${listenRoom.members.length} / 8` : "0 / 8"}</strong>
+            </p>
+            <p className="drawer-meta-stat">
+              <span>房间状态</span>
+              <strong>{listenRoom ? "进行中" : "待加入"}</strong>
+            </p>
+            <p className="drawer-meta-stat">
+              <span>最近更新</span>
+              <strong>{listenRoom ? listenLastActorName : "暂无"}</strong>
+            </p>
+          </div>
+          {listenRoom ? (
+            <>
+              <div className="listen-room-code">
+                <strong>{listenRoom.inviteCode}</strong>
+                <button type="button" onClick={() => void handleCopyListenInvite()}>
+                  复制邀请码
+                </button>
+              </div>
+              <div className="listen-summary-actions">
+                <button type="button" className="listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
+                  离开房间
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="listen-summary-actions">
+              <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
+                创建一起听
               </button>
+              <form
+                className="listen-join-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleJoinListenRoom();
+                }}
+              >
+                <input
+                  value={listenInviteInput}
+                  placeholder="输入邀请码加入房间"
+                  onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
+                />
+                <button type="submit" disabled={listenBusy || authStatus !== "authenticated"}>
+                  加入
+                </button>
+              </form>
             </div>
-            {authStatus !== "authenticated" ? <p className="listen-status">登录后可使用一起听。</p> : null}
-          </>
-        )}
-        {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+          )}
+          {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+        </section>
+
+        <div className="drawer-tabbar" role="tablist" aria-label="一起听功能标签">
+          {listenDrawerTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={listenDrawerTab === tab.id}
+              className={listenDrawerTab === tab.id ? "active" : ""}
+              onClick={() => setListenDrawerTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {listenDrawerTab === "room" ? (
+          <div className="utility-panel-grid">
+            <section className="listen-drawer-section">
+              <div className="listen-section-head">
+                <span>房间成员</span>
+                <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : "创建房间后显示成员"}</small>
+              </div>
+              {listenRoom ? (
+                <div className="listen-list">
+                  {listenRoom.members.map((member) => (
+                    <div className="listen-list-row detail" key={member.user.id}>
+                      <UserAvatar user={member.user} size="sm" className={member.online ? "online" : ""} />
+                      <div>
+                        <strong>{member.user.nickname || member.user.email}</strong>
+                        <small>{member.role === "host" ? "房主" : "成员"} · {member.online ? "在线" : "离线"}</small>
+                      </div>
+                      <span className={`relation-badge ${member.online ? "ok" : "muted"}`}>{member.online ? "在线" : "离线"}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="listen-status">先创建或加入一个房间，成员列表会显示在这里。</p>
+              )}
+            </section>
+            <section className="listen-drawer-section">
+              <div className="listen-section-head">
+                <span>房间说明</span>
+                <small>单房最多 8 人</small>
+              </div>
+              <div className="drawer-info-list">
+                <p>房主会持续同步播放进度，成员仍可主动发送播放、切歌和拖动进度等操作。</p>
+                <p>如果房间连接短暂波动，客户端会自动重连，不需要手动反复刷新。</p>
+                <p>邀请码适合即时分享，复制后直接发给好友即可加入当前房间。</p>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {listenDrawerTab === "friends" ? (
+          <div className="utility-panel-grid">
+            <section className="listen-drawer-section">
+              <div className="listen-section-head">
+                <span>搜索加好友</span>
+                <small>支持昵称片段或邮箱片段</small>
+              </div>
+              <form
+                className="listen-search-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleFriendSearch();
+                }}
+              >
+                <div className="listen-join-row">
+                  <input
+                    value={friendSearchInput}
+                    placeholder="例如：昵称片段 / 邮箱片段"
+                    onChange={(event) => setFriendSearchInput(event.target.value)}
+                  />
+                  <button type="submit" disabled={friendLoading || authStatus !== "authenticated"}>
+                    搜索
+                  </button>
+                </div>
+                {friendSearchHint ? <p className="listen-status">{friendSearchHint}</p> : null}
+              </form>
+              <div className="listen-list">
+                {friendSearchResults.length ? (
+                  friendSearchResults.map((result) => {
+                    const incomingRequest = incomingFriendRequestByUserId.get(result.user.id);
+                    const primaryLabel = friendRelationActionLabel(result.relationStatus);
+                    const disabled =
+                      result.relationStatus === "friend" ||
+                      result.relationStatus === "outgoing_pending" ||
+                      result.relationStatus === "self" ||
+                      friendActionBusyId === result.user.id ||
+                      (result.relationStatus === "incoming_pending" && !incomingRequest);
+                    return (
+                      <div className="listen-list-row detail friend-search-result-row" key={result.user.id}>
+                        <UserAvatar user={result.user} size="sm" />
+                        <div>
+                          <strong>{result.user.nickname || result.user.email}</strong>
+                          <small>{result.user.email}</small>
+                        </div>
+                        <span className={`relation-badge relation-${result.relationStatus}`}>{friendRelationLabel(result.relationStatus)}</span>
+                        <button
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => {
+                            if (result.relationStatus === "incoming_pending" && incomingRequest) {
+                              void handleRespondFriendRequest(incomingRequest.id, "accept");
+                              return;
+                            }
+                            if (result.relationStatus === "none") {
+                              void handleSendFriendRequest(result.user.id);
+                            }
+                          }}
+                        >
+                          {primaryLabel}
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="listen-status">{friendSearchQuery ? "暂时没有匹配结果。" : "输入后会自动搜索，找到后可直接一键处理。"}</p>
+                )}
+              </div>
+            </section>
+
+            <section className="listen-drawer-section">
+              <div className="listen-section-head">
+                <span>好友列表</span>
+                <small>{friendList.length} 位好友</small>
+              </div>
+              {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
+              <div className="listen-list">
+                {friendList.length ? (
+                  friendList.map((friend) => (
+                    <div className="listen-list-row detail" key={friend.user.id}>
+                      <UserAvatar user={friend.user} size="sm" />
+                      <div>
+                        <strong>{friend.user.nickname || friend.user.email}</strong>
+                        <small>{friend.user.email}</small>
+                      </div>
+                      <span className="relation-badge muted">{new Date(friend.since).toLocaleDateString()}</span>
+                      <div className="listen-row-actions">
+                        <button
+                          type="button"
+                          onClick={() => void handleInviteFriendToListen(friend.user.id)}
+                          disabled={!listenRoom || friendActionBusyId === friend.user.id}
+                        >
+                          邀请
+                        </button>
+                        <button type="button" className="ghost" onClick={() => void handleDeleteFriend(friend.user.id)} disabled={friendActionBusyId === friend.user.id}>
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="listen-status">还没有好友，先在左侧搜索一个吧。</p>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {listenDrawerTab === "activity" ? (
+          <div className="utility-panel-stack">
+            {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
+            <div className="drawer-subtabbar" role="tablist" aria-label="一起听动态分类">
+              {listenActivityTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={listenActivityTab === tab.id}
+                  className={listenActivityTab === tab.id ? "active" : ""}
+                  onClick={() => setListenActivityTab(tab.id)}
+                >
+                  {tab.label}
+                  <span>{tab.count}</span>
+                </button>
+              ))}
+            </div>
+
+            {listenActivityTab === "listen-invites" ? (
+              <section className="listen-drawer-section">
+                <div className="listen-section-head">
+                  <span>一起听邀请</span>
+                  <button type="button" className="ghost" onClick={() => void refreshFriendPanelData()} disabled={friendLoading}>
+                    刷新
+                  </button>
+                </div>
+                <div className="listen-list">
+                  {listenInvites.length ? (
+                    listenInvites.map((invite) => (
+                      <div className="listen-list-row detail" key={invite.id}>
+                        <UserAvatar user={invite.inviter} size="sm" />
+                        <div>
+                          <strong>{invite.inviter.nickname || invite.inviter.email}</strong>
+                          <small>{invite.memberCount} 人房间 · 邀请码 {invite.inviteCode}</small>
+                        </div>
+                        <div className="listen-row-actions">
+                          <button type="button" onClick={() => void handleRespondListenInvite(invite.id, "accept")} disabled={friendActionBusyId === invite.id}>
+                            加入
+                          </button>
+                          <button type="button" className="ghost" onClick={() => void handleRespondListenInvite(invite.id, "reject")} disabled={friendActionBusyId === invite.id}>
+                            拒绝
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="listen-status">暂无待处理的一起听邀请。</p>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {listenActivityTab === "friend-requests" ? (
+              <section className="listen-drawer-section">
+                <div className="listen-section-head">
+                  <span>好友请求</span>
+                  <small>{friendRequests.incoming.length + friendRequests.outgoing.length} 条待处理</small>
+                </div>
+                <div className="listen-list">
+                  {friendRequests.incoming.map((request) => (
+                    <div className="listen-list-row detail" key={request.id}>
+                      <UserAvatar user={request.requester} size="sm" />
+                      <div>
+                        <strong>{request.requester.nickname || request.requester.email}</strong>
+                        <small>{request.requester.email}</small>
+                      </div>
+                      <div className="listen-row-actions">
+                        <button type="button" onClick={() => void handleRespondFriendRequest(request.id, "accept")} disabled={friendActionBusyId === request.id}>
+                          同意
+                        </button>
+                        <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "reject")} disabled={friendActionBusyId === request.id}>
+                          拒绝
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {friendRequests.outgoing.map((request) => (
+                    <div className="listen-list-row detail" key={request.id}>
+                      <UserAvatar user={request.addressee} size="sm" />
+                      <div>
+                        <strong>{request.addressee.nickname || request.addressee.email}</strong>
+                        <small>{request.addressee.email}</small>
+                      </div>
+                      <div className="listen-row-actions">
+                        <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "cancel")} disabled={friendActionBusyId === request.id}>
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!friendRequests.incoming.length && !friendRequests.outgoing.length ? <p className="listen-status">暂无待处理好友请求。</p> : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-
-      {authStatus === "authenticated" ? (
-        <>
-          <section className="listen-drawer-section">
-            <div className="listen-section-head">
-              <span>好友邀请</span>
-              <button type="button" className="ghost" onClick={() => void refreshFriendPanelData()} disabled={friendLoading}>
-                刷新
-              </button>
-            </div>
-            <div className="listen-list">
-              {listenInvites.length ? (
-                listenInvites.map((invite) => (
-                  <div className="listen-list-row" key={invite.id}>
-                    <UserAvatar user={invite.inviter} size="sm" />
-                    <div>
-                      <strong>{invite.inviter.nickname || invite.inviter.email}</strong>
-                      <small>{invite.memberCount} 人房间 · {invite.inviteCode}</small>
-                    </div>
-                    <button type="button" onClick={() => void handleRespondListenInvite(invite.id, "accept")} disabled={friendActionBusyId === invite.id}>
-                      加入
-                    </button>
-                    <button type="button" className="ghost" onClick={() => void handleRespondListenInvite(invite.id, "reject")} disabled={friendActionBusyId === invite.id}>
-                      拒绝
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p className="listen-status">暂无待处理邀请。</p>
-              )}
-            </div>
-          </section>
-
-          <section className="listen-drawer-section">
-            <div className="listen-section-head">
-              <span>邀请好友</span>
-              <small>{friendList.length} 位好友</small>
-            </div>
-            <div className="listen-list">
-              {friendList.length ? (
-                friendList.map((friend) => (
-                  <div className="listen-list-row" key={friend.user.id}>
-                    <UserAvatar user={friend.user} size="sm" />
-                    <div>
-                      <strong>{friend.user.nickname || friend.user.email}</strong>
-                      <small>{new Date(friend.since).toLocaleDateString()}</small>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleInviteFriendToListen(friend.user.id)}
-                      disabled={!listenRoom || friendActionBusyId === friend.user.id}
-                    >
-                      邀请
-                    </button>
-                    <button type="button" className="ghost" onClick={() => void handleDeleteFriend(friend.user.id)} disabled={friendActionBusyId === friend.user.id}>
-                      删除
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <p className="listen-status">还没有好友，先搜索添加一个吧。</p>
-              )}
-            </div>
-          </section>
-
-          <section className="listen-drawer-section">
-            <div className="listen-section-head">
-              <span>好友请求</span>
-              <small>{friendRequests.incoming.length + friendRequests.outgoing.length} 条待处理</small>
-            </div>
-            <div className="listen-list">
-              {friendRequests.incoming.map((request) => (
-                <div className="listen-list-row" key={request.id}>
-                  <UserAvatar user={request.requester} size="sm" />
-                  <div>
-                    <strong>{request.requester.nickname || request.requester.email}</strong>
-                    <small>请求添加你为好友</small>
-                  </div>
-                  <button type="button" onClick={() => void handleRespondFriendRequest(request.id, "accept")} disabled={friendActionBusyId === request.id}>
-                    同意
-                  </button>
-                  <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "reject")} disabled={friendActionBusyId === request.id}>
-                    拒绝
-                  </button>
-                </div>
-              ))}
-              {friendRequests.outgoing.map((request) => (
-                <div className="listen-list-row" key={request.id}>
-                  <UserAvatar user={request.addressee} size="sm" />
-                  <div>
-                    <strong>{request.addressee.nickname || request.addressee.email}</strong>
-                    <small>等待对方同意</small>
-                  </div>
-                  <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "cancel")} disabled={friendActionBusyId === request.id}>
-                    取消
-                  </button>
-                </div>
-              ))}
-              {!friendRequests.incoming.length && !friendRequests.outgoing.length ? <p className="listen-status">暂无待处理好友请求。</p> : null}
-            </div>
-          </section>
-
-          <section className="listen-drawer-section">
-            <div className="listen-section-head">
-              <span>添加好友</span>
-            </div>
-            <div className="listen-join-row">
-              <input value={friendSearchInput} placeholder="搜索邮箱或昵称" onChange={(event) => setFriendSearchInput(event.target.value)} />
-              <button type="button" onClick={() => void handleFriendSearch()} disabled={friendLoading}>
-                搜索
-              </button>
-            </div>
-            <div className="listen-list">
-              {friendSearchResults.map((result) => (
-                <div className="listen-list-row" key={result.user.id}>
-                  <UserAvatar user={result.user} size="sm" />
-                  <div>
-                    <strong>{result.user.nickname || result.user.email}</strong>
-                    <small>{result.relationStatus === "friend" ? "已是好友" : result.relationStatus === "outgoing_pending" ? "请求已发送" : result.relationStatus === "incoming_pending" ? "对方已请求添加你" : result.relationStatus === "self" ? "这是你自己" : "可发送好友请求"}</small>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleSendFriendRequest(result.user.id)}
-                    disabled={result.relationStatus !== "none" || friendActionBusyId === result.user.id}
-                  >
-                    添加
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-          {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
-        </>
-      ) : null}
     </>
   );
 
@@ -4282,159 +4737,314 @@ export function PlayerApp() {
     </button>
   );
 
-  const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
-  const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
-  const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
-  const musicUnblockEnabled = musicUnblockEntitlement?.enabled === true;
-  const accountTierText = musicUnblockEnabled ? "高级用户" : "普通用户";
-  const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : accountStateText;
-  const musicUnblockStatusText = !isAccountEnabled
-    ? "账号服务未启用"
-    : authStatus !== "authenticated"
-      ? "登录后兑换"
-      : musicUnblockLoading
-        ? "检查中"
-        : musicUnblockEnabled
-          ? "已启用"
-          : "未兑换";
-  const showMainNowPlaying = isMobileUi && activeTab === "search";
-
-  const accountManagerContent = authStatus === "authenticated" ? (
+  const accountManagerContent = authStatus === "authenticated" || showDesktopSettings ? (
     <>
-      <header className="home-playlist-drawer-head account-manager-head">
+      <header className="home-playlist-drawer-head account-manager-head account-manager-overview">
         <UserAvatar user={authUser} size="lg" />
         <div className="home-playlist-drawer-meta account-manager-meta">
-          <span>账户管理</span>
+          <span>{authStatus === "authenticated" ? "账户管理" : "桌面设置"}</span>
           <h3>{accountDisplayName}</h3>
-          <p>{authUser?.email}</p>
-          <p className={`account-tier ${musicUnblockEnabled ? "advanced" : ""}`}>{accountTierText}</p>
+          <p>{authStatus === "authenticated" ? authUser?.email : "Windows 桌面客户端"}</p>
+          <div className="account-overview-badges">
+            <span className={`account-tier ${musicUnblockEnabled ? "advanced" : ""}`}>{accountTierText}</span>
+            <span className="relation-badge ok">{accountStateText}</span>
+            {showDesktopSettings ? <span className="relation-badge muted">桌面端</span> : null}
+          </div>
         </div>
       </header>
       <div className="home-playlist-drawer-actions account-manager-actions">
-        <input
-          ref={avatarInputRef}
-          className="account-avatar-input"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
-        />
-        <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
-          {avatarUploading ? "上传中" : "更改头像"}
-        </button>
-        {authUser?.avatarUrl ? (
-          <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
-            移除头像
-          </button>
+        {authStatus === "authenticated" ? (
+          <>
+            <input
+              ref={avatarInputRef}
+              className="account-avatar-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
+            />
+            <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
+              {avatarUploading ? "上传中" : "更改头像"}
+            </button>
+            {authUser?.avatarUrl ? (
+              <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
+                移除头像
+              </button>
+            ) : null}
+            <button type="button" className="ghost" onClick={() => void handleLogout()}>
+              退出登录
+            </button>
+          </>
+        ) : isAccountEnabled ? (
+          <>
+            <button type="button" onClick={openLoginDialog}>
+              登录同步
+            </button>
+            <button type="button" className="ghost" onClick={openRegisterDialog}>
+              注册
+            </button>
+          </>
         ) : null}
-        <button type="button" className="ghost" onClick={() => void handleLogout()}>
-          退出登录
-        </button>
         <button type="button" className="ghost" onClick={closeAccountManager}>
           关闭
         </button>
       </div>
-      <div className="account-manager-body">
-        <section className="account-manager-section">
-          <div className="account-manager-section-head">
-            <span>账户资料</span>
-            <small>昵称会显示在好友与一起听中</small>
-          </div>
-          <form
-            className="account-manager-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleUpdateProfile();
-            }}
-          >
-            <label className="account-form-label">
-              昵称
-              <input
-                type="text"
-                value={profileNicknameInput}
-                maxLength={64}
-                disabled={profileSaving}
-                onChange={(event) => setProfileNicknameInput(event.target.value)}
-              />
-            </label>
-            <button type="submit" className="account-form-submit" disabled={profileSaving || !profileNicknameInput.trim()}>
-              {profileSaving ? "保存中..." : "保存昵称"}
-            </button>
-          </form>
-        </section>
-
-        <section className="account-manager-section">
-          <div className="account-manager-section-head">
-            <span>修改密码</span>
-            <small>新密码至少 10 位，包含大小写字母、数字和符号</small>
-          </div>
-          <form
-            className="account-manager-form two"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void handleChangePassword();
-            }}
-          >
-            <label className="account-form-label">
-              当前密码
-              <input
-                type="password"
-                value={passwordFormState.oldPassword}
-                disabled={passwordSaving}
-                onChange={(event) => setPasswordFormState((previous) => ({ ...previous, oldPassword: event.target.value }))}
-              />
-            </label>
-            <label className="account-form-label">
-              新密码
-              <input
-                type="password"
-                value={passwordFormState.newPassword}
-                disabled={passwordSaving}
-                onChange={(event) => setPasswordFormState((previous) => ({ ...previous, newPassword: event.target.value }))}
-              />
-            </label>
-            <button type="submit" className="account-form-submit" disabled={passwordSaving}>
-              {passwordSaving ? "修改中..." : "修改密码"}
-            </button>
-          </form>
-        </section>
-
-        <section className="account-manager-section">
-          <div className="account-manager-section-head">
-            <span>高级功能</span>
-            <small>{musicUnblockStatusText}</small>
-          </div>
-          {musicUnblockEnabled ? (
-            <p className="music-unblock-status enabled">
-              已启用{musicUnblockEntitlement?.inviteLabel ? ` · ${musicUnblockEntitlement.inviteLabel}` : ""}
-            </p>
-          ) : (
-            <form
-              className="music-unblock-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleRedeemMusicUnblockInvite();
-              }}
+      <div className="utility-drawer-body account-manager-body">
+        <div className="drawer-tabbar" role="tablist" aria-label="账户管理标签">
+          {accountManagerTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={accountManagerTab === tab.id}
+              className={accountManagerTab === tab.id ? "active" : ""}
+              onClick={() => setAccountManagerTab(tab.id)}
             >
-              <input
-                value={musicUnblockInviteInput}
-                onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
-                placeholder="输入兑换码"
-                disabled={musicUnblockLoading}
-                autoComplete="off"
-              />
-              <button type="submit" disabled={musicUnblockLoading || !musicUnblockInviteInput.trim()}>
-                {musicUnblockLoading ? "兑换中" : "兑换"}
-              </button>
-            </form>
-          )}
-          {musicUnblockMessage ? <p className="music-unblock-status">{musicUnblockMessage}</p> : null}
-          {musicUnblockError ? <p className="music-unblock-status error">{musicUnblockError}</p> : null}
-        </section>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {accountFeedbackMessage ? (
+          <p className={`account-manager-status ${accountFeedbackTone === "error" ? "error" : ""}`}>{accountFeedbackMessage}</p>
+        ) : null}
+        <div className="account-manager-layout">
+          <div className="utility-panel-stack">
+            {accountManagerTab === "profile" ? (
+              authStatus === "authenticated" ? (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>资料</span>
+                    <small>昵称会展示给好友和一起听成员</small>
+                  </div>
+                  <form
+                    className="account-manager-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleUpdateProfile();
+                    }}
+                  >
+                    <label className="account-form-label">
+                      昵称
+                      <input
+                        type="text"
+                        value={profileNicknameInput}
+                        maxLength={64}
+                        disabled={profileSaving}
+                        onChange={(event) => setProfileNicknameInput(event.target.value)}
+                      />
+                    </label>
+                    <button type="submit" className="account-form-submit" disabled={profileSaving || !profileNicknameInput.trim()}>
+                      {profileSaving ? "保存中..." : "保存昵称"}
+                    </button>
+                  </form>
+                </section>
+              ) : (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>资料</span>
+                    <small>登录后可修改头像、昵称和资料信息</small>
+                  </div>
+                  <div className="account-manager-desktop-auth-actions">
+                    <button type="button" onClick={openLoginDialog}>
+                      立即登录
+                    </button>
+                    <button type="button" className="ghost" onClick={openRegisterDialog}>
+                      注册账号
+                    </button>
+                  </div>
+                </section>
+              )
+            ) : null}
 
-        {accountManagerMessage ? <p className="account-manager-status">{accountManagerMessage}</p> : null}
-        {accountManagerError ? <p className="account-manager-status error">{accountManagerError}</p> : null}
-        {authNotice ? <p className="account-manager-status">{authNotice}</p> : null}
-        {authErrorMessage ? <p className="account-manager-status error">{authErrorMessage}</p> : null}
+            {accountManagerTab === "security" ? (
+              authStatus === "authenticated" ? (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>安全</span>
+                    <small>新密码至少 10 位，且包含大小写字母、数字和符号</small>
+                  </div>
+                  <form
+                    className="account-manager-form two"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleChangePassword();
+                    }}
+                  >
+                    <label className="account-form-label">
+                      当前密码
+                      <input
+                        type="password"
+                        value={passwordFormState.oldPassword}
+                        disabled={passwordSaving}
+                        onChange={(event) => setPasswordFormState((previous) => ({ ...previous, oldPassword: event.target.value }))}
+                      />
+                    </label>
+                    <label className="account-form-label">
+                      新密码
+                      <input
+                        type="password"
+                        value={passwordFormState.newPassword}
+                        disabled={passwordSaving}
+                        onChange={(event) => setPasswordFormState((previous) => ({ ...previous, newPassword: event.target.value }))}
+                      />
+                    </label>
+                    <button type="submit" className="account-form-submit" disabled={passwordSaving}>
+                      {passwordSaving ? "修改中..." : "修改密码"}
+                    </button>
+                  </form>
+                </section>
+              ) : (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>安全</span>
+                    <small>登录后可管理密码和登录状态</small>
+                  </div>
+                  <div className="account-manager-desktop-auth-actions">
+                    <button type="button" onClick={openLoginDialog}>
+                      登录后管理
+                    </button>
+                  </div>
+                </section>
+              )
+            ) : null}
+
+            {accountManagerTab === "advanced" ? (
+              authStatus === "authenticated" ? (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>高级</span>
+                    <small>{musicUnblockStatusText}</small>
+                  </div>
+                  {musicUnblockEnabled ? (
+                    <p className="music-unblock-status enabled">
+                      已启用{musicUnblockEntitlement?.inviteLabel ? ` · ${musicUnblockEntitlement.inviteLabel}` : ""}
+                    </p>
+                  ) : (
+                    <form
+                      className="music-unblock-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void handleRedeemMusicUnblockInvite();
+                      }}
+                    >
+                      <input
+                        value={musicUnblockInviteInput}
+                        onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
+                        placeholder="输入兑换码"
+                        disabled={musicUnblockLoading}
+                        autoComplete="off"
+                      />
+                      <button type="submit" disabled={musicUnblockLoading || !musicUnblockInviteInput.trim()}>
+                        {musicUnblockLoading ? "兑换中" : "兑换"}
+                      </button>
+                    </form>
+                  )}
+                  {musicUnblockMessage ? <p className="music-unblock-status">{musicUnblockMessage}</p> : null}
+                  {musicUnblockError ? <p className="music-unblock-status error">{musicUnblockError}</p> : null}
+                </section>
+              ) : (
+                <section className="account-manager-section">
+                  <div className="account-manager-section-head">
+                    <span>高级</span>
+                    <small>登录后可兑换高级资格并同步到桌面端</small>
+                  </div>
+                  <div className="account-manager-desktop-auth-actions">
+                    <button type="button" onClick={openLoginDialog}>
+                      登录后兑换
+                    </button>
+                  </div>
+                </section>
+              )
+            ) : null}
+
+            {accountManagerTab === "desktop" && showDesktopSettings && desktopContext ? (
+              <section className="account-manager-section">
+                <div className="account-manager-section-head">
+                  <span>桌面客户端</span>
+                  <small>仅清网页缓存，不会清账号登录状态</small>
+                </div>
+                <div className="account-manager-desktop-grid">
+                  <p className="account-manager-desktop-meta">
+                    <strong>当前版本</strong>
+                    <span>{desktopContext.appVersion}</span>
+                  </p>
+                  <p className="account-manager-desktop-meta">
+                    <strong>缓存目录</strong>
+                    <code>{desktopContext.profileFolder}</code>
+                  </p>
+                </div>
+                <div className="account-manager-desktop-actions">
+                  {desktopCapabilities?.openProfileFolder ? (
+                    <button
+                      type="button"
+                      disabled={desktopActionPending !== null}
+                      onClick={() => void handleDesktopHostAction("open-profile-folder")}
+                    >
+                      打开缓存目录
+                    </button>
+                  ) : null}
+                  {desktopCapabilities?.clearWebCache ? (
+                    <button
+                      type="button"
+                      disabled={desktopActionPending !== null}
+                      onClick={() => void handleDesktopHostAction("clear-web-cache")}
+                    >
+                      清理缓存并重载
+                    </button>
+                  ) : null}
+                  {desktopCapabilities?.openDownloadPage ? (
+                    <button
+                      type="button"
+                      disabled={desktopActionPending !== null}
+                      onClick={() => void handleDesktopHostAction("open-download-page")}
+                    >
+                      打开下载页
+                    </button>
+                  ) : null}
+                  {desktopCapabilities?.openHomeInBrowser ? (
+                    <button
+                      type="button"
+                      className="ghost"
+                      disabled={desktopActionPending !== null}
+                      onClick={() => void handleDesktopHostAction("open-home-in-browser")}
+                    >
+                      在浏览器打开网页版
+                    </button>
+                  ) : null}
+                </div>
+                {desktopActionState.message ? <p className="account-manager-status">{desktopActionState.message}</p> : null}
+                {desktopActionState.error ? <p className="account-manager-status error">{desktopActionState.error}</p> : null}
+              </section>
+            ) : null}
+          </div>
+
+          <aside className="account-manager-side-column">
+            <section className="account-manager-section compact">
+              <div className="account-manager-section-head">
+                <span>账户总览</span>
+                <small>{authStatus === "authenticated" ? "资料与同步状态" : "当前桌面环境"}</small>
+              </div>
+              <div className="drawer-info-list">
+                <p>会员层级：{accountTierText}</p>
+                <p>同步状态：{accountStateText}</p>
+                <p>高级资格：{musicUnblockStatusText}</p>
+                <p>桌面状态：{showDesktopSettings ? "已连接桌面端" : "当前为网页端"}</p>
+              </div>
+            </section>
+            {showDesktopSettings && desktopContext ? (
+              <section className="account-manager-section compact">
+                <div className="account-manager-section-head">
+                  <span>桌面信息</span>
+                  <small>Windows WebView2</small>
+                </div>
+                <div className="drawer-info-list">
+                  <p>版本：{desktopContext.appVersion}</p>
+                  <p>下载页：{desktopContext.downloadUrl}</p>
+                  <p>主页：{desktopContext.homeUrl}</p>
+                </div>
+              </section>
+            ) : null}
+          </aside>
+        </div>
       </div>
     </>
   ) : null;
@@ -4678,6 +5288,15 @@ export function PlayerApp() {
                       <button type="button" onClick={openAccountManager}>
                         账户管理
                       </button>
+                      {showDesktopSettings ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={openDesktopSettings}
+                        >
+                          桌面设置
+                        </button>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="account-switch-actions">
@@ -4694,6 +5313,15 @@ export function PlayerApp() {
                       >
                         注册
                       </button>
+                      {showDesktopSettings ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          onClick={openDesktopSettings}
+                        >
+                          桌面设置
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </div>

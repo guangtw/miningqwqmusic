@@ -13,7 +13,13 @@ const FORWARDED_REQUEST_HEADERS = [
   "x-forwarded-proto"
 ] as const;
 
-const RESPONSE_HEADERS_PASSTHROUGH = ["content-type", "cache-control", "etag", "last-modified"] as const;
+const RESPONSE_HEADERS_PASSTHROUGH = [
+  "content-type",
+  "cache-control",
+  "etag",
+  "last-modified",
+  "x-accel-buffering"
+] as const;
 
 function resolveServiceBaseUrl(): string | null {
   const raw = process.env.ACCOUNT_SERVICE_BASE_URL;

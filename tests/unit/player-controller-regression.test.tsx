@@ -76,6 +76,7 @@ describe("player controller regression", () => {
       favorites: {},
       recent: [],
       importedPlaylists: {},
+      playSourceGeneration: 0,
       hasHydrated: true
     });
 
@@ -360,6 +361,48 @@ describe("player controller regression", () => {
 
     await waitFor(() => {
       expect(latestTransition).toBe("idle");
+    });
+
+    unmount();
+  });
+
+  it("refreshes current play source after unblock entitlement generation changes", async () => {
+    const trackA = createTrack("A");
+    let requestCount = 0;
+
+    getTrackPlaySourceMock.mockImplementation((trackId: string) => {
+      requestCount += 1;
+      return Promise.resolve({
+        trackId,
+        url: requestCount === 1 ? "https://cdn.example/a-preview.mp3" : "https://cdn.example/a-full.mp3"
+      });
+    });
+
+    usePlayerStore.getState().setQueue([trackA], 0);
+    usePlayerStore.getState().setPlaying(false);
+
+    let latestSource: PlaySource | null = null;
+    const { unmount } = render(
+      <ControllerHarness
+        onState={({ source }) => {
+          latestSource = source;
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(latestSource?.url).toBe("https://cdn.example/a-preview.mp3");
+      expect(requestCount).toBeGreaterThanOrEqual(1);
+    });
+    const baselineCount = requestCount;
+
+    act(() => {
+      usePlayerStore.getState().bumpPlaySourceGeneration();
+    });
+
+    await waitFor(() => {
+      expect(requestCount).toBeGreaterThan(baselineCount);
+      expect(latestSource?.url).toBe("https://cdn.example/a-full.mp3");
     });
 
     unmount();

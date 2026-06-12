@@ -29,6 +29,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     const response = await GET(new Request("http://localhost:3000/api/music/track/1001/play-url?unblockMode=force_on"), context("1001"));
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1001", {
       level: undefined,
       unblockMode: "force_off"
@@ -53,6 +54,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/account/music/unblock/entitlement", {
       method: "GET",
       headers: {
@@ -84,6 +86,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1003", {
       level: undefined,
       unblockMode: "force_off"

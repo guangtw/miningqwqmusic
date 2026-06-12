@@ -20,6 +20,7 @@ type PlayerState = {
   importedPlaylists: Record<string, ImportedPlaylist>;
   playQualityLevel: PlayQualityLevel;
   playUnblockMode: PlayUnblockMode;
+  playSourceGeneration: number;
   hasHydrated: boolean;
 };
 
@@ -51,6 +52,7 @@ type PlayerActions = {
   }) => void;
   setPlayQualityLevel: (level: PlayQualityLevel) => void;
   setPlayUnblockMode: (mode: PlayUnblockMode) => void;
+  bumpPlaySourceGeneration: () => void;
   listImportedPlaylists: () => ImportedPlaylist[];
 };
 
@@ -72,6 +74,7 @@ export const usePlayerStore = create<PlayerStore>()(
       importedPlaylists: {},
       playQualityLevel: "standard",
       playUnblockMode: "auto",
+      playSourceGeneration: 0,
       hasHydrated: false,
       setHydrated: (hydrated) => set({ hasHydrated: hydrated }),
       setQueue: (tracks, startIndex = 0) => {
@@ -277,6 +280,7 @@ export const usePlayerStore = create<PlayerStore>()(
         }),
       setPlayQualityLevel: (playQualityLevel) => set({ playQualityLevel }),
       setPlayUnblockMode: (playUnblockMode) => set({ playUnblockMode }),
+      bumpPlaySourceGeneration: () => set((state) => ({ playSourceGeneration: state.playSourceGeneration + 1 })),
       listImportedPlaylists: () => {
         const state = get();
         return Object.values(state.importedPlaylists).sort((a, b) => b.updatedAt - a.updatedAt);

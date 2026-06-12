@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getTrackDetail, getTrackInsight, getTrackLyric, getTrackPlaySource } from "@/src/lib/client-api";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
+import { toUserFacingMessage } from "@/src/lib/user-facing-error";
 import {
   canStartRecovery,
   isSessionValid,
@@ -88,6 +89,7 @@ export function usePlayerController(): ControllerState {
   const playTrackNow = usePlayerStore((state) => state.playTrackNow);
   const playQualityLevel = usePlayerStore((state) => state.playQualityLevel);
   const playUnblockMode = usePlayerStore((state) => state.playUnblockMode);
+  const playSourceGeneration = usePlayerStore((state) => state.playSourceGeneration);
   const accessToken = useAuthStore((state) => state.accessToken);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
@@ -269,6 +271,17 @@ export function usePlayerController(): ControllerState {
     }
   }, [currentTrackId, revokeCachedBlob]);
 
+  const clearCachedPlaySources = useCallback(() => {
+    prefetchedSourceRef.current.clear();
+    prefetchSourcePromiseRef.current.clear();
+    fullAudioFetchControllerRef.current.forEach((controller) => controller.abort());
+    fullAudioFetchControllerRef.current.clear();
+    fullAudioCacheRef.current.forEach((entry) => {
+      URL.revokeObjectURL(entry.blobUrl);
+    });
+    fullAudioCacheRef.current.clear();
+  }, []);
+
   const cacheTrackAudioBlob = useCallback(async (trackId: string, sourceUrl: string) => {
     if (!sourceUrl) return;
     const existing = fullAudioCacheRef.current.get(trackId);
@@ -449,7 +462,7 @@ export function usePlayerController(): ControllerState {
         }
       } catch (error) {
         if (!isActiveSession()) return;
-        const errorMessage = (error as Error).message || "播放地址获取失败";
+        const errorMessage = toUserFacingMessage(error, "播放链接获取失败，请稍后重试");
         try {
           const insight = await getTrackInsight(nextTrackId);
           if (!isActiveSession()) return;
@@ -704,7 +717,7 @@ export function usePlayerController(): ControllerState {
         setErrorText(reason === "error" ? "播放链路已刷新" : "网络波动，已刷新播放链路");
       } catch (error) {
         if (!isCurrentSession() || !canRecoverTargetTrack(trackId)) return;
-        const message = (error as Error).message || "音频播放失败";
+        const message = toUserFacingMessage(error, "播放失败，请稍后重试");
         try {
           const insight = await getTrackInsight(trackId);
           if (!isCurrentSession() || !canRecoverTargetTrack(trackId)) return;
@@ -864,9 +877,8 @@ export function usePlayerController(): ControllerState {
   }, [queue, currentIndex, mode, currentTrackId, playSourceOptions, requestTrackPlaySource]);
 
   useEffect(() => {
-    prefetchedSourceRef.current.clear();
-    prefetchSourcePromiseRef.current.clear();
-  }, [playSourceOptions, accessToken]);
+    clearCachedPlaySources();
+  }, [accessToken, clearCachedPlaySources, playSourceGeneration, playSourceOptions]);
 
   useEffect(() => {
     const trackId = currentTrackIdRef.current;
@@ -911,7 +923,7 @@ export function usePlayerController(): ControllerState {
     return () => {
       active = false;
     };
-  }, [playSourceOptions, requestTrackPlaySource]);
+  }, [playSourceGeneration, playSourceOptions, requestTrackPlaySource]);
 
   useEffect(() => {
     const fetchControllerMap = fullAudioFetchControllerRef.current;

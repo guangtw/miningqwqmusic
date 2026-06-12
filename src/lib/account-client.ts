@@ -392,7 +392,8 @@ export async function openListenRoomStream(
   roomId: string,
   sinceVersion: number,
   onEvent: (event: ListenRoomEvent) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onReady?: () => void
 ): Promise<void> {
   const token = useAuthStore.getState().accessToken;
   const headers = new Headers();
@@ -411,6 +412,7 @@ export async function openListenRoomStream(
     });
   }
 
+  onReady?.();
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";

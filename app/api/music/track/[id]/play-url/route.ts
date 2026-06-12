@@ -73,15 +73,19 @@ export async function GET(request: Request, context: Context) {
       level: toPlayQualityLevel(searchParams.get("level")),
       unblockMode: canUseUnblock ? requestedUnblockMode : "force_off"
     });
-    return success(data, traceId);
+    const response = success(data, traceId);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
   } catch (error) {
     const appError = toAppError(error);
-    return failure({
+    const response = failure({
       code: appError.code,
       message: appError.message,
       traceId,
       status: appError.status,
       retryable: appError.retryable
     });
+    response.headers.set("Cache-Control", "no-store");
+    return response;
   }
 }

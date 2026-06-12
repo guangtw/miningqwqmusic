@@ -2,6 +2,7 @@
 
 import type {
   AlbumDetail,
+  ApiFailure,
   ApiResult,
   ArtistSearchItem,
   ArtistDetail,
@@ -20,22 +21,64 @@ import type {
   TrackLyric
 } from "@/src/types/music";
 
+export class ClientApiError extends Error {
+  readonly code: number;
+  readonly status: number;
+  readonly traceId?: string;
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { code: number; status: number; traceId?: string; retryable?: boolean }) {
+    super(message);
+    this.name = "ClientApiError";
+    this.code = options.code;
+    this.status = options.status;
+    this.traceId = options.traceId;
+    this.retryable = options.retryable ?? false;
+  }
+}
+
+function isApiFailure(payload: unknown): payload is ApiFailure {
+  if (!payload || typeof payload !== "object") return false;
+  return "code" in payload && "message" in payload && "traceId" in payload && "retryable" in payload;
+}
+
 async function readResult<T>(response: Response): Promise<T> {
   let payload: ApiResult<T> | null = null;
   try {
     payload = (await response.json()) as ApiResult<T>;
   } catch {
-    throw new Error(`请求失败（HTTP ${response.status}）`);
+    throw new ClientApiError(`请求失败（HTTP ${response.status}）`, {
+      code: 5000,
+      status: response.status,
+      retryable: false
+    });
   }
 
   if (!response.ok) {
-    throw new Error(payload.message || `请求失败（HTTP ${response.status}）`);
+    if (isApiFailure(payload)) {
+      throw new ClientApiError(payload.message || `请求失败（HTTP ${response.status}）`, {
+        code: payload.code,
+        status: response.status,
+        traceId: payload.traceId,
+        retryable: payload.retryable
+      });
+    }
+    throw new ClientApiError(`请求失败（HTTP ${response.status}）`, {
+      code: 5000,
+      status: response.status,
+      retryable: false
+    });
   }
 
   if ("data" in payload) {
     return payload.data;
   }
-  throw new Error(payload.message || "接口返回异常");
+  throw new ClientApiError(isApiFailure(payload) ? payload.message || "接口返回异常" : "接口返回异常", {
+    code: isApiFailure(payload) ? payload.code : 5000,
+    status: response.status || 500,
+    traceId: isApiFailure(payload) ? payload.traceId : undefined,
+    retryable: isApiFailure(payload) ? payload.retryable : false
+  });
 }
 
 export async function searchMusic(keyword: string, page = 1, pageSize = 20): Promise<PagedResult<Track>> {
@@ -71,7 +114,8 @@ export async function getTrackPlaySource(
   }
   const response = await fetch(`/api/music/track/${trackId}/play-url${query}`, {
     method: "GET",
-    headers
+    headers,
+    cache: "no-store"
   });
   return readResult<PlaySource>(response);
 }

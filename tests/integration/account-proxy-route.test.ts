@@ -44,7 +44,8 @@ describe("account proxy route", () => {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "set-cookie": "mqm_refresh_token=abc; HttpOnly; Path=/"
+          "set-cookie": "mqm_refresh_token=abc; HttpOnly; Path=/",
+          "x-accel-buffering": "no"
         }
       })
     );
@@ -72,6 +73,7 @@ describe("account proxy route", () => {
     expect(forwardedHeaders.get("authorization")).toBe("Bearer old-token");
 
     expect(response.headers.get("set-cookie")).toContain("mqm_refresh_token=abc");
+    expect(response.headers.get("x-accel-buffering")).toBe("no");
     const payload = await response.json();
     expect(payload.code).toBe(0);
   });

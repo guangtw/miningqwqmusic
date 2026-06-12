@@ -116,6 +116,11 @@ type PlayData = {
   freeTimeTrialPrivilege?: Record<string, unknown> | null;
 };
 
+type PlayCandidate = {
+  raw: unknown;
+  data: PlayData;
+};
+
 type AnyRecord = Record<string, unknown>;
 
 function asObject(value: unknown): AnyRecord {
@@ -424,9 +429,9 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   private pickBetterPlayCandidate(
-    current: { raw: unknown; data: PlayData } | null,
-    candidate: { raw: unknown; data: PlayData } | null
-  ): { raw: unknown; data: PlayData } | null {
+    current: PlayCandidate | null,
+    candidate: PlayCandidate | null
+  ): PlayCandidate | null {
     if (!candidate) return current;
     if (!current) return candidate;
 
@@ -562,7 +567,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
 
-    let bestCandidate = this.hasPlayableUrl(data) ? { raw, data } : null;
+    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data) ? { raw, data } : null;
     const fallbackSources = this.config.unblockSources?.length
       ? this.config.unblockSources
       : this.config.unblockSource

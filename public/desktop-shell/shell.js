@@ -4,7 +4,6 @@
   const DESKTOP_WINDOW_STATE_TYPE = "miningqwq-desktop-window-state";
   const SHELL_CHROME_MESSAGE_TYPE = "miningqwq-shell-chrome";
   const SHELL_CHROME_MESSAGE_PREFIX = "miningqwq-shell-chrome:";
-  const SHELL_CHROME_STORAGE_KEY = "miningqwq-desktop-shell-chrome-v2";
   const webview = window.chrome && window.chrome.webview;
   const frame = document.getElementById("app-frame");
   const titlebar = document.getElementById("desktop-titlebar");
@@ -49,28 +48,6 @@
     );
   }
 
-  function persistChromeTokens(tokens) {
-    try {
-      window.localStorage.setItem(SHELL_CHROME_STORAGE_KEY, JSON.stringify(tokens));
-    } catch {
-      // Ignore storage failures and fall back to live theme sync.
-    }
-  }
-
-  function loadPersistedChromeTokens() {
-    try {
-      const raw = window.localStorage.getItem(SHELL_CHROME_STORAGE_KEY);
-      if (!raw) {
-        return null;
-      }
-
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : null;
-    } catch {
-      return null;
-    }
-  }
-
   function forwardChromeTokensToHost(tokens) {
     if (!webview || typeof webview.postMessage !== "function" || !tokens || typeof tokens !== "object") {
       return;
@@ -88,16 +65,9 @@
     body.dataset.mode = tokens.mode === "light" ? "light" : "dark";
     const tokenEntries = [
       ["--shell-surface-background", tokens.surfaceBackground],
-      ["--shell-header-background", tokens.headerBackground],
-      ["--shell-header-border", tokens.headerBorder],
-      ["--shell-window-border", tokens.windowBorder],
       ["--shell-title-foreground", tokens.titleForeground],
       ["--shell-subtitle-foreground", tokens.subtitleForeground],
-      ["--shell-caption-foreground", tokens.captionForeground],
-      ["--shell-caption-hover-background", tokens.captionHoverBackground],
-      ["--shell-caption-pressed-background", tokens.captionPressedBackground],
-      ["--shell-close-hover-background", tokens.closeHoverBackground],
-      ["--shell-close-pressed-background", tokens.closePressedBackground]
+      ["--shell-caption-foreground", tokens.captionForeground]
     ];
     tokenEntries.forEach(function ([name, value]) {
       if (typeof value === "string" && value) {
@@ -107,8 +77,6 @@
     if (typeof tokens.radiusLarge === "number" && Number.isFinite(tokens.radiusLarge)) {
       document.documentElement.style.setProperty("--shell-radius-large", tokens.radiusLarge + "px");
     }
-
-    persistChromeTokens(tokens);
   }
 
   function buildDragPayload(event) {
@@ -177,11 +145,6 @@
         forwardHostMessageToIframe(latestWindowState);
       }
     });
-  }
-
-  const persistedChromeTokens = loadPersistedChromeTokens();
-  if (persistedChromeTokens) {
-    applyChromeTokens(persistedChromeTokens);
   }
 
   if (webview && typeof webview.addEventListener === "function") {

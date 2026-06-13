@@ -190,6 +190,13 @@ input:focus-visible {
   transition: color var(--theme-transition-ms) ease;
 }
 
+.spotify-shell.desktop-host-shell {
+  --shell-gap: 0px;
+  padding: 0;
+  padding-bottom: calc(var(--player-bar-height-actual, var(--player-bar-height)) + var(--player-safe-bottom) + 8px);
+  background: var(--bg-base);
+}
+
 .spotify-layout {
   flex: 1 1 auto;
   min-height: 0;
@@ -3887,6 +3894,12 @@ input:focus-visible {
   gap: 16px;
   grid-template-columns: 1fr 1.35fr 1fr;
   animation: fade-up 0.56s var(--ease) both;
+}
+
+.desktop-host-shell .spotify-player-bar {
+  left: 0;
+  right: 0;
+  bottom: calc(max(0px, env(safe-area-inset-bottom, 0px)) + var(--viewport-bottom-offset, 0px));
 }
 
 .spotify-player-bar.clickable {

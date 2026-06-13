@@ -5131,7 +5131,7 @@ export function PlayerApp() {
   } as CSSProperties;
 
   return (
-    <main ref={shellRef} className="spotify-shell">
+    <main ref={shellRef} className={desktopHost.isDesktopHost ? "spotify-shell desktop-host-shell" : "spotify-shell"}>
       <audio ref={controller.audioRef} preload="auto" />
       {listenPanelOpen && listenPanelPhase !== "closed" ? (
         <section

@@ -3,9 +3,10 @@
   const DESKTOP_CONTEXT_TYPE = "miningqwq-desktop-context";
   const DESKTOP_WINDOW_STATE_TYPE = "miningqwq-desktop-window-state";
   const SHELL_CHROME_MESSAGE_TYPE = "miningqwq-shell-chrome";
+  const SHELL_CHROME_MESSAGE_PREFIX = "miningqwq-shell-chrome:";
+  const SHELL_CHROME_STORAGE_KEY = "miningqwq-desktop-shell-chrome-v1";
   const webview = window.chrome && window.chrome.webview;
   const frame = document.getElementById("app-frame");
-  const titlebar = document.getElementById("desktop-titlebar");
   const toggleMaximizeButton = document.getElementById("toggle-maximize");
   const query = new URLSearchParams(window.location.search);
   const desktopAppUrl = query.get("appUrl") || "https://echo.miningqwq.cn/";
@@ -39,6 +40,36 @@
     );
   }
 
+  function persistChromeTokens(tokens) {
+    try {
+      window.localStorage.setItem(SHELL_CHROME_STORAGE_KEY, JSON.stringify(tokens));
+    } catch {
+      // Ignore storage failures and fall back to live theme sync.
+    }
+  }
+
+  function loadPersistedChromeTokens() {
+    try {
+      const raw = window.localStorage.getItem(SHELL_CHROME_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function forwardChromeTokensToHost(tokens) {
+    if (!webview || typeof webview.postMessage !== "function" || !tokens || typeof tokens !== "object") {
+      return;
+    }
+
+    webview.postMessage(SHELL_CHROME_MESSAGE_PREFIX + JSON.stringify(tokens));
+  }
+
   function applyChromeTokens(tokens) {
     if (!tokens || typeof tokens !== "object") {
       return;
@@ -67,6 +98,8 @@
         root.style.setProperty(key, value);
       }
     });
+
+    persistChromeTokens(tokens);
   }
 
   function applyWindowState(state) {
@@ -131,6 +164,11 @@
     });
   }
 
+  const persistedChromeTokens = loadPersistedChromeTokens();
+  if (persistedChromeTokens) {
+    applyChromeTokens(persistedChromeTokens);
+  }
+
   if (webview && typeof webview.addEventListener === "function") {
     webview.addEventListener("message", function (event) {
       handleDesktopHostMessage(event.data);
@@ -143,36 +181,13 @@
       return;
     }
 
-    if (data.type === SHELL_CHROME_MESSAGE_TYPE) {
-      applyChromeTokens(data.payload);
+    if (!frame || event.source !== frame.contentWindow || data.type !== SHELL_CHROME_MESSAGE_TYPE) {
+      return;
     }
+
+    applyChromeTokens(data.payload);
+    forwardChromeTokensToHost(data.payload);
   });
-
-  if (titlebar) {
-    titlebar.addEventListener("pointerdown", function (event) {
-      const target = event.target;
-      if (!(target instanceof HTMLElement) || target.closest(".desktop-caption-buttons")) {
-        return;
-      }
-
-      if (event.button !== 0) {
-        return;
-      }
-
-      postDesktopAction("window-begin-drag", {
-        horizontalRatio: Math.max(0, Math.min(1, event.clientX / Math.max(window.innerWidth, 1)))
-      });
-    });
-
-    titlebar.addEventListener("dblclick", function (event) {
-      const target = event.target;
-      if (target instanceof HTMLElement && target.closest(".desktop-caption-buttons")) {
-        return;
-      }
-
-      postDesktopAction("window-double-click-title");
-    });
-  }
 
   document.querySelectorAll("[data-action]").forEach(function (button) {
     button.addEventListener("click", function () {

@@ -187,6 +187,22 @@ test("home page renders player shell", async ({ page }, testInfo) => {
   await expect(page.locator(".spotify-player-controls .play-main").first()).toBeVisible();
 });
 
+test("desktop right rail omits the now-playing card and only appears for lyrics and queue", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "仅在桌面项目验证右栏收敛。");
+  await page.setViewportSize({ width: 1440, height: 920 });
+  await page.goto("/");
+
+  await expect(page.locator(".spotify-now-card")).toHaveCount(0);
+  await expect(page.locator(".spotify-right")).toHaveCount(0);
+
+  await seedPlaybackFromPlaylist(page, "100100105", "E2E 桌面右栏歌单");
+
+  await expect(page.locator(".spotify-now-card")).toHaveCount(0);
+  await expect(page.locator(".spotify-right")).toBeVisible();
+  await expect(page.locator(".spotify-right").getByRole("heading", { name: "歌词" })).toBeVisible();
+  await expect(page.locator(".spotify-right").getByRole("heading", { name: "播放队列" })).toBeVisible();
+});
+
 test("account entry stays hidden when account proxy is not configured", async ({ page }) => {
   await page.route("**/api/account/auth/refresh", async (route) => {
     await route.fulfill({
@@ -1680,17 +1696,17 @@ test("playlist summary supports expand collapse and shows active playing row ind
   await expect(page.locator(".detail-bottom-meta .marquee-text")).toContainClass("is-overflow");
 });
 
-test("mobile library tab hides merged now-playing module to free vertical space", async ({ page }, testInfo) => {
-  test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证库页空间策略。");
+test("mobile home, search, and library keep the top area free of merged now-playing cards", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证顶部留白策略。");
   await page.setViewportSize({ width: 390, height: 844 });
   await seedPlaybackFromPlaylist(page, "100100105", "E2E 移动库页空间歌单");
   await openHomeTab(page);
 
-  await expect(page.locator(".now-playing-merged")).toBeVisible();
+  await expect(page.locator(".now-playing-merged")).toHaveCount(0);
+  await openSearchTab(page);
+  await expect(page.locator(".now-playing-merged")).toHaveCount(0);
   await openLibraryTab(page);
   await expect(page.locator(".now-playing-merged")).toHaveCount(0);
-  await openHomeTab(page);
-  await expect(page.locator(".now-playing-merged")).toBeVisible();
 });
 
 test("detail queue button closes detail first then opens queue drawer", async ({ page }, testInfo) => {

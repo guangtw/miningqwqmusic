@@ -53,6 +53,19 @@ describe("shell chrome bridge", () => {
     expect(tokens.surfaceBackground).toBe("#FF07090D");
   });
 
+  it("returns to the active document theme when shell mode override is cleared", () => {
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.dataset.shellMode = "dark";
+
+    expect(collectShellChromeTokens(document).mode).toBe("dark");
+
+    delete document.documentElement.dataset.shellMode;
+
+    const tokens = collectShellChromeTokens(document);
+    expect(tokens.mode).toBe("light");
+    expect(tokens.surfaceBackground).toBe("#FFEEF3F8");
+  });
+
   it("posts shell chrome payloads to WebView hosts", () => {
     document.documentElement.dataset.theme = "dark";
     const postMessage = vi.fn();

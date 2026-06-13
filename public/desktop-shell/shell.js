@@ -18,6 +18,13 @@
   if (frame) {
     frame.src = desktopAppUrl;
   }
+  window.__miningqwqNavigateAppFrame = function (url) {
+    if (!frame || typeof url !== "string" || !url) {
+      return;
+    }
+
+    frame.src = url;
+  };
 
   function createRequestId() {
     if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -79,6 +86,24 @@
 
     const body = document.body;
     body.dataset.mode = tokens.mode === "light" ? "light" : "dark";
+    const tokenEntries = [
+      ["--shell-surface-background", tokens.surfaceBackground],
+      ["--shell-header-background", tokens.headerBackground],
+      ["--shell-header-border", tokens.headerBorder],
+      ["--shell-window-border", tokens.windowBorder],
+      ["--shell-title-foreground", tokens.titleForeground],
+      ["--shell-subtitle-foreground", tokens.subtitleForeground],
+      ["--shell-caption-foreground", tokens.captionForeground],
+      ["--shell-caption-hover-background", tokens.captionHoverBackground],
+      ["--shell-caption-pressed-background", tokens.captionPressedBackground],
+      ["--shell-close-hover-background", tokens.closeHoverBackground],
+      ["--shell-close-pressed-background", tokens.closePressedBackground]
+    ];
+    tokenEntries.forEach(function ([name, value]) {
+      if (typeof value === "string" && value) {
+        document.documentElement.style.setProperty(name, value);
+      }
+    });
     if (typeof tokens.radiusLarge === "number" && Number.isFinite(tokens.radiusLarge)) {
       document.documentElement.style.setProperty("--shell-radius-large", tokens.radiusLarge + "px");
     }

@@ -2094,7 +2094,13 @@ export function PlayerApp() {
       }
       setAuthAuthenticated(me, token);
       setAuthRefreshIssue(null);
-      window.location.reload();
+      await syncAfterLogin();
+      setAuthFormState({
+        email: "",
+        password: "",
+        nickname: ""
+      });
+      closeAccountDialog();
     } catch (error) {
       const message = resolveAuthFormError(error, authFormMode);
       setAuthError(message);
@@ -2102,7 +2108,7 @@ export function PlayerApp() {
     } finally {
       setAuthFormSubmitting(false);
     }
-  }, [authFormMode, authFormState, setAuthAuthenticated, setAuthAuthenticating, setAuthError]);
+  }, [authFormMode, authFormState, closeAccountDialog, setAuthAuthenticated, setAuthAuthenticating, setAuthError, syncAfterLogin]);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -2112,7 +2118,6 @@ export function PlayerApp() {
       setMusicUnblockEntitlement(null);
       setAuthGuest();
       setAuthSyncState("idle");
-      window.location.reload();
     } catch {
       setAuthNotice("退出失败，请稍后重试。");
     }
@@ -2228,7 +2233,7 @@ export function PlayerApp() {
       const entitlement = await redeemMusicUnblockInvite(inviteCode);
       setMusicUnblockEntitlement(entitlement);
       setMusicUnblockInviteInput("");
-      window.location.reload();
+      setMusicUnblockMessage(entitlement.enabled ? "兑换成功，当前账号已获得解锁资格。" : "兑换已处理，但当前账号暂未获得有效资格。");
     } catch (error) {
       if (error instanceof AccountApiError && error.status === 404) {
         setMusicUnblockError("兑换码无效、已禁用或已过期。");
@@ -3172,7 +3177,7 @@ export function PlayerApp() {
 
   useEffect(() => {
     const root = document.documentElement;
-    if (isDetailMounted) {
+    if (detailPhase === "opening" || detailPhase === "open") {
       root.dataset.shellMode = "dark";
     } else {
       delete root.dataset.shellMode;
@@ -3183,7 +3188,7 @@ export function PlayerApp() {
     return () => {
       delete root.dataset.shellMode;
     };
-  }, [isDetailMounted]);
+  }, [detailPhase]);
 
   const progressPercent =
     player.durationMs > 0 ? Math.min(100, Math.max(0, (player.currentTimeMs / player.durationMs) * 100)) : 0;
@@ -4254,8 +4259,6 @@ export function PlayerApp() {
         : musicUnblockEnabled
           ? "已启用"
           : "未兑换";
-  const showMainNowPlaying = isMobileUi && activeTab === "search";
-
   const listenPanelContent = (
     <>
       <div className="listen-drawer-head">
@@ -5127,73 +5130,6 @@ export function PlayerApp() {
     "--lib-seg-count": LIBRARY_VIEW_OPTIONS.length
   } as CSSProperties;
 
-  const nowPlayingMergedPanel = (
-    <section className={`now-playing-merged glass-surface ${isMobileUi ? "compact-mobile" : ""}`.trim()}>
-      <div className="now-playing-merged-main">
-        {!isMobileUi ? (
-          <div className="now-playing-merged-cover">
-            <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
-              <div
-                className="vinyl-cover"
-                role="img"
-                aria-label={currentTrack?.name ?? "默认封套"}
-                style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
-              />
-            </div>
-          </div>
-        ) : null}
-        <div className="now-playing-merged-meta">
-          <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
-          <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先搜索并播放歌曲"}</p>
-          {!isMobileUi ? (
-            <div className="now-state-row">
-              <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
-              <span className="status-pill">{modeMeta.label}</span>
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="now-playing-merged-actions">
-        <div className="spotify-player-controls compact">
-          {!isMobileUi ? (
-            <IconButton
-              ariaLabel={modeMeta.label}
-              title={modeMeta.label}
-              disabled={controlDisabled}
-              onClick={() => player.nextMode()}
-              className="ghost"
-            >
-              {modeMeta.icon}
-            </IconButton>
-          ) : null}
-          <IconButton
-            ariaLabel={player.isPlaying ? "暂停" : "播放"}
-            title={player.isPlaying ? "暂停" : "播放"}
-            className="play-main"
-            disabled={controlDisabled}
-            onClick={() => player.togglePlay()}
-          >
-            {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-          </IconButton>
-          {!isMobileUi ? (
-            <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-              <NextIcon />
-            </IconButton>
-          ) : null}
-        </div>
-        {canOpenDetail ? (
-          <button className="now-playing-merged-detail-btn" onClick={(event) => openDetail(event.currentTarget, event.detail === 0 ? "keyboard" : "pointer")}>
-            展开详情
-          </button>
-        ) : (
-          <button className="now-playing-merged-detail-btn empty-cta" onClick={() => goTab("search")}>
-            去搜索音乐
-          </button>
-        )}
-      </div>
-    </section>
-  );
-
   return (
     <main ref={shellRef} className="spotify-shell">
       <audio ref={controller.audioRef} preload="auto" />
@@ -5236,7 +5172,7 @@ export function PlayerApp() {
         </section>
       ) : null}
 
-      <section className="spotify-layout">
+      <section className={`spotify-layout ${hasTrack ? "" : "without-right-rail"}`.trim()}>
         {!isMobileUi ? (
         <aside className="spotify-sidebar">
           <div className="spotify-logo">MiningQwQ Music</div>
@@ -5368,9 +5304,7 @@ export function PlayerApp() {
         </aside>
         ) : null}
 
-        <section className={`spotify-main tab-${activeTab} ${showMainNowPlaying ? "has-now-playing" : ""}`.trim()}>
-          {showMainNowPlaying ? nowPlayingMergedPanel : null}
-
+        <section className={`spotify-main tab-${activeTab}`.trim()}>
           {activeTab === "home" ? (
             <>
               <header className={`home-toolbar ${isMobileUi ? "mobile-priority" : ""}`.trim()}>
@@ -5383,8 +5317,6 @@ export function PlayerApp() {
                   <button onClick={() => goTab("library")}>我的音乐库</button>
                 </div>
               </header>
-              {isMobileUi ? nowPlayingMergedPanel : null}
-
               {homePlaylistView === "featured" ? (
                 <>
                   <section
@@ -5894,43 +5826,8 @@ export function PlayerApp() {
           ) : null}
         </section>
 
-        <aside className="spotify-right">
-          <section className={`spotify-now-card ${!isMobileUi ? "lite" : ""}`.trim()}>
-            <h2>正在播放</h2>
-            <div className="now-state-row">
-              <span className={`status-pill ${player.isPlaying ? "live" : ""}`}>{player.isPlaying ? "播放中" : "已暂停"}</span>
-              <span className="status-pill">{modeMeta.label}</span>
-            </div>
-            <div className="spotify-now-cover">
-              <div className={`vinyl spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
-                <div
-                  className="vinyl-cover"
-                  role="img"
-                  aria-label={currentTrack?.name ?? "默认封套"}
-                  style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }}
-                />
-              </div>
-            </div>
-            {!isMobileUi ? (
-              <p className="spotify-now-lite-tip">
-                {currentTrack ? "歌曲详情已在中间播放卡展示" : "请先在搜索页选择歌曲开始播放"}
-              </p>
-            ) : (
-              <>
-                <h3>{currentTrack?.name ?? "还没有播放任何歌曲"}</h3>
-                <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
-              </>
-            )}
-            {controller.loadingSource ? (
-              <p className="status-line">
-                <Spinner />
-                正在加载播放链接...
-              </p>
-            ) : null}
-            {controller.errorText ? <p className="error">{controller.errorText}</p> : null}
-          </section>
-
-          {hasTrack ? (
+        {hasTrack ? (
+          <aside className="spotify-right">
             <>
               <section className="spotify-panel">
                 <h2>歌词</h2>
@@ -5972,8 +5869,8 @@ export function PlayerApp() {
                 </div>
               </section>
             </>
-          ) : null}
-        </aside>
+          </aside>
+        ) : null}
       </section>
 
       {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
@@ -6116,6 +6013,7 @@ export function PlayerApp() {
                 ref={accountDialogPanelRef}
                 className={`account-dialog-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}
                 tabIndex={-1}
+                autoComplete="off"
                 onKeyDown={(event) => trapTabWithin(accountDialogPanelRef.current, event)}
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -6161,6 +6059,9 @@ export function PlayerApp() {
                     placeholder="you@example.com"
                     value={authFormState.email}
                     disabled={authFormSubmitting}
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
                     onChange={(event) => setAuthFormState((previous) => ({ ...previous, email: event.target.value }))}
                   />
                 </label>
@@ -6171,6 +6072,8 @@ export function PlayerApp() {
                     placeholder="至少 8 位"
                     value={authFormState.password}
                     disabled={authFormSubmitting}
+                    autoComplete="off"
+                    spellCheck={false}
                     onChange={(event) => setAuthFormState((previous) => ({ ...previous, password: event.target.value }))}
                   />
                 </label>
@@ -6182,6 +6085,9 @@ export function PlayerApp() {
                       placeholder="例如：MiningQwQ"
                       value={authFormState.nickname}
                       disabled={authFormSubmitting}
+                      autoComplete="off"
+                      autoCapitalize="off"
+                      spellCheck={false}
                       onChange={(event) => setAuthFormState((previous) => ({ ...previous, nickname: event.target.value }))}
                     />
                   </label>

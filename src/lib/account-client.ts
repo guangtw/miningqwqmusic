@@ -104,7 +104,8 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
     method: options.method,
     headers,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "same-origin"
   });
 
   let response = await fetch(path, init);
@@ -140,7 +141,8 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
         method: options.method,
         headers: retryHeaders,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        cache: "no-store"
+        cache: "no-store",
+        credentials: "same-origin"
       });
       response = await fetch(path, retriedInit);
       payload = await parseResult<T>(response);
@@ -164,7 +166,8 @@ async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
     method: "POST",
     headers,
     body: form,
-    cache: "no-store"
+    cache: "no-store",
+    credentials: "same-origin"
   });
   let payload: ApiResult<T> | unknown;
   try {
@@ -189,7 +192,8 @@ async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
         method: "POST",
         headers: retryHeaders,
         body: form,
-        cache: "no-store"
+        cache: "no-store",
+        credentials: "same-origin"
       });
       payload = await parseResult<T>(response);
       if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {

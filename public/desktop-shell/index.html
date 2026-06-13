@@ -15,13 +15,22 @@
         <div class="desktop-drag-region" aria-hidden="true"></div>
         <div class="desktop-caption-buttons">
           <button type="button" class="caption-btn" data-action="window-minimize" aria-label="最小化">
-            <span></span>
+            <svg class="caption-icon" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2 6H10" />
+            </svg>
           </button>
           <button type="button" class="caption-btn" data-action="window-toggle-maximize" aria-label="最大化" id="toggle-maximize">
-            <span class="caption-btn-maximize"></span>
+            <svg class="caption-icon icon-maximize-restore" viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="2.25" y="2.25" width="7.5" height="7.5" rx="0.5" data-maximize="true" />
+              <rect x="3" y="4" width="5.5" height="5.5" rx="0.45" data-restore="true" />
+              <path d="M4 3H9V8" data-restore="true" />
+            </svg>
           </button>
           <button type="button" class="caption-btn close" data-action="window-close" aria-label="关闭">
-            <span class="caption-btn-close"></span>
+            <svg class="caption-icon" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M3 3L9 9" />
+              <path d="M9 3L3 9" />
+            </svg>
           </button>
         </div>
       </header>

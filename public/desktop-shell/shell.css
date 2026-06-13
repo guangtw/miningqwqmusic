@@ -12,8 +12,8 @@
   --shell-close-hover-background: rgba(205, 66, 84, 0.92);
   --shell-close-pressed-background: rgba(176, 46, 64, 0.96);
   --shell-radius-large: 18px;
-  --shell-shadow: 0 24px 56px rgba(0, 0, 0, 0.28);
   --titlebar-height: 56px;
+  --shell-transition-ms: 280ms;
 }
 
 * {
@@ -32,6 +32,9 @@ body {
 
 body {
   color: var(--shell-title-foreground);
+  transition:
+    color var(--shell-transition-ms) ease,
+    background-color var(--shell-transition-ms) ease;
 }
 
 body[data-mode="light"] {
@@ -59,10 +62,7 @@ body[data-active="false"] {
   grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
   width: 100%;
   height: 100%;
-  border-radius: var(--shell-radius-large);
-  border: 1px solid var(--shell-window-border);
-  background: var(--shell-surface-background);
-  box-shadow: var(--shell-shadow);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -74,6 +74,10 @@ body[data-active="false"] {
   background: var(--shell-header-background);
   border-bottom: 1px solid var(--shell-header-border);
   user-select: none;
+  transition:
+    background-color var(--shell-transition-ms) ease,
+    border-color var(--shell-transition-ms) ease,
+    color var(--shell-transition-ms) ease;
 }
 
 .desktop-brand {
@@ -108,13 +112,17 @@ body[data-active="false"] {
 }
 
 .caption-btn {
-  position: relative;
+  display: grid;
+  place-items: center;
   border: 0;
   outline: none;
   background: transparent;
   color: var(--shell-caption-foreground);
   border-radius: 8px;
   cursor: default;
+  transition:
+    background-color var(--shell-transition-ms) ease,
+    color var(--shell-transition-ms) ease;
 }
 
 .caption-btn:hover {
@@ -135,80 +143,43 @@ body[data-active="false"] {
   background: var(--shell-close-pressed-background);
 }
 
-.caption-btn span,
-.caption-btn::before,
-.caption-btn::after {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+.caption-btn.close {
+  color: color-mix(in srgb, var(--shell-caption-foreground) 96%, white 4%);
 }
 
-.caption-btn[data-action="window-minimize"] span {
-  width: 10px;
-  height: 1.5px;
-  border-radius: 999px;
-  background: currentColor;
+.caption-icon {
+  width: 12px;
+  height: 12px;
+  display: block;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.caption-btn-maximize {
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid currentColor;
-  border-radius: 1px;
+.caption-btn.close .caption-icon {
+  stroke-width: 1.65;
 }
 
-body[data-maximized="true"] .caption-btn-maximize {
-  width: 10px;
-  height: 10px;
-  border: 0;
+.icon-maximize-restore [data-restore="true"] {
+  opacity: 0;
 }
 
-body[data-maximized="true"] .caption-btn-maximize::before,
-body[data-maximized="true"] .caption-btn-maximize::after {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid currentColor;
-  border-radius: 1px;
+body[data-maximized="true"] .icon-maximize-restore [data-maximize="true"] {
+  opacity: 0;
 }
 
-body[data-maximized="true"] .caption-btn-maximize::before {
-  transform: translate(-1px, -1px);
-}
-
-body[data-maximized="true"] .caption-btn-maximize::after {
-  transform: translate(2px, 2px);
-}
-
-.caption-btn-close::before,
-.caption-btn-close::after {
-  content: "";
-  width: 11px;
-  height: 1.5px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-.caption-btn-close::before {
-  transform: translate(-50%, -50%) rotate(45deg);
-}
-
-.caption-btn-close::after {
-  transform: translate(-50%, -50%) rotate(-45deg);
+body[data-maximized="true"] .icon-maximize-restore [data-restore="true"] {
+  opacity: 1;
 }
 
 .desktop-frame {
   min-height: 0;
   min-width: 0;
   background: var(--shell-surface-background);
-}
-
-body[data-maximized="true"] .desktop-shell {
-  border-width: 0;
-  border-radius: 0;
-  box-shadow: none;
+  transition: background-color var(--shell-transition-ms) ease;
 }
 
 #app-frame {

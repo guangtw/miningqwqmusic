@@ -202,6 +202,10 @@ input:focus-visible {
   grid-template-columns: clamp(14rem, 14vw + 8rem, 17.5rem) minmax(0, 1fr) clamp(19rem, 18vw + 9rem, 24rem);
 }
 
+.spotify-layout.without-right-rail {
+  grid-template-columns: clamp(14rem, 14vw + 8rem, 17.5rem) minmax(0, 1fr);
+}
+
 .spotify-sidebar,
 .spotify-main,
 .spotify-right,
@@ -1262,10 +1266,6 @@ input:focus-visible {
 .spotify-main.tab-search {
   align-content: stretch;
   grid-template-rows: minmax(0, 1fr);
-}
-
-.spotify-main.tab-search.has-now-playing {
-  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .now-playing-merged {

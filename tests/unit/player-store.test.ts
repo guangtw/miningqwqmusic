@@ -23,6 +23,7 @@ describe("player store state machine", () => {
       favorites: {},
       recent: [],
       importedPlaylists: {},
+      playQualityLevel: "standard",
       hasHydrated: true
     });
   });
@@ -180,5 +181,27 @@ describe("player store state machine", () => {
     usePlayerStore.getState().removeImportedPlaylist("1");
     expect(usePlayerStore.getState().listImportedPlaylists()).toHaveLength(1);
     expect(usePlayerStore.getState().listImportedPlaylists()[0].id).toBe("2");
+  });
+
+  it("drops legacy unblock mode fields during persistence migration", async () => {
+    const migrated = (await usePlayerStore.persist.getOptions().migrate?.(
+      {
+        queue: [],
+        currentIndex: -1,
+        mode: "sequence",
+        volume: 0.8,
+        favorites: {},
+        recent: [],
+        importedPlaylists: {},
+        playQualityLevel: "lossless",
+        playUnblockMode: "force_on",
+        playSourceGeneration: 9
+      },
+      4
+    )) as Record<string, unknown>;
+
+    expect(migrated.playQualityLevel).toBe("lossless");
+    expect("playUnblockMode" in migrated).toBe(false);
+    expect("playSourceGeneration" in migrated).toBe(false);
   });
 });

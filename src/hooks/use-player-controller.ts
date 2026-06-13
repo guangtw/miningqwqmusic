@@ -88,8 +88,6 @@ export function usePlayerController(): ControllerState {
   const rememberTrack = usePlayerStore((state) => state.rememberTrack);
   const playTrackNow = usePlayerStore((state) => state.playTrackNow);
   const playQualityLevel = usePlayerStore((state) => state.playQualityLevel);
-  const playUnblockMode = usePlayerStore((state) => state.playUnblockMode);
-  const playSourceGeneration = usePlayerStore((state) => state.playSourceGeneration);
   const accessToken = useAuthStore((state) => state.accessToken);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
@@ -103,14 +101,8 @@ export function usePlayerController(): ControllerState {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>("idle");
   const playSourceOptions = useMemo<PlaySourceRequestOptions | undefined>(
-    () =>
-      playQualityLevel === "standard" && playUnblockMode === "auto"
-        ? undefined
-        : {
-            level: playQualityLevel,
-            unblockMode: playUnblockMode
-          },
-    [playQualityLevel, playUnblockMode]
+    () => (playQualityLevel === "standard" ? undefined : { level: playQualityLevel }),
+    [playQualityLevel]
   );
 
   const renewTimerRef = useRef<number | null>(null);
@@ -878,7 +870,7 @@ export function usePlayerController(): ControllerState {
 
   useEffect(() => {
     clearCachedPlaySources();
-  }, [accessToken, clearCachedPlaySources, playSourceGeneration, playSourceOptions]);
+  }, [accessToken, clearCachedPlaySources, playSourceOptions]);
 
   useEffect(() => {
     const trackId = currentTrackIdRef.current;
@@ -917,13 +909,13 @@ export function usePlayerController(): ControllerState {
       })
       .catch(() => {
         if (!active) return;
-        setErrorText("当前音质或解灰模式不可用，已保持原播放链路。");
+        setErrorText("当前播放设置不可用，已保持原播放链路。");
       });
 
     return () => {
       active = false;
     };
-  }, [playSourceGeneration, playSourceOptions, requestTrackPlaySource]);
+  }, [playSourceOptions, requestTrackPlaySource]);
 
   useEffect(() => {
     const fetchControllerMap = fullAudioFetchControllerRef.current;

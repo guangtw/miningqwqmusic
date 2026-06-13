@@ -55,6 +55,20 @@ describe("shell chrome bridge", () => {
     expect(postMessage.mock.calls[0][0]).toContain("\"mode\":\"dark\"");
   });
 
+  it("posts the updated payload immediately after theme changes", () => {
+    document.documentElement.dataset.theme = "dark";
+    const postMessage = vi.fn();
+    const host = { chrome: { webview: { postMessage } } } as unknown as Window;
+
+    postShellChromeTokens(host, document);
+    document.documentElement.dataset.theme = "light";
+    postShellChromeTokens(host, document);
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[0][0]).toContain("\"mode\":\"dark\"");
+    expect(postMessage.mock.calls[1][0]).toContain("\"mode\":\"light\"");
+  });
+
   it("reposts when the document theme changes", async () => {
     document.documentElement.dataset.theme = "dark";
     const postMessage = vi.fn();

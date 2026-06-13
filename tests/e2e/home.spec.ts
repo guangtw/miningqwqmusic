@@ -250,8 +250,17 @@ test("logged-in account entry opens account management drawer", async ({ page })
       message: "ok",
       traceId: "e2e-account-manager"
     });
+  let loggedIn = false;
 
   await page.route("**/api/account/auth/refresh", async (route) => {
+    if (loggedIn) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: successPayload({ accessToken: "e2e-token", user })
+      });
+      return;
+    }
     await route.fulfill({
       status: 401,
       contentType: "application/json",
@@ -264,10 +273,25 @@ test("logged-in account entry opens account management drawer", async ({ page })
     });
   });
   await page.route("**/api/account/auth/login", async (route) => {
+    loggedIn = true;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
+      headers: {
+        "set-cookie": "mqm_refresh=refresh-token; Path=/; HttpOnly; SameSite=Lax"
+      },
       body: successPayload({ user, accessToken: "e2e-token" })
+    });
+  });
+  await page.route("**/api/account/auth/logout", async (route) => {
+    loggedIn = false;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: {
+        "set-cookie": "mqm_refresh=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax"
+      },
+      body: successPayload({ ok: true })
     });
   });
   await page.route("**/api/account/auth/me", async (route) => {
@@ -313,6 +337,8 @@ test("logged-in account entry opens account management drawer", async ({ page })
   await page.getByLabel("邮箱").fill("user@example.com");
   await page.getByLabel("密码").fill("StrongP@ss1");
   await page.getByRole("button", { name: "登录并同步" }).click();
+  await page.waitForLoadState("networkidle");
+  await openLibraryTab(page);
 
   const accountButton = page.getByRole("button", { name: /账户管理/ }).first();
   await expect(accountButton).toBeVisible();
@@ -333,6 +359,91 @@ test("logged-in account entry opens account management drawer", async ({ page })
 
   await drawer.getByRole("tab", { name: "高级" }).click();
   await expect(drawer.getByPlaceholder("输入兑换码")).toBeVisible();
+
+  await drawer.getByRole("button", { name: "退出登录" }).click();
+  await page.waitForLoadState("networkidle");
+  await openLibraryTab(page);
+  await expect(page.getByRole("button", { name: "登录同步" }).first()).toBeVisible();
+});
+
+test("library sync status stays stable during silent background refreshes", async ({ page }) => {
+  const user = {
+    id: "sync-user",
+    email: "sync@example.com",
+    nickname: "同步用户",
+    avatarFallbackText: "同",
+    avatarFallbackBg: "#14b8a6"
+  };
+  const successPayload = (data: unknown) =>
+    JSON.stringify({
+      code: 0,
+      data,
+      message: "ok",
+      traceId: "e2e-library-sync"
+    });
+  let libraryChangesCount = 0;
+
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ accessToken: "sync-token", user })
+    });
+  });
+  await page.route("**/api/account/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload(user)
+    });
+  });
+  await page.route("**/api/account/library/snapshot", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ revision: 4, favorites: {}, recent: [], importedPlaylists: {}, updatedAt: new Date(0).toISOString() })
+    });
+  });
+  await page.route("**/api/account/library/changes?**", async (route) => {
+    libraryChangesCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ fromRevision: 4, toRevision: 4, hasChanges: false, changes: [] })
+    });
+  });
+  await page.route("**/api/account/music/unblock/entitlement", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ enabled: false })
+    });
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  if (!(await usesMobileShell(page))) {
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await page.waitForLoadState("networkidle");
+  await openLibraryTab(page);
+  await page.locator(".mobile-library-account-row").first().click();
+
+  const accountDialog = page.getByRole("dialog", { name: "账户管理" });
+  await expect(accountDialog).toBeVisible();
+  await expect(accountDialog).not.toContainText("同步状态：同步中");
+  await expect(page.getByText("同步中")).toHaveCount(0);
+  expect(libraryChangesCount).toBe(0);
+  await page.keyboard.press("Escape");
+  await expect(accountDialog).toBeHidden();
+
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-playlists']").click();
+  await page.locator(".library-segmented-pill-btn[data-library-view='library-favorites']").click();
+  await page.waitForTimeout(800);
+
+  expect(libraryChangesCount).toBe(0);
+  await expect(page.getByText("同步中")).toHaveCount(0);
 });
 
 test("empty player state offers search CTA instead of opening detail", async ({ page }, testInfo) => {
@@ -385,8 +496,17 @@ test("listen drawer groups room friends and activity with partial friend search"
       message: "ok",
       traceId: "e2e-listen-drawer"
     });
+  let loggedIn = false;
 
   await page.route("**/api/account/auth/refresh", async (route) => {
+    if (loggedIn) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: successPayload({ accessToken: "listen-token", user })
+      });
+      return;
+    }
     await route.fulfill({
       status: 401,
       contentType: "application/json",
@@ -399,9 +519,13 @@ test("listen drawer groups room friends and activity with partial friend search"
     });
   });
   await page.route("**/api/account/auth/login", async (route) => {
+    loggedIn = true;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
+      headers: {
+        "set-cookie": "mqm_refresh=listen-refresh; Path=/; HttpOnly; SameSite=Lax"
+      },
       body: successPayload({ user, accessToken: "listen-token" })
     });
   });
@@ -512,6 +636,7 @@ test("listen drawer groups room friends and activity with partial friend search"
   await page.getByLabel("邮箱").fill("listen@example.com");
   await page.getByLabel("密码").fill("StrongP@ss1");
   await page.getByRole("button", { name: "登录并同步" }).click();
+  await page.waitForLoadState("networkidle");
 
   await page.locator(".listen-sidebar-entry").first().click();
   const drawer = page.getByRole("dialog", { name: "一起听" });
@@ -529,6 +654,158 @@ test("listen drawer groups room friends and activity with partial friend search"
   await drawer.getByRole("tab", { name: "动态" }).click();
   await expect(drawer.getByRole("tab", { name: /一起听邀请/ })).toBeVisible();
   await expect(drawer.getByRole("tab", { name: /好友请求/ })).toBeVisible();
+});
+
+test("guest preview source is rebuilt after advanced login reload and detail hides unblock controls", async ({ page }) => {
+  const user = {
+    id: "vip-user",
+    email: "vip@example.com",
+    nickname: "高级用户A",
+    avatarFallbackText: "高",
+    avatarFallbackBg: "#0ea5e9"
+  };
+  const successPayload = (data: unknown) =>
+    JSON.stringify({
+      code: 0,
+      data,
+      message: "ok",
+      traceId: "e2e-playback-reload"
+    });
+  const track = {
+    id: "vip-track-1",
+    name: "VIP Reload Track",
+    artists: [{ id: "vip-artist", name: "VIP Artist" }],
+    albumName: "VIP Album",
+    durationMs: 180000,
+    coverUrl: "https://picsum.photos/seed/vip-track-1/300/300"
+  };
+  let loggedIn = false;
+  let entitlementEnabled = false;
+  let guestPlayRequestCount = 0;
+  let entitledPlayRequestCount = 0;
+
+  await page.route("**/api/account/auth/refresh", async (route) => {
+    if (loggedIn) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: successPayload({ accessToken: "vip-token", user })
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5203,
+        message: "Refresh token invalid or expired",
+        traceId: "e2e-playback-refresh",
+        retryable: false
+      })
+    });
+  });
+  await page.route("**/api/account/auth/login", async (route) => {
+    loggedIn = true;
+    entitlementEnabled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: {
+        "set-cookie": "mqm_refresh=vip-refresh; Path=/; HttpOnly; SameSite=Lax"
+      },
+      body: successPayload({ user, accessToken: "vip-token" })
+    });
+  });
+  await page.route("**/api/account/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload(user)
+    });
+  });
+  await page.route("**/api/account/library/snapshot", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ revision: 1, favorites: {}, recent: [], importedPlaylists: {}, updatedAt: new Date(0).toISOString() })
+    });
+  });
+  await page.route("**/api/account/music/unblock/entitlement", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ enabled: entitlementEnabled })
+    });
+  });
+  await page.route("**/api/music/search?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ items: [track], page: 1, pageSize: 20, total: 1 })
+    });
+  });
+  await page.route("**/api/music/track/vip-track-1/play-url**", async (route) => {
+    const authorization = route.request().headers()["authorization"];
+    const cookie = route.request().headers()["cookie"] ?? "";
+    const isEntitledRequest = Boolean(authorization) || cookie.includes("mqm_refresh=vip-refresh");
+    if (isEntitledRequest) {
+      entitledPlayRequestCount += 1;
+    } else {
+      guestPlayRequestCount += 1;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({
+        trackId: track.id,
+        url: isEntitledRequest ? "https://cdn.example/vip-full.mp3" : "https://cdn.example/vip-preview.mp3",
+        ttlSeconds: 120
+      })
+    });
+  });
+  await page.route("**/api/music/track/vip-track-1/lyric", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: successPayload({ trackId: track.id, lines: [], translatedLines: [], karaokeLines: [] })
+    });
+  });
+
+  await page.goto("/");
+  await openSearchTab(page);
+  await page.locator(".spotify-search-panel input").fill("VIP Reload");
+  await page.locator(".spotify-search-panel button").click();
+  await page.getByRole("button", { name: "播放歌曲" }).first().click();
+
+  await expect.poll(() => guestPlayRequestCount).toBeGreaterThan(0);
+  await expect(page.locator(".spotify-player-bar .player-title").filter({ hasText: track.name }).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "登录同步" }).first().click();
+  await page.getByLabel("邮箱").fill("vip@example.com");
+  await page.getByLabel("密码").fill("StrongP@ss1");
+  await page.getByRole("button", { name: "登录并同步" }).click();
+  await page.waitForLoadState("networkidle");
+
+  await expect.poll(() => entitledPlayRequestCount).toBeGreaterThan(0);
+  await page.getByRole("button", { name: /账户管理/ }).first().click();
+  const accountDrawer = page.getByRole("dialog", { name: "账户管理" });
+  await expect(accountDrawer).toBeVisible();
+  await expect(accountDrawer.locator(".account-tier.advanced").first()).toHaveText("高级用户");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".spotify-player-bar .player-title").filter({ hasText: track.name }).first()).toBeVisible();
+
+  const expandDetailButton = page.getByRole("button", { name: "展开详情" }).first();
+  if (await expandDetailButton.count()) {
+    await expandDetailButton.click();
+  } else {
+    await page.locator(".spotify-player-bar:visible").first().click({ position: { x: 8, y: 8 } });
+  }
+  const detailDialog = page.getByRole("dialog", { name: "播放详情" });
+  await expect(detailDialog).toBeVisible();
+  await detailDialog.getByRole("button", { name: "歌曲信息" }).click();
+  await expect(detailDialog.getByLabel("播放音质")).toHaveCount(1);
+  await expect(detailDialog.getByLabel("高级模式")).toHaveCount(0);
+  await expect(detailDialog.getByText("高级模式")).toHaveCount(0);
 });
 
 test("search errors stay user-friendly when network requests fail", async ({ page }) => {

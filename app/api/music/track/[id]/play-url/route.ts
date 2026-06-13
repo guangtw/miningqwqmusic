@@ -23,15 +23,21 @@ const PLAY_UNBLOCK_MODES: PlayUnblockMode[] = ["auto", "force_on", "force_off"];
 
 async function hasMusicUnblockEntitlement(request: Request): Promise<boolean> {
   const authorization = request.headers.get("authorization");
-  if (!authorization) return false;
+  const cookie = request.headers.get("cookie");
+  if (!authorization && !cookie) return false;
 
   try {
     const entitlementUrl = new URL("/api/account/music/unblock/entitlement", request.url);
+    const headers: Record<string, string> = {};
+    if (authorization) {
+      headers.authorization = authorization;
+    }
+    if (cookie) {
+      headers.cookie = cookie;
+    }
     const response = await fetch(entitlementUrl.toString(), {
       method: "GET",
-      headers: {
-        authorization
-      },
+      headers,
       cache: "no-store"
     });
     if (!response.ok) return false;

@@ -61,12 +61,14 @@ import {
   searchMusic
 } from "@/src/lib/client-api";
 import { computeHomeGridPlan } from "@/src/lib/home-grid";
+import { resolveCloudPullMode, shouldShowCloudSyncing, shouldSkipRecentCloudPull, type CloudPullOptions } from "@/src/lib/cloud-sync";
 import { extractPlaylistId } from "@/src/lib/playlist-import";
 import { beginPaletteTransition, deriveDetailForegroundTone, finishPaletteTransition, type DetailForegroundTone } from "@/src/lib/detail-palette-transition";
 import { resolveDiscoverAction } from "@/src/lib/discover-action";
 import { installDesktopHostBridge, requestDesktopHostAction, useDesktopHost } from "@/src/lib/desktop-host";
+import { getSizedImageUrl } from "@/src/lib/image-url";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
-import { installShellChromeBridge } from "@/src/lib/shell-chrome";
+import { installShellChromeBridge, postShellChromeTokens } from "@/src/lib/shell-chrome";
 import {
   canOpenPlayerDetail,
   countItemsWithinRows,
@@ -91,7 +93,6 @@ import type {
   ImportedPlaylist,
   PlaybackMode,
   PlayQualityLevel,
-  PlayUnblockMode,
   Playlist,
   SceneData,
   SongInsight,
@@ -149,9 +150,11 @@ const LOCATED_PANEL_TRACK_HIGHLIGHT_MS = 1400;
 const LIBRARY_CONTENT_LEAVE_MS = 140;
 const LIBRARY_CONTENT_ENTER_MS = 220;
 const ACCOUNT_SYNC_DEBOUNCE_MS = 180;
-const ACCOUNT_PULL_POLLING_MS = 30_000;
+const ACCOUNT_PULL_POLLING_MS = 120_000;
 const ACCOUNT_PULL_THROTTLE_MS = 1_800;
 const ACCOUNT_PULL_RETRY_BLOCK_MS = 4_000;
+const ACCOUNT_RECENT_SYNC_SKIP_MS = 4_000;
+const ARTWORK_DETAIL_FETCH_BATCH = 3;
 const FRIEND_SEARCH_DEBOUNCE_MS = 280;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
@@ -174,6 +177,12 @@ const NEUTRAL_DETAIL_PALETTE: DetailPalette = {
 const DARK_DETAIL_FOREGROUND = deriveDetailForegroundTone({ red: 28, green: 36, blue: 52 });
 
 const DEFAULT_COVER_URL = "/assets/default-cover.svg";
+const SMALL_COVER_WIDTHS = {
+  artistSearch: 96,
+  homeCard: 240,
+  importedPlaylist: 112,
+  playlistRow: 88
+} as const;
 const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = [
   { value: "standard", label: "standard" },
   { value: "higher", label: "higher" },
@@ -184,11 +193,6 @@ const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = 
   { value: "sky", label: "sky" },
   { value: "dolby", label: "dolby" },
   { value: "jymaster", label: "jymaster" }
-];
-const PLAY_UNBLOCK_MODE_OPTIONS: Array<{ value: PlayUnblockMode; label: string }> = [
-  { value: "auto", label: "自动" },
-  { value: "force_on", label: "强制开启" },
-  { value: "force_off", label: "强制关闭" }
 ];
 
 function desktopActionBusyLabel(action: DesktopHostUserAction | null): string | null {
@@ -242,6 +246,16 @@ function pushHistoryGuardState(layer: HistoryGuardLayer, tab: NavTab): void {
 function pickTrackCover(track?: Track | null): string | undefined {
   if (!track) return undefined;
   return track.coverUrl ?? track.album?.coverUrl;
+}
+
+function resolveSizedCover(url: string | undefined, width: number, height = width): string {
+  return getSizedImageUrl(url, { width, height }) ?? DEFAULT_COVER_URL;
+}
+
+function toCoverBackgroundStyle(url: string | undefined, width: number, height = width): CSSProperties {
+  return {
+    backgroundImage: `url(${resolveSizedCover(url, width, height)})`
+  };
 }
 
 function formatMs(ms: number): string {
@@ -944,7 +958,7 @@ function ArtistSearchRow({
       className="artist-search-row"
       onClick={() => onOpen(artist)}
     >
-      <div className="artist-search-cover" style={{ backgroundImage: `url(${artist.coverUrl ?? DEFAULT_COVER_URL})` }} />
+      <div className="artist-search-cover" style={toCoverBackgroundStyle(artist.coverUrl, SMALL_COVER_WIDTHS.artistSearch)} />
       <div className="artist-search-main">
         <h3>{artist.name}</h3>
         <p>
@@ -970,7 +984,6 @@ export function PlayerApp() {
   const setAuthGuest = useAuthStore((state) => state.setGuest);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthSyncState = useAuthStore((state) => state.setSyncState);
-  const bumpPlaySourceGeneration = usePlayerStore((state) => state.bumpPlaySourceGeneration);
   const listenRoom = useListenTogetherStore((state) => state.room);
   const listenConnectionState = useListenTogetherStore((state) => state.connectionState);
   const listenMessage = useListenTogetherStore((state) => state.message);
@@ -1179,12 +1192,12 @@ export function PlayerApp() {
   const syncPollTimerRef = useRef<number | null>(null);
   const cloudRevisionRef = useRef(0);
   const pullInFlightRef = useRef(false);
-  const pendingPullReasonRef = useRef<string | null>(null);
+  const pendingPullReasonRef = useRef<{ reason: string } | null>(null);
   const lastPullTriggeredAtRef = useRef(0);
   const pullRetryBlockedUntilRef = useRef(0);
+  const lastSuccessfulSyncAtRef = useRef(0);
   const authBootstrapDoneRef = useRef(false);
   const syncReadyRef = useRef(false);
-  const musicUnblockEnabledRef = useRef<boolean | undefined>(undefined);
   const listenStreamAbortRef = useRef<AbortController | null>(null);
   const listenReconnectTimerRef = useRef<number | null>(null);
   const listenReconnectAttemptRef = useRef(0);
@@ -1680,9 +1693,20 @@ export function PlayerApp() {
     }
   }, []);
 
-  const resolveTrackCover = (track?: Track | null): string => {
+  const resolveTrackCover = (
+    track?: Track | null,
+    options?: {
+      width?: number;
+      height?: number;
+      original?: boolean;
+    }
+  ): string => {
     if (!track) return DEFAULT_COVER_URL;
-    return artworkByTrackId[track.id] ?? pickTrackCover(track) ?? DEFAULT_COVER_URL;
+    const coverUrl = artworkByTrackId[track.id] ?? pickTrackCover(track) ?? DEFAULT_COVER_URL;
+    if (options?.original || !options?.width) {
+      return coverUrl;
+    }
+    return resolveSizedCover(coverUrl, options.width, options.height ?? options.width);
   };
 
   const applyCloudSnapshot = useCallback(
@@ -1773,6 +1797,7 @@ export function PlayerApp() {
         syncBaselineRef.current = next;
         cloudRevisionRef.current = Math.max(cloudRevisionRef.current, maxRevision);
         pullRetryBlockedUntilRef.current = 0;
+        lastSuccessfulSyncAtRef.current = Date.now();
 
         if (!options?.silentSuccess) {
           setAuthSyncState("success");
@@ -1792,8 +1817,9 @@ export function PlayerApp() {
   );
 
   const triggerCloudPull = useCallback(
-    async (reason: string, options?: { force?: boolean }) => {
+    async (reason: string, options?: CloudPullOptions) => {
       const force = options?.force ?? false;
+      const mode = resolveCloudPullMode(options);
       if (!isAccountEnabled || authStatus !== "authenticated" || !syncReadyRef.current || !player.hasHydrated) {
         return;
       }
@@ -1802,7 +1828,7 @@ export function PlayerApp() {
         return;
       }
       if (pullInFlightRef.current) {
-        pendingPullReasonRef.current = reason;
+        pendingPullReasonRef.current = { reason };
         return;
       }
       if (!force && now - lastPullTriggeredAtRef.current < ACCOUNT_PULL_THROTTLE_MS) {
@@ -1811,7 +1837,9 @@ export function PlayerApp() {
 
       lastPullTriggeredAtRef.current = now;
       pullInFlightRef.current = true;
-      setAuthSyncState("syncing");
+      if (shouldShowCloudSyncing(options)) {
+        setAuthSyncState("syncing");
+      }
 
       try {
         const localDelta = computeLibrarySyncDelta(syncBaselineRef.current, captureCurrentLibrarySnapshot());
@@ -1828,6 +1856,7 @@ export function PlayerApp() {
         if (!changes.hasChanges) {
           setAuthSyncState("success");
           pullRetryBlockedUntilRef.current = 0;
+          lastSuccessfulSyncAtRef.current = Date.now();
           return;
         }
 
@@ -1840,6 +1869,7 @@ export function PlayerApp() {
         cloudRevisionRef.current = Math.max(cloudRevisionRef.current, snapshot.revision ?? 0);
         setAuthSyncState("success");
         pullRetryBlockedUntilRef.current = 0;
+        lastSuccessfulSyncAtRef.current = Date.now();
       } catch (error) {
         setAuthSyncState("failed");
         setAuthNotice(resolveSyncNotice(error));
@@ -1850,7 +1880,7 @@ export function PlayerApp() {
         pendingPullReasonRef.current = null;
         if (pendingReason) {
           window.setTimeout(() => {
-            void triggerCloudPull(pendingReason, { force: true });
+            void triggerCloudPull(pendingReason.reason, { mode });
           }, 0);
         }
       }
@@ -1869,6 +1899,7 @@ export function PlayerApp() {
         importedPlaylists: snapshot.importedPlaylists ?? {}
       });
       cloudRevisionRef.current = Math.max(0, snapshot.revision ?? 0);
+      lastSuccessfulSyncAtRef.current = Date.now();
       setAuthSyncState("success");
       setAuthRefreshIssue(null);
     } catch (error) {
@@ -1886,6 +1917,7 @@ export function PlayerApp() {
     pendingPullReasonRef.current = null;
     lastPullTriggeredAtRef.current = 0;
     pullRetryBlockedUntilRef.current = 0;
+    lastSuccessfulSyncAtRef.current = 0;
     if (syncTimerRef.current) {
       window.clearTimeout(syncTimerRef.current);
       syncTimerRef.current = null;
@@ -1919,24 +1951,6 @@ export function PlayerApp() {
     setAuthFormMode("register");
     setAuthFormError(null);
     setAccountDialogOpen(true);
-  }, []);
-
-  const closeAccountManagerDirectly = useCallback(() => {
-    if (accountManagerCloseTimerRef.current) {
-      window.clearTimeout(accountManagerCloseTimerRef.current);
-      accountManagerCloseTimerRef.current = null;
-    }
-    accountManagerPhaseRef.current = "closed";
-    setAccountManagerPhase("closed");
-    setAccountManagerOpen(false);
-    setAccountManagerMessage(null);
-    setAccountManagerError(null);
-    setDesktopActionState({
-      action: null,
-      message: null,
-      error: null
-    });
-    accountManagerReturnFocusRef.current = null;
   }, []);
 
   const closeAccountManager = useCallback(() => {
@@ -2080,8 +2094,7 @@ export function PlayerApp() {
       }
       setAuthAuthenticated(me, token);
       setAuthRefreshIssue(null);
-      await syncAfterLogin();
-      closeAccountDialog();
+      window.location.reload();
     } catch (error) {
       const message = resolveAuthFormError(error, authFormMode);
       setAuthError(message);
@@ -2089,21 +2102,21 @@ export function PlayerApp() {
     } finally {
       setAuthFormSubmitting(false);
     }
-  }, [authFormMode, authFormState, closeAccountDialog, setAuthAuthenticated, setAuthAuthenticating, setAuthError, syncAfterLogin]);
+  }, [authFormMode, authFormState, setAuthAuthenticated, setAuthAuthenticating, setAuthError]);
 
   const handleLogout = useCallback(async () => {
     try {
       await logoutAccount();
-      setAuthNotice("已退出登录，已切换到本地游客模式。");
-      closeAccountManagerDirectly();
       setAuthRefreshIssue(null);
+      resetCloudSyncSession();
+      setMusicUnblockEntitlement(null);
       setAuthGuest();
       setAuthSyncState("idle");
-      resetCloudSyncSession();
+      window.location.reload();
     } catch {
       setAuthNotice("退出失败，请稍后重试。");
     }
-  }, [closeAccountManagerDirectly, resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
+  }, [resetCloudSyncSession, setAuthGuest, setAuthSyncState]);
 
   const handleUpdateProfile = useCallback(async () => {
     const nickname = profileNicknameInput.trim();
@@ -2197,21 +2210,6 @@ export function PlayerApp() {
     }
   }, [authStatus, isAccountEnabled]);
 
-  useEffect(() => {
-    const enabled = musicUnblockEntitlement?.enabled === true;
-    const previous = musicUnblockEnabledRef.current;
-    musicUnblockEnabledRef.current = enabled;
-    if (previous === undefined) {
-      if (enabled) {
-        bumpPlaySourceGeneration();
-      }
-      return;
-    }
-    if (previous !== enabled) {
-      bumpPlaySourceGeneration();
-    }
-  }, [bumpPlaySourceGeneration, musicUnblockEntitlement?.enabled]);
-
   const handleRedeemMusicUnblockInvite = useCallback(async () => {
     if (authStatus !== "authenticated") {
       setMusicUnblockError("请先登录账号后再兑换。");
@@ -2230,7 +2228,7 @@ export function PlayerApp() {
       const entitlement = await redeemMusicUnblockInvite(inviteCode);
       setMusicUnblockEntitlement(entitlement);
       setMusicUnblockInviteInput("");
-      setMusicUnblockMessage("高级功能已启用。");
+      window.location.reload();
     } catch (error) {
       if (error instanceof AccountApiError && error.status === 404) {
         setMusicUnblockError("兑换码无效、已禁用或已过期。");
@@ -2264,6 +2262,7 @@ export function PlayerApp() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     writeThemePreference(theme, window.localStorage);
+    postShellChromeTokens();
   }, [theme]);
 
   useEffect(() => {
@@ -2359,27 +2358,22 @@ export function PlayerApp() {
     if (activeTab !== "library") return;
     if (!isAccountEnabled || authStatus !== "authenticated") return;
     if (!player.hasHydrated) return;
-    void triggerCloudPull("enter-library", { force: true });
+    if (shouldSkipRecentCloudPull(lastSuccessfulSyncAtRef.current, Date.now(), ACCOUNT_RECENT_SYNC_SKIP_MS)) {
+      return;
+    }
+    void triggerCloudPull("enter-library");
   }, [activeTab, authStatus, isAccountEnabled, player.hasHydrated, triggerCloudPull]);
-
-  useEffect(() => {
-    if (activeTab !== "library") return;
-    if (libraryView !== "library-recent" && libraryView !== "library-playlists") return;
-    if (!isAccountEnabled || authStatus !== "authenticated") return;
-    if (!player.hasHydrated) return;
-    void triggerCloudPull(`library-view:${libraryView}`, { force: true });
-  }, [activeTab, authStatus, isAccountEnabled, libraryView, player.hasHydrated, triggerCloudPull]);
 
   useEffect(() => {
     if (!isAccountEnabled || authStatus !== "authenticated") return;
     if (!player.hasHydrated) return;
 
     const onFocus = () => {
-      void triggerCloudPull("window-focus", { force: true });
+      void triggerCloudPull("window-focus");
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
-      void triggerCloudPull("tab-visible", { force: true });
+      void triggerCloudPull("tab-visible");
     };
 
     window.addEventListener("focus", onFocus);
@@ -2430,7 +2424,7 @@ export function PlayerApp() {
       void (async () => {
         const result = await pushLocalChanges();
         if (result.pushed && !result.failed) {
-          void triggerCloudPull("after-local-push", { force: true });
+          void triggerCloudPull("after-local-push");
         }
       })();
     }, ACCOUNT_SYNC_DEBOUNCE_MS);
@@ -3285,14 +3279,10 @@ export function PlayerApp() {
   const visibleChannelItems = useMemo(() => homeChannelItems.slice(0, homeChannelPlan.count), [homeChannelItems, homeChannelPlan.count]);
   const visiblePlaylistItems = useMemo(() => homePlaylistItems.slice(0, homePlaylistPlan.count), [homePlaylistItems, homePlaylistPlan.count]);
   const visibleEventItems = useMemo(() => homeEventItems.slice(0, homeEventPlan.count), [homeEventItems, homeEventPlan.count]);
-
-  useEffect(() => {
+  const artworkSourceTracks = useMemo(() => {
     const sourceTracks = [
-      ...homeSeedTracks,
-      ...trackResult,
-      ...player.queue,
-      ...player.recent,
-      ...Object.values(player.favorites),
+      ...(activeTab === "home" ? homeSeedTracks.slice(0, 16) : []),
+      ...(homePlaylistPanel?.tracks.slice(0, 24) ?? []),
       ...(currentTrack ? [currentTrack] : [])
     ];
     const unique = new Map<string, Track>();
@@ -3300,8 +3290,13 @@ export function PlayerApp() {
       if (!track || unique.has(track.id)) return;
       unique.set(track.id, track);
     });
+    return Array.from(unique.values());
+  }, [activeTab, currentTrack, homePlaylistPanel?.tracks, homeSeedTracks]);
 
-    unique.forEach((track) => {
+  useEffect(() => {
+    const missingArtworkTracks: Track[] = [];
+
+    artworkSourceTracks.forEach((track) => {
       const directCover = pickTrackCover(track);
       if (directCover) {
         setArtworkByTrackId((previous) => {
@@ -3314,7 +3309,10 @@ export function PlayerApp() {
       if (pendingArtworkRef.current.has(track.id) || artworkByTrackId[track.id]) {
         return;
       }
+      missingArtworkTracks.push(track);
+    });
 
+    missingArtworkTracks.slice(0, ARTWORK_DETAIL_FETCH_BATCH).forEach((track) => {
       pendingArtworkRef.current.add(track.id);
       getTrackDetail(track.id)
         .then((detailTrack) => {
@@ -3328,7 +3326,7 @@ export function PlayerApp() {
           pendingArtworkRef.current.delete(track.id);
         });
     });
-  }, [homeSeedTracks, trackResult, player.queue, player.recent, player.favorites, currentTrack, artworkByTrackId]);
+  }, [artworkByTrackId, artworkSourceTracks]);
 
   const finishDetailClose = useCallback(() => {
     if (detailCloseTimerRef.current) {
@@ -5386,7 +5384,7 @@ export function PlayerApp() {
                           void handleDiscoverItem(item);
                         }}
                       >
-                        <div className="home-channel-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                        <div className="home-channel-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
                         <span className="home-channel-tag">推荐频道</span>
                         <h3>{item.title}</h3>
                         <p>{visibleSubtitle(item.subtitle, "精选内容推荐")}</p>
@@ -5431,7 +5429,7 @@ export function PlayerApp() {
                             void handleDiscoverItem(item);
                           }}
                         >
-                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <div className="home-playlist-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
                           <h3>{item.title}</h3>
                           <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
                         </button>
@@ -5459,7 +5457,7 @@ export function PlayerApp() {
                             void handleDiscoverItem(item);
                           }}
                         >
-                          <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <div className="home-playlist-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
                           <h3>{item.title}</h3>
                           <p>{visibleSubtitle(item.subtitle, "精选活动")}</p>
                         </button>
@@ -5490,7 +5488,7 @@ export function PlayerApp() {
                           void handleDiscoverItem(item);
                         }}
                       >
-                        <div className="home-playlist-cover" style={{ backgroundImage: `url(${item.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                        <div className="home-playlist-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
                         <h3>{item.title}</h3>
                         <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
                       </button>
@@ -5838,7 +5836,7 @@ export function PlayerApp() {
                     <div className="library-imported-list">
                       {importedPlaylists.map((playlist) => (
                         <article className="library-imported-item" key={`imported-${playlist.id}`}>
-                          <div className="library-imported-cover" style={{ backgroundImage: `url(${playlist.coverUrl ?? DEFAULT_COVER_URL})` }} />
+                          <div className="library-imported-cover" style={toCoverBackgroundStyle(playlist.coverUrl, SMALL_COVER_WIDTHS.importedPlaylist)} />
                           <div className="library-imported-meta">
                             <h4>{playlist.name}</h4>
                             <p>{visibleSubtitle(playlist.description, "已导入歌单")}</p>
@@ -6060,7 +6058,10 @@ export function PlayerApp() {
                           ref={bindPanelTrackRowRef(index)}
                           data-panel-track-index={index}
                         >
-                          <div className="home-playlist-track-cover" style={{ backgroundImage: `url(${resolveTrackCover(track)})` }} />
+                          <div
+                            className="home-playlist-track-cover"
+                            style={{ backgroundImage: `url(${resolveTrackCover(track, { width: SMALL_COVER_WIDTHS.playlistRow })})` }}
+                          />
                           <button
                             type="button"
                             className="home-playlist-track-play"
@@ -6324,23 +6325,7 @@ export function PlayerApp() {
                             </option>
                           ))}
                         </select>
-                        <label htmlFor="playback-unblock">高级模式</label>
-                        <select
-                          id="playback-unblock"
-                          value={player.playUnblockMode}
-                          disabled={!musicUnblockEnabled}
-                          onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
-                        >
-                          {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
                       </div>
-                    ) : null}
-                    {!isMobileUi && !musicUnblockEnabled ? (
-                      <p className="music-unblock-hint">登录并输入兑换码后可使用高级模式；当前播放会自动使用正常来源。</p>
                     ) : null}
                     {!isMobileUi ? (
                       <div className="download-row">
@@ -6384,23 +6369,7 @@ export function PlayerApp() {
                             </option>
                           ))}
                         </select>
-                        <label htmlFor="playback-unblock-mobile">高级模式</label>
-                        <select
-                          id="playback-unblock-mobile"
-                          value={player.playUnblockMode}
-                          disabled={!musicUnblockEnabled}
-                          onChange={(event) => player.setPlayUnblockMode(event.target.value as PlayUnblockMode)}
-                        >
-                          {PLAY_UNBLOCK_MODE_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
                       </div>
-                    ) : null}
-                    {isMobileUi && !musicUnblockEnabled ? (
-                      <p className="music-unblock-hint">登录并输入兑换码后可使用高级模式；当前播放会自动使用正常来源。</p>
                     ) : null}
                     {downloadState.message ? <p>{downloadState.message}</p> : null}
                   </div>

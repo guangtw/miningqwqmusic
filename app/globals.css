@@ -573,15 +573,13 @@ input:focus-visible {
 
 .music-unblock-head small,
 .music-unblock-note,
-.music-unblock-status,
-.music-unblock-hint {
+.music-unblock-status {
   color: var(--text-sub);
   font-size: 12px;
 }
 
 .music-unblock-note,
-.music-unblock-status,
-.music-unblock-hint {
+.music-unblock-status {
   margin: 0;
   line-height: 1.5;
 }

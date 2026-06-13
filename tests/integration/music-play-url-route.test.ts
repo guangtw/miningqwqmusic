@@ -92,6 +92,37 @@ describe("GET /api/music/track/:id/play-url", () => {
     });
   });
 
+  it("uses entitlement cookie during page reload playback rebuilds", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: 0, data: { enabled: true }, message: "ok", traceId: "trace" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/music/track/1005/play-url", {
+        headers: {
+          cookie: "mqm_refresh=refresh-token"
+        }
+      }),
+      context("1005")
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/account/music/unblock/entitlement", {
+      method: "GET",
+      headers: {
+        cookie: "mqm_refresh=refresh-token"
+      },
+      cache: "no-store"
+    });
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("1005", {
+      level: undefined,
+      unblockMode: "force_on"
+    });
+  });
+
   it("falls back to normal source when entitlement service fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ code: 5403, message: "Bad gateway", traceId: "trace", retryable: true }), {

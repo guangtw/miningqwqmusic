@@ -77,8 +77,6 @@ describe("player controller regression", () => {
       recent: [],
       importedPlaylists: {},
       playQualityLevel: "standard",
-      playUnblockMode: "auto",
-      playSourceGeneration: 0,
       hasHydrated: true
     });
 
@@ -368,15 +366,16 @@ describe("player controller regression", () => {
     unmount();
   });
 
-  it("refreshes current play source after unblock entitlement generation changes", async () => {
+  it("refreshes current play source after playback quality changes", async () => {
     const trackA = createTrack("A");
     let requestCount = 0;
 
-    getTrackPlaySourceMock.mockImplementation((trackId: string) => {
+    getTrackPlaySourceMock.mockImplementation((trackId: string, options?: { level?: string }) => {
       requestCount += 1;
       return Promise.resolve({
         trackId,
-        url: requestCount === 1 ? "https://cdn.example/a-preview.mp3" : "https://cdn.example/a-full.mp3"
+        url: requestCount === 1 ? "https://cdn.example/a-standard.mp3" : "https://cdn.example/a-lossless.mp3",
+        bitrate: options?.level === "lossless" ? 999000 : 320000
       });
     });
 
@@ -393,32 +392,33 @@ describe("player controller regression", () => {
     );
 
     await waitFor(() => {
-      expect(latestSource?.url).toBe("https://cdn.example/a-preview.mp3");
+      expect(latestSource?.url).toBe("https://cdn.example/a-standard.mp3");
       expect(requestCount).toBeGreaterThanOrEqual(1);
     });
     const baselineCount = requestCount;
 
     act(() => {
-      usePlayerStore.getState().bumpPlaySourceGeneration();
+      usePlayerStore.getState().setPlayQualityLevel("lossless");
     });
 
     await waitFor(() => {
       expect(requestCount).toBeGreaterThan(baselineCount);
-      expect(latestSource?.url).toBe("https://cdn.example/a-full.mp3");
+      expect(latestSource?.url).toBe("https://cdn.example/a-lossless.mp3");
     });
 
     unmount();
   });
 
-  it("refreshes playlist-backed playback from preview source to full source after entitlement generation changes", async () => {
+  it("refreshes playlist-backed playback when playback quality changes", async () => {
     const playlistTracks = [createTrack("playlist-A"), createTrack("playlist-B")];
     let requestCount = 0;
 
-    getTrackPlaySourceMock.mockImplementation((trackId: string) => {
+    getTrackPlaySourceMock.mockImplementation((trackId: string, options?: { level?: string }) => {
       requestCount += 1;
       return Promise.resolve({
         trackId,
-        url: requestCount === 1 ? "https://cdn.example/playlist-preview.mp3" : "https://cdn.example/playlist-full.mp3"
+        url: requestCount === 1 ? "https://cdn.example/playlist-standard.mp3" : "https://cdn.example/playlist-lossless.mp3",
+        bitrate: options?.level === "lossless" ? 999000 : 320000
       });
     });
 
@@ -436,17 +436,17 @@ describe("player controller regression", () => {
 
     await waitFor(() => {
       expect(latestSource?.trackId).toBe(playlistTracks[0].id);
-      expect(latestSource?.url).toBe("https://cdn.example/playlist-preview.mp3");
+      expect(latestSource?.url).toBe("https://cdn.example/playlist-standard.mp3");
     });
     const baselineCount = requestCount;
 
     act(() => {
-      usePlayerStore.getState().bumpPlaySourceGeneration();
+      usePlayerStore.getState().setPlayQualityLevel("lossless");
     });
 
     await waitFor(() => {
       expect(requestCount).toBeGreaterThan(baselineCount);
-      expect(latestSource?.url).toBe("https://cdn.example/playlist-full.mp3");
+      expect(latestSource?.url).toBe("https://cdn.example/playlist-lossless.mp3");
     });
 
     unmount();

@@ -1,0 +1,227 @@
+:root {
+  color-scheme: dark;
+  --shell-surface-background: #07090d;
+  --shell-header-background: rgba(7, 9, 13, 0.96);
+  --shell-header-border: rgba(255, 255, 255, 0.09);
+  --shell-window-border: rgba(255, 255, 255, 0.16);
+  --shell-title-foreground: #f7f8fb;
+  --shell-subtitle-foreground: #b8c0cf;
+  --shell-caption-foreground: #f7f8fb;
+  --shell-caption-hover-background: rgba(255, 255, 255, 0.12);
+  --shell-caption-pressed-background: rgba(255, 255, 255, 0.18);
+  --shell-close-hover-background: rgba(196, 52, 74, 0.86);
+  --shell-close-pressed-background: rgba(169, 39, 60, 0.94);
+  --shell-radius-large: 18px;
+  --shell-shadow: 0 24px 56px rgba(0, 0, 0, 0.36);
+  --titlebar-height: 56px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+}
+
+body {
+  color: var(--shell-title-foreground);
+}
+
+body[data-mode="light"] {
+  color-scheme: light;
+}
+
+body[data-active="false"] {
+  --shell-window-border: color-mix(in srgb, var(--shell-window-border) 52%, transparent);
+  --shell-header-border: color-mix(in srgb, var(--shell-header-border) 52%, transparent);
+}
+
+.desktop-shell {
+  display: grid;
+  grid-template-rows: var(--titlebar-height) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  border-radius: var(--shell-radius-large);
+  border: 1px solid var(--shell-window-border);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--shell-header-background) 80%, transparent), transparent 28%),
+    var(--shell-surface-background);
+  box-shadow: var(--shell-shadow);
+  overflow: hidden;
+}
+
+.desktop-titlebar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: stretch;
+  min-height: 0;
+  background: var(--shell-header-background);
+  border-bottom: 1px solid var(--shell-header-border);
+  user-select: none;
+}
+
+.desktop-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 0 16px;
+  pointer-events: none;
+}
+
+.desktop-brand-mark {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+}
+
+.desktop-brand-mark svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.desktop-brand-text {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.05;
+}
+
+.desktop-brand-text strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--shell-title-foreground);
+}
+
+.desktop-brand-text small {
+  margin-top: 2px;
+  font-size: 10px;
+  color: var(--shell-subtitle-foreground);
+}
+
+.desktop-drag-region {
+  min-width: 0;
+  min-height: 0;
+}
+
+.desktop-caption-buttons {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 46px;
+  align-items: stretch;
+  padding: 8px 10px 8px 0;
+  gap: 0;
+}
+
+.caption-btn {
+  position: relative;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--shell-caption-foreground);
+  border-radius: 8px;
+  cursor: default;
+}
+
+.caption-btn:hover {
+  background: var(--shell-caption-hover-background);
+}
+
+.caption-btn:active {
+  background: var(--shell-caption-pressed-background);
+}
+
+.caption-btn.close:hover {
+  color: #fff;
+  background: var(--shell-close-hover-background);
+}
+
+.caption-btn.close:active {
+  color: #fff;
+  background: var(--shell-close-pressed-background);
+}
+
+.caption-btn span,
+.caption-btn::before,
+.caption-btn::after {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.caption-btn[data-action="window-minimize"] span {
+  width: 10px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.caption-btn-maximize {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+}
+
+body[data-maximized="true"] .caption-btn-maximize {
+  width: 10px;
+  height: 10px;
+  border: 0;
+}
+
+body[data-maximized="true"] .caption-btn-maximize::before,
+body[data-maximized="true"] .caption-btn-maximize::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  border-radius: 1px;
+}
+
+body[data-maximized="true"] .caption-btn-maximize::before {
+  transform: translate(-1px, -1px);
+}
+
+body[data-maximized="true"] .caption-btn-maximize::after {
+  transform: translate(2px, 2px);
+}
+
+.caption-btn-close::before,
+.caption-btn-close::after {
+  content: "";
+  width: 11px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.caption-btn-close::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.caption-btn-close::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.desktop-frame {
+  min-height: 0;
+  min-width: 0;
+  background: var(--shell-surface-background);
+}
+
+#app-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: var(--shell-surface-background);
+}

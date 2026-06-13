@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MiningQwQ Music Desktop</title>
+    <link rel="stylesheet" href="./shell.css" />
+  </head>
+  <body data-mode="dark" data-active="true" data-maximized="false">
+    <div class="desktop-shell">
+      <header class="desktop-titlebar" id="desktop-titlebar">
+        <div class="desktop-brand">
+          <span class="desktop-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" focusable="false">
+              <defs>
+                <linearGradient id="desktopBrandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#7bf4d5" />
+                  <stop offset="100%" stop-color="#19353f" />
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="36" height="36" rx="12" fill="#0b1318" />
+              <path
+                d="M23.8 10.5c-5.6 0-10.1 4.5-10.1 10s4.5 10 10.1 10c1.9 0 3.5-.4 5-1.2l-2.7-3.5a5.8 5.8 0 0 1-2.3.4 5.7 5.7 0 0 1 0-11.4c1.7 0 3 .4 4.2 1.4v5.4l-4.7-2.1v4l8.8 4.4V15c-2.1-2.9-5.2-4.5-8.3-4.5Z"
+                fill="url(#desktopBrandGradient)"
+              />
+            </svg>
+          </span>
+          <span class="desktop-brand-text">
+            <strong>MiningQwQ</strong>
+            <small>Music</small>
+          </span>
+        </div>
+        <div class="desktop-drag-region" aria-hidden="true"></div>
+        <div class="desktop-caption-buttons">
+          <button type="button" class="caption-btn" data-action="window-minimize" aria-label="最小化">
+            <span></span>
+          </button>
+          <button type="button" class="caption-btn" data-action="window-toggle-maximize" aria-label="最大化" id="toggle-maximize">
+            <span class="caption-btn-maximize"></span>
+          </button>
+          <button type="button" class="caption-btn close" data-action="window-close" aria-label="关闭">
+            <span class="caption-btn-close"></span>
+          </button>
+        </div>
+      </header>
+      <main class="desktop-frame">
+        <iframe id="app-frame" title="MiningQwQ Music" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+      </main>
+    </div>
+    <script src="./shell.js"></script>
+  </body>
+</html>

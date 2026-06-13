@@ -1,12 +1,23 @@
 import { useSyncExternalStore } from "react";
 
-export type DesktopHostAction = "ready" | "open-profile-folder" | "clear-web-cache" | "open-download-page" | "open-home-in-browser";
+export type DesktopHostAction =
+  | "ready"
+  | "open-profile-folder"
+  | "clear-web-cache"
+  | "open-download-page"
+  | "open-home-in-browser"
+  | "window-minimize"
+  | "window-toggle-maximize"
+  | "window-close"
+  | "window-begin-drag"
+  | "window-double-click-title";
 
 export type DesktopHostCapabilities = {
   openProfileFolder: boolean;
   clearWebCache: boolean;
   openDownloadPage: boolean;
   openHomeInBrowser: boolean;
+  windowControls: boolean;
 };
 
 export type DesktopHostContext = {
@@ -16,6 +27,12 @@ export type DesktopHostContext = {
   profileFolder: string;
   downloadUrl: string;
   capabilities: DesktopHostCapabilities;
+};
+
+export type DesktopWindowState = {
+  isMaximized: boolean;
+  isActive: boolean;
+  platformTheme?: "light" | "dark";
 };
 
 export type DesktopHostActionResult = {
@@ -28,12 +45,14 @@ type DesktopHostSnapshot = {
   context: DesktopHostContext | null;
   isDesktopHost: boolean;
   lastActionResult: DesktopHostActionResult | null;
+  windowState: DesktopWindowState | null;
 };
 
 type DesktopHostActionMessage = {
   type: "miningqwq-desktop-action";
   action: DesktopHostAction;
   requestId: string;
+  payload?: Record<string, unknown> | null;
 };
 
 type DesktopHostContextMessage = {
@@ -48,9 +67,18 @@ type DesktopHostActionResultMessage = {
   message?: string;
 };
 
-type DesktopHostIncomingMessage = DesktopHostContextMessage | DesktopHostActionResultMessage;
+type DesktopWindowStateMessage = {
+  type: "miningqwq-desktop-window-state";
+  data: DesktopWindowState;
+};
+
+type DesktopHostIncomingMessage = DesktopHostContextMessage | DesktopHostActionResultMessage | DesktopWindowStateMessage;
 
 type WebViewMessageEvent = {
+  data: unknown;
+};
+
+type WindowMessageEvent = {
   data: unknown;
 };
 
@@ -65,6 +93,8 @@ type WindowLike = {
     webview?: WebViewLike;
   };
   crypto?: Pick<Crypto, "randomUUID">;
+  addEventListener?: (type: "message", listener: (event: WindowMessageEvent) => void) => void;
+  removeEventListener?: (type: "message", listener: (event: WindowMessageEvent) => void) => void;
 };
 
 type PendingDesktopAction = {
@@ -76,12 +106,14 @@ type PendingDesktopAction = {
 const DESKTOP_HOST_ACTION_TYPE = "miningqwq-desktop-action";
 const DESKTOP_HOST_CONTEXT_TYPE = "miningqwq-desktop-context";
 const DESKTOP_HOST_ACTION_RESULT_TYPE = "miningqwq-desktop-action-result";
+const DESKTOP_WINDOW_STATE_TYPE = "miningqwq-desktop-window-state";
 const DESKTOP_HOST_ACTION_TIMEOUT_MS = 8000;
 
 const initialSnapshot: DesktopHostSnapshot = {
   context: null,
   isDesktopHost: false,
-  lastActionResult: null
+  lastActionResult: null,
+  windowState: null
 };
 
 const listeners = new Set<() => void>();
@@ -159,6 +191,24 @@ function parseIncomingDesktopHostMessage(raw: unknown): DesktopHostIncomingMessa
     };
   }
 
+  if (
+    candidate.type === DESKTOP_WINDOW_STATE_TYPE &&
+    candidate.data &&
+    typeof candidate.data === "object" &&
+    typeof (candidate.data as Partial<DesktopWindowState>).isMaximized === "boolean" &&
+    typeof (candidate.data as Partial<DesktopWindowState>).isActive === "boolean"
+  ) {
+    const windowState = candidate.data as DesktopWindowState;
+    return {
+      type: DESKTOP_WINDOW_STATE_TYPE,
+      data: {
+        isMaximized: windowState.isMaximized,
+        isActive: windowState.isActive,
+        platformTheme: windowState.platformTheme === "light" || windowState.platformTheme === "dark" ? windowState.platformTheme : undefined
+      }
+    };
+  }
+
   return null;
 }
 
@@ -182,6 +232,14 @@ function handleDesktopHostMessage(raw: unknown) {
     return;
   }
 
+  if (message.type === DESKTOP_WINDOW_STATE_TYPE) {
+    updateSnapshot({
+      windowState: message.data,
+      isDesktopHost: true
+    });
+    return;
+  }
+
   const result: DesktopHostActionResult = {
     requestId: message.requestId,
     ok: message.ok,
@@ -193,45 +251,53 @@ function handleDesktopHostMessage(raw: unknown) {
   resolvePendingDesktopAction(result);
 }
 
-function postDesktopHostAction(action: DesktopHostAction, requestId: string, targetWindow: WindowLike) {
+function postDesktopHostAction(
+  action: DesktopHostAction,
+  requestId: string,
+  targetWindow: WindowLike,
+  payload?: Record<string, unknown> | null
+) {
   const webview = getWebView(targetWindow);
   if (!webview) {
     throw new Error("桌面客户端通信不可用。");
   }
 
-  const payload: DesktopHostActionMessage = {
+  const message: DesktopHostActionMessage = {
     type: DESKTOP_HOST_ACTION_TYPE,
     action,
-    requestId
+    requestId,
+    payload: payload ?? null
   };
-  webview.postMessage?.(JSON.stringify(payload));
+  webview.postMessage?.(JSON.stringify(message));
 }
 
 export function installDesktopHostBridge(targetWindow: WindowLike = window): () => void {
   const webview = getWebView(targetWindow);
-  if (!webview || typeof webview.addEventListener !== "function") {
-    return () => undefined;
-  }
-
-  const handleMessage = (event: WebViewMessageEvent) => {
+  const handleMessage = (event: WebViewMessageEvent | WindowMessageEvent) => {
     handleDesktopHostMessage(event.data);
   };
 
-  webview.addEventListener("message", handleMessage);
-  try {
-    postDesktopHostAction("ready", createRequestId(targetWindow), targetWindow);
-  } catch {
-    // Ignore: if the bridge isn't ready yet, navigation completed will trigger another handshake.
+  if (webview && typeof webview.addEventListener === "function") {
+    webview.addEventListener("message", handleMessage);
+    try {
+      postDesktopHostAction("ready", createRequestId(targetWindow), targetWindow);
+    } catch {
+      // Ignore: if the bridge isn't ready yet, navigation completed will trigger another handshake.
+    }
   }
 
+  targetWindow.addEventListener?.("message", handleMessage);
+
   return () => {
-    webview.removeEventListener?.("message", handleMessage);
+    webview?.removeEventListener?.("message", handleMessage);
+    targetWindow.removeEventListener?.("message", handleMessage);
   };
 }
 
 export function requestDesktopHostAction(
   action: Exclude<DesktopHostAction, "ready">,
-  targetWindow: WindowLike = window
+  targetWindow: WindowLike = window,
+  payload?: Record<string, unknown> | null
 ): Promise<DesktopHostActionResult> {
   if (!currentSnapshot.isDesktopHost || !currentSnapshot.context) {
     return Promise.reject(new Error("桌面客户端暂未连接，请稍后重试。"));
@@ -252,7 +318,7 @@ export function requestDesktopHostAction(
     });
 
     try {
-      postDesktopHostAction(action, requestId, targetWindow);
+      postDesktopHostAction(action, requestId, targetWindow, payload);
     } catch (error) {
       pendingActions.delete(requestId);
       clearTimeout(timeoutId);

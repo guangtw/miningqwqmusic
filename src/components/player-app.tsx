@@ -3169,6 +3169,22 @@ export function PlayerApp() {
   const canOpenDetail = canOpenPlayerDetail(hasTrack);
   const controlDisabled = player.queue.length === 0;
   const isDetailMounted = detailPhase !== "closed";
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (isDetailMounted) {
+      root.dataset.shellMode = "dark";
+    } else {
+      delete root.dataset.shellMode;
+    }
+
+    postShellChromeTokens();
+
+    return () => {
+      delete root.dataset.shellMode;
+    };
+  }, [isDetailMounted]);
+
   const progressPercent =
     player.durationMs > 0 ? Math.min(100, Math.max(0, (player.currentTimeMs / player.durationMs) * 100)) : 0;
   const volumePercent = Math.min(100, Math.max(0, player.volume * 100));

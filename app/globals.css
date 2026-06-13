@@ -95,8 +95,8 @@
   --shadow-high: 0 20px 44px rgba(64, 87, 122, 0.2);
   --shell-surface-background: var(--bg-base);
   --shell-header-background: rgba(246, 250, 255, 0.96);
-  --shell-header-border: rgba(28, 40, 56, 0.14);
-  --shell-window-border: rgba(28, 40, 56, 0.24);
+  --shell-header-border: rgba(106, 120, 144, 0.12);
+  --shell-window-border: rgba(106, 120, 144, 0.14);
   --shell-title-foreground: var(--text-main);
   --shell-subtitle-foreground: var(--text-sub);
   --shell-caption-foreground: var(--text-main);

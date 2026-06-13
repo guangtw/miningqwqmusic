@@ -24,10 +24,26 @@ type WebViewHost = {
   };
 };
 
-type WindowLike = Pick<Window, "requestAnimationFrame" | "cancelAnimationFrame" | "matchMedia"> & WebViewHost;
+type ParentHost = {
+  parent?: {
+    postMessage?: (message: unknown, targetOrigin: string) => void;
+  };
+};
+
+type WindowLike = Pick<Window, "requestAnimationFrame" | "cancelAnimationFrame" | "matchMedia"> & WebViewHost & ParentHost;
 type ObservedDocument = Pick<Document, "body" | "createElement" | "documentElement">;
 
 const SHELL_CHROME_MESSAGE_PREFIX = "miningqwq-shell-chrome:";
+const SHELL_CHROME_PARENT_MESSAGE_TYPE = "miningqwq-shell-chrome";
+
+function readShellChromeMode(root: HTMLElement): ShellChromeMode {
+  const overrideMode = root.dataset.shellMode;
+  if (overrideMode === "light" || overrideMode === "dark") {
+    return overrideMode;
+  }
+
+  return root.dataset.theme === "light" ? "light" : "dark";
+}
 
 function readCssToken(styles: CSSStyleDeclaration, name: string, fallback: string): string {
   const value = styles.getPropertyValue(name).trim();
@@ -68,32 +84,41 @@ function parseRadius(value: string, fallback: number): number {
 export function collectShellChromeTokens(doc: Document = document): ShellChromeTokens {
   const root = doc.documentElement;
   const styles = getComputedStyle(root);
-  const mode = root.dataset.theme === "light" ? "light" : "dark";
+  const mode = readShellChromeMode(root);
+  const hasModeOverride = root.dataset.shellMode === "light" || root.dataset.shellMode === "dark";
+  const readChromeToken = (name: string, fallback: string) => (hasModeOverride ? fallback : readCssToken(styles, name, fallback));
 
   return {
     mode,
-    surfaceBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-surface-background", mode === "light" ? "#eef3f8" : "#07090d")),
-    headerBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-header-background", mode === "light" ? "rgba(246, 250, 255, 0.96)" : "rgba(7, 9, 13, 0.97)")),
-    headerBorder: normalizeCssColor(doc, readCssToken(styles, "--shell-header-border", mode === "light" ? "rgba(28, 40, 56, 0.14)" : "rgba(255, 255, 255, 0.09)")),
-    windowBorder: normalizeCssColor(doc, readCssToken(styles, "--shell-window-border", mode === "light" ? "rgba(28, 40, 56, 0.24)" : "rgba(255, 255, 255, 0.16)")),
-    titleForeground: normalizeCssColor(doc, readCssToken(styles, "--shell-title-foreground", mode === "light" ? "#101623" : "#f7f8fb")),
-    subtitleForeground: normalizeCssColor(doc, readCssToken(styles, "--shell-subtitle-foreground", mode === "light" ? "#4f5d73" : "#b8c0cf")),
-    captionForeground: normalizeCssColor(doc, readCssToken(styles, "--shell-caption-foreground", mode === "light" ? "#101623" : "#f7f8fb")),
-    captionHoverBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-caption-hover-background", mode === "light" ? "rgba(16, 24, 40, 0.08)" : "rgba(255, 255, 255, 0.12)")),
-    captionPressedBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-caption-pressed-background", mode === "light" ? "rgba(16, 24, 40, 0.14)" : "rgba(255, 255, 255, 0.18)")),
-    closeHoverBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-close-hover-background", mode === "light" ? "rgba(196, 52, 74, 0.86)" : "rgba(63, 63, 70, 0.85)")),
-    closePressedBackground: normalizeCssColor(doc, readCssToken(styles, "--shell-close-pressed-background", mode === "light" ? "rgba(169, 39, 60, 0.94)" : "rgba(50, 50, 56, 0.94)")),
+    surfaceBackground: normalizeCssColor(doc, readChromeToken("--shell-surface-background", mode === "light" ? "#eef3f8" : "#07090d")),
+    headerBackground: normalizeCssColor(doc, readChromeToken("--shell-header-background", mode === "light" ? "rgba(246, 250, 255, 0.96)" : "rgba(7, 9, 13, 0.97)")),
+    headerBorder: normalizeCssColor(doc, readChromeToken("--shell-header-border", mode === "light" ? "rgba(106, 120, 144, 0.12)" : "rgba(255, 255, 255, 0.09)")),
+    windowBorder: normalizeCssColor(doc, readChromeToken("--shell-window-border", mode === "light" ? "rgba(106, 120, 144, 0.14)" : "rgba(255, 255, 255, 0.16)")),
+    titleForeground: normalizeCssColor(doc, readChromeToken("--shell-title-foreground", mode === "light" ? "#101623" : "#f7f8fb")),
+    subtitleForeground: normalizeCssColor(doc, readChromeToken("--shell-subtitle-foreground", mode === "light" ? "#4f5d73" : "#b8c0cf")),
+    captionForeground: normalizeCssColor(doc, readChromeToken("--shell-caption-foreground", mode === "light" ? "#101623" : "#f7f8fb")),
+    captionHoverBackground: normalizeCssColor(doc, readChromeToken("--shell-caption-hover-background", mode === "light" ? "rgba(16, 24, 40, 0.08)" : "rgba(255, 255, 255, 0.12)")),
+    captionPressedBackground: normalizeCssColor(doc, readChromeToken("--shell-caption-pressed-background", mode === "light" ? "rgba(16, 24, 40, 0.14)" : "rgba(255, 255, 255, 0.18)")),
+    closeHoverBackground: normalizeCssColor(doc, readChromeToken("--shell-close-hover-background", mode === "light" ? "rgba(196, 52, 74, 0.86)" : "rgba(63, 63, 70, 0.85)")),
+    closePressedBackground: normalizeCssColor(doc, readChromeToken("--shell-close-pressed-background", mode === "light" ? "rgba(169, 39, 60, 0.94)" : "rgba(50, 50, 56, 0.94)")),
     radiusLarge: parseRadius(readCssToken(styles, "--shell-radius-large", readCssToken(styles, "--radius-xl", "18")), 18)
   };
 }
 
 export function postShellChromeTokens(targetWindow: WindowLike = window, doc: Document = document): boolean {
   const postMessage = targetWindow.chrome?.webview?.postMessage;
+  const payload = collectShellChromeTokens(doc);
+  const payloadText = JSON.stringify(payload);
+  const parentPostMessage = targetWindow.parent?.postMessage;
+  if (typeof parentPostMessage === "function" && targetWindow.parent !== window) {
+    parentPostMessage({ type: SHELL_CHROME_PARENT_MESSAGE_TYPE, payload }, "*");
+  }
+
   if (typeof postMessage !== "function") {
     return false;
   }
 
-  postMessage(`${SHELL_CHROME_MESSAGE_PREFIX}${JSON.stringify(collectShellChromeTokens(doc))}`);
+  postMessage(`${SHELL_CHROME_MESSAGE_PREFIX}${payloadText}`);
   return true;
 }
 
@@ -105,12 +130,17 @@ export function installShellChromeBridge(targetWindow: WindowLike = window, doc:
   const flush = () => {
     scheduled = false;
     frameId = 0;
-    const payload = JSON.stringify(collectShellChromeTokens(doc));
+    const tokens = collectShellChromeTokens(doc);
+    const payload = JSON.stringify(tokens);
     if (payload === lastPayload) {
       return;
     }
 
     lastPayload = payload;
+    if (typeof targetWindow.parent?.postMessage === "function" && targetWindow.parent !== window) {
+      targetWindow.parent.postMessage({ type: SHELL_CHROME_PARENT_MESSAGE_TYPE, payload: tokens }, "*");
+    }
+
     targetWindow.chrome?.webview?.postMessage?.(`${SHELL_CHROME_MESSAGE_PREFIX}${payload}`);
   };
 
@@ -123,7 +153,7 @@ export function installShellChromeBridge(targetWindow: WindowLike = window, doc:
   const observer = new MutationObserver(schedule);
   observer.observe(doc.documentElement, {
     attributes: true,
-    attributeFilter: ["data-theme", "style", "class"]
+    attributeFilter: ["data-theme", "data-shell-mode", "style", "class"]
   });
 
   if (doc.body) {

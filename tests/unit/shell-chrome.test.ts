@@ -14,6 +14,7 @@ describe("shell chrome bridge", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     document.documentElement.removeAttribute("data-theme");
+    document.documentElement.removeAttribute("data-shell-mode");
     document.documentElement.style.cssText = "";
   });
 
@@ -40,6 +41,16 @@ describe("shell chrome bridge", () => {
     expect(tokens.windowBorder).toBe("#3D1C2838");
     expect(tokens.captionPressedBackground).toBe("#24101828");
     expect(tokens.radiusLarge).toBe(18);
+  });
+
+  it("prefers shell mode override for desktop chrome tokens", () => {
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.dataset.shellMode = "dark";
+
+    const tokens = collectShellChromeTokens(document);
+
+    expect(tokens.mode).toBe("dark");
+    expect(tokens.surfaceBackground).toBe("#FF07090D");
   });
 
   it("posts shell chrome payloads to WebView hosts", () => {

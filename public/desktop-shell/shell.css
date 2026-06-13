@@ -1,18 +1,18 @@
 :root {
   color-scheme: dark;
-  --shell-surface-background: #07090d;
-  --shell-header-background: rgba(7, 9, 13, 0.97);
-  --shell-header-border: rgba(255, 255, 255, 0.09);
-  --shell-window-border: rgba(255, 255, 255, 0.16);
-  --shell-title-foreground: #f7f8fb;
-  --shell-subtitle-foreground: #b8c0cf;
-  --shell-caption-foreground: #f7f8fb;
-  --shell-caption-hover-background: rgba(255, 255, 255, 0.12);
-  --shell-caption-pressed-background: rgba(255, 255, 255, 0.18);
-  --shell-close-hover-background: rgba(196, 52, 74, 0.86);
-  --shell-close-pressed-background: rgba(169, 39, 60, 0.94);
+  --shell-surface-background: #0b1016;
+  --shell-header-background: rgba(11, 16, 22, 0.96);
+  --shell-header-border: rgba(255, 255, 255, 0.06);
+  --shell-window-border: rgba(255, 255, 255, 0.07);
+  --shell-title-foreground: #f4f7fb;
+  --shell-subtitle-foreground: #aeb8c7;
+  --shell-caption-foreground: #eef4fb;
+  --shell-caption-hover-background: rgba(255, 255, 255, 0.1);
+  --shell-caption-pressed-background: rgba(255, 255, 255, 0.16);
+  --shell-close-hover-background: rgba(205, 66, 84, 0.92);
+  --shell-close-pressed-background: rgba(176, 46, 64, 0.96);
   --shell-radius-large: 18px;
-  --shell-shadow: 0 24px 56px rgba(0, 0, 0, 0.36);
+  --shell-shadow: 0 24px 56px rgba(0, 0, 0, 0.28);
   --titlebar-height: 56px;
 }
 
@@ -36,6 +36,17 @@ body {
 
 body[data-mode="light"] {
   color-scheme: light;
+  --shell-surface-background: #f3f7fb;
+  --shell-header-background: rgba(243, 247, 251, 0.96);
+  --shell-header-border: rgba(15, 23, 42, 0.08);
+  --shell-window-border: rgba(15, 23, 42, 0.09);
+  --shell-title-foreground: #121a26;
+  --shell-subtitle-foreground: #536072;
+  --shell-caption-foreground: #121a26;
+  --shell-caption-hover-background: rgba(18, 26, 38, 0.08);
+  --shell-caption-pressed-background: rgba(18, 26, 38, 0.14);
+  --shell-close-hover-background: rgba(214, 72, 89, 0.92);
+  --shell-close-pressed-background: rgba(184, 51, 68, 0.96);
 }
 
 body[data-active="false"] {
@@ -84,6 +95,7 @@ body[data-active="false"] {
 .desktop-drag-region {
   min-width: 0;
   min-height: 0;
+  cursor: default;
 }
 
 .desktop-caption-buttons {

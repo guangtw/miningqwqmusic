@@ -4,9 +4,11 @@
   const DESKTOP_WINDOW_STATE_TYPE = "miningqwq-desktop-window-state";
   const SHELL_CHROME_MESSAGE_TYPE = "miningqwq-shell-chrome";
   const SHELL_CHROME_MESSAGE_PREFIX = "miningqwq-shell-chrome:";
-  const SHELL_CHROME_STORAGE_KEY = "miningqwq-desktop-shell-chrome-v1";
+  const SHELL_CHROME_STORAGE_KEY = "miningqwq-desktop-shell-chrome-v2";
   const webview = window.chrome && window.chrome.webview;
   const frame = document.getElementById("app-frame");
+  const titlebar = document.getElementById("desktop-titlebar");
+  const dragRegion = document.querySelector(".desktop-drag-region");
   const toggleMaximizeButton = document.getElementById("toggle-maximize");
   const query = new URLSearchParams(window.location.search);
   const desktopAppUrl = query.get("appUrl") || "https://echo.miningqwq.cn/";
@@ -75,31 +77,19 @@
       return;
     }
 
-    const root = document.documentElement;
     const body = document.body;
     body.dataset.mode = tokens.mode === "light" ? "light" : "dark";
-    const tokenEntries = {
-      "--shell-surface-background": tokens.surfaceBackground,
-      "--shell-header-background": tokens.headerBackground,
-      "--shell-header-border": tokens.headerBorder,
-      "--shell-window-border": tokens.windowBorder,
-      "--shell-title-foreground": tokens.titleForeground,
-      "--shell-subtitle-foreground": tokens.subtitleForeground,
-      "--shell-caption-foreground": tokens.captionForeground,
-      "--shell-caption-hover-background": tokens.captionHoverBackground,
-      "--shell-caption-pressed-background": tokens.captionPressedBackground,
-      "--shell-close-hover-background": tokens.closeHoverBackground,
-      "--shell-close-pressed-background": tokens.closePressedBackground,
-      "--shell-radius-large": typeof tokens.radiusLarge === "number" ? tokens.radiusLarge + "px" : null
-    };
-
-    Object.entries(tokenEntries).forEach(([key, value]) => {
-      if (typeof value === "string" && value) {
-        root.style.setProperty(key, value);
-      }
-    });
+    if (typeof tokens.radiusLarge === "number" && Number.isFinite(tokens.radiusLarge)) {
+      document.documentElement.style.setProperty("--shell-radius-large", tokens.radiusLarge + "px");
+    }
 
     persistChromeTokens(tokens);
+  }
+
+  function buildDragPayload(event) {
+    const viewportWidth = Math.max(window.innerWidth || 0, document.documentElement.clientWidth || 0, 1);
+    const ratio = Math.min(1, Math.max(0, event.clientX / viewportWidth));
+    return { horizontalRatio: ratio };
   }
 
   function applyWindowState(state) {
@@ -194,4 +184,26 @@
       postDesktopAction(button.getAttribute("data-action"));
     });
   });
+
+  if (dragRegion) {
+    dragRegion.addEventListener("mousedown", function (event) {
+      if (event.button !== 0) {
+        return;
+      }
+
+      event.preventDefault();
+      postDesktopAction("window-begin-drag", buildDragPayload(event));
+    });
+  }
+
+  if (titlebar) {
+    titlebar.addEventListener("dblclick", function (event) {
+      if (event.target && event.target.closest && event.target.closest("[data-action]")) {
+        return;
+      }
+
+      event.preventDefault();
+      postDesktopAction("window-double-click-title");
+    });
+  }
 })();

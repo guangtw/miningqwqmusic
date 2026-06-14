@@ -108,6 +108,8 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485");
     expect(result.url).toBe("https://cdn.test/full.mp3");
+    expect(result.preview).toBe(false);
+    expect(result.resolvedVia).toBe("primary");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/song/url/v1");
   });
@@ -226,6 +228,8 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485", { unblockMode: "force_on" });
     expect(result.url).toBe("https://cdn.test/full-force-on.mp3");
+    expect(result.preview).toBe(false);
+    expect(result.resolvedVia).toBe("unblock");
     expect(fetchMock).toHaveBeenCalledTimes(2);
 
     const primaryUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
@@ -307,6 +311,9 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485");
     expect(result.url).toBe("https://cdn.test/preview-default.mp3");
+    expect(result.preview).toBe(true);
+    expect(result.restrictionReason).toBe("vip_preview");
+    expect(result.resolvedVia).toBe("primary");
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 

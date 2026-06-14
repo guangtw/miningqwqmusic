@@ -37,6 +37,7 @@ export type RefreshAttemptResult =
     }
   | {
       ok: false;
+      reason: "invalid_session" | "transient_failure";
       error?: AccountApiError;
     };
 
@@ -93,6 +94,15 @@ function withJsonHeaders(options: RequestInit): RequestInit {
   };
 }
 
+function isInvalidSessionError(error: AccountApiError | undefined): boolean {
+  if (!error) return false;
+  return error.status === 401 && (error.code === 5203 || error.code === 5204);
+}
+
+function classifyRefreshFailure(error: AccountApiError | undefined): "invalid_session" | "transient_failure" {
+  return isInvalidSessionError(error) ? "invalid_session" : "transient_failure";
+}
+
 async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T> {
   const token = options.authorization ?? useAuthStore.getState().accessToken;
   const headers = new Headers();
@@ -129,9 +139,11 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
     response.status === 401 &&
     path !== "/api/account/auth/refresh";
 
+  let retriedAfterRefresh = false;
   if (shouldRetryUnauthorized) {
-    const refreshed = await tryRefreshAccessToken();
-    if (refreshed) {
+    const refreshResult = await tryRefreshAccessTokenDetailed();
+    if (refreshResult.ok) {
+      retriedAfterRefresh = true;
       const retryHeaders = new Headers();
       const retriedToken = useAuthStore.getState().accessToken;
       if (retriedToken) {
@@ -149,11 +161,16 @@ async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T
       if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {
         return payload.data as T;
       }
+    } else if (refreshResult.reason === "invalid_session") {
+      useAuthStore.getState().setGuest();
     }
-    useAuthStore.getState().setGuest();
   }
 
-  throw normalizeFailure(response, payload);
+  const error = normalizeFailure(response, payload);
+  if (retriedAfterRefresh && isInvalidSessionError(error)) {
+    useAuthStore.getState().setGuest();
+  }
+  throw error;
 }
 
 async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
@@ -182,9 +199,11 @@ async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
   if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {
     return payload.data as T;
   }
+  let retriedAfterRefresh = false;
   if (response.status === 401) {
-    const refreshed = await tryRefreshAccessToken();
-    if (refreshed) {
+    const refreshResult = await tryRefreshAccessTokenDetailed();
+    if (refreshResult.ok) {
+      retriedAfterRefresh = true;
       const retryToken = useAuthStore.getState().accessToken;
       const retryHeaders = new Headers();
       if (retryToken) retryHeaders.set("authorization", `Bearer ${retryToken}`);
@@ -199,9 +218,15 @@ async function fetchAccountForm<T>(path: string, form: FormData): Promise<T> {
       if (response.ok && payload && typeof payload === "object" && "code" in payload && payload.code === 0 && "data" in payload) {
         return payload.data as T;
       }
+    } else if (refreshResult.reason === "invalid_session") {
+      useAuthStore.getState().setGuest();
     }
   }
-  throw normalizeFailure(response, payload);
+  const error = normalizeFailure(response, payload);
+  if (retriedAfterRefresh && isInvalidSessionError(error)) {
+    useAuthStore.getState().setGuest();
+  }
+  throw error;
 }
 
 export async function tryRefreshAccessToken(): Promise<boolean> {
@@ -224,10 +249,11 @@ export async function tryRefreshAccessTokenDetailed(): Promise<RefreshAttemptRes
     if (error instanceof AccountApiError) {
       return {
         ok: false,
+        reason: classifyRefreshFailure(error),
         error
       };
     }
-    return { ok: false };
+    return { ok: false, reason: "transient_failure" };
   }
 }
 

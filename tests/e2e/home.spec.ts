@@ -672,7 +672,7 @@ test("listen drawer groups room friends and activity with partial friend search"
   await expect(drawer.getByRole("tab", { name: /好友请求/ })).toBeVisible();
 });
 
-test("guest preview source is rebuilt after advanced login reload and detail hides unblock controls", async ({ page }) => {
+test("guest preview source is rebuilt after advanced login reload and detail hides unblock controls", async ({ page }, testInfo) => {
   const user = {
     id: "vip-user",
     email: "vip@example.com",
@@ -727,7 +727,7 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
       status: 200,
       contentType: "application/json",
       headers: {
-        "set-cookie": "mqm_refresh=vip-refresh; Path=/; HttpOnly; SameSite=Lax"
+        "set-cookie": "mqm_refresh_token=vip-refresh; Path=/; HttpOnly; SameSite=Lax"
       },
       body: successPayload({ user, accessToken: "vip-token" })
     });
@@ -763,7 +763,7 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
   await page.route("**/api/music/track/vip-track-1/play-url**", async (route) => {
     const authorization = route.request().headers()["authorization"];
     const cookie = route.request().headers()["cookie"] ?? "";
-    const isEntitledRequest = Boolean(authorization) || cookie.includes("mqm_refresh=vip-refresh");
+    const isEntitledRequest = Boolean(authorization) || cookie.includes("mqm_refresh_token=vip-refresh");
     if (isEntitledRequest) {
       entitledPlayRequestCount += 1;
     } else {
@@ -775,6 +775,9 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
       body: successPayload({
         trackId: track.id,
         url: isEntitledRequest ? "https://cdn.example/vip-full.mp3" : "https://cdn.example/vip-preview.mp3",
+        preview: !isEntitledRequest,
+        restrictionReason: isEntitledRequest ? undefined : "vip_preview",
+        resolvedVia: isEntitledRequest ? "grace" : "primary",
         ttlSeconds: 120
       })
     });
@@ -792,10 +795,22 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
   await page.locator(".spotify-search-panel input").fill("VIP Reload");
   await page.locator(".spotify-search-panel button").click();
   await page.getByRole("button", { name: "播放歌曲" }).first().click();
+  const visiblePlayerTitle = page.locator(".spotify-player-bar:visible .player-title").filter({ hasText: track.name }).first();
+  const anyPlayerTitle = page.locator(".player-title").filter({ hasText: track.name }).first();
+  const expectActivePlayerTitle = async () => {
+    if (testInfo.project.name.includes("mobile")) {
+      await expect(anyPlayerTitle).toHaveText(track.name);
+      return;
+    }
+    await expect(visiblePlayerTitle).toBeVisible();
+  };
 
   await expect.poll(() => guestPlayRequestCount).toBeGreaterThan(0);
-  await expect(page.locator(".spotify-player-bar .player-title").filter({ hasText: track.name }).first()).toBeVisible();
+  await expectActivePlayerTitle();
 
+  if (testInfo.project.name.includes("mobile")) {
+    await openLibraryTab(page);
+  }
   await page.getByRole("button", { name: "登录同步" }).first().click();
   await page.getByLabel("邮箱").fill("vip@example.com");
   await page.getByLabel("密码").fill("StrongP@ss1");
@@ -803,12 +818,17 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
   await page.waitForLoadState("networkidle");
 
   await expect.poll(() => entitledPlayRequestCount).toBeGreaterThan(0);
-  await page.getByRole("button", { name: /账户管理/ }).first().click();
+  if (testInfo.project.name.includes("mobile")) {
+    await openLibraryTab(page);
+    await page.locator(".mobile-library-account-row").first().click();
+  } else {
+    await page.getByRole("button", { name: /账户管理/ }).first().click();
+  }
   const accountDrawer = page.getByRole("dialog", { name: "账户管理" });
   await expect(accountDrawer).toBeVisible();
   await expect(accountDrawer.locator(".account-tier.advanced").first()).toHaveText("高级用户");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".spotify-player-bar .player-title").filter({ hasText: track.name }).first()).toBeVisible();
+  await expectActivePlayerTitle();
 
   const expandDetailButton = page.getByRole("button", { name: "展开详情" }).first();
   if (await expandDetailButton.count()) {

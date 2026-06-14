@@ -11,3 +11,11 @@
  ✓ Ready in 1967ms
  ○ Compiling / ...
  ✓ Compiled / in 1129ms (657 modules)
+ GET / 200 in 1417ms
+ GET / 200 in 131ms
+ ✓ Compiled /api/account/[...path] in 435ms (679 modules)
+ GET /api/music/scene/sport?bpm=130 200 in 1025ms
+ POST /api/account/auth/refresh 502 in 1062ms
+ POST /api/account/auth/refresh 502 in 71ms
+ GET /api/music/scene/sati 200 in 1349ms
+ GET /api/music/discover/home 200 in 1488ms

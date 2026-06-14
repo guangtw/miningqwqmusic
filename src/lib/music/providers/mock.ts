@@ -135,7 +135,9 @@ export class MockMusicAdapter implements MusicSourceAdapter {
     return {
       trackId,
       url: MOCK_AUDIO_URL,
+      preview: false,
       bitrate: bitrateByLevel[level] ?? 320000,
+      resolvedVia: "primary",
       ttlSeconds: 60
     };
   }

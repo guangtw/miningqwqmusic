@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createMusicUnblockGraceToken } from "@/src/lib/music-unblock-grace";
 
 const mocks = vi.hoisted(() => ({
   getPlaySource: vi.fn(async (trackId: string) => ({
     trackId,
-    url: `https://music.example/${trackId}.mp3`
+    url: `https://music.example/${trackId}.mp3`,
+    preview: false,
+    resolvedVia: "primary" as const
   }))
 }));
 
@@ -23,6 +26,8 @@ describe("GET /api/music/track/:id/play-url", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks.getPlaySource.mockClear();
+    process.env.MUSIC_UNBLOCK_GRACE_SECRET = "test-music-unblock-grace-secret-at-least-32";
+    process.env.MUSIC_UNBLOCK_GRACE_COOKIE_NAME = "mqm_music_unblock_grace";
   });
 
   it("forces unblock off when request has no account token", async () => {
@@ -121,6 +126,31 @@ describe("GET /api/music/track/:id/play-url", () => {
       level: undefined,
       unblockMode: "force_on"
     });
+  });
+
+  it("uses a valid grace cookie without rechecking entitlement service", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const graceCookie = createMusicUnblockGraceToken("u1", new Date(Date.now() + 60_000));
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/music/track/1006/play-url?unblockMode=force_on", {
+        headers: {
+          cookie: `mqm_music_unblock_grace=${encodeURIComponent(graceCookie)}`
+        }
+      }),
+      context("1006")
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("1006", {
+      level: undefined,
+      unblockMode: "force_on"
+    });
+
+    const payload = await response.json();
+    expect(payload.data.preview).toBe(false);
+    expect(payload.data.resolvedVia).toBe("grace");
   });
 
   it("falls back to normal source when entitlement service fails", async () => {

@@ -119,6 +119,7 @@ type PlayData = {
 type PlayCandidate = {
   raw: unknown;
   data: PlayData;
+  resolvedVia: "primary" | "unblock";
 };
 
 type AnyRecord = Record<string, unknown>;
@@ -479,11 +480,23 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     console.info(`[music-unblock] track=${trackId} stage=${stage}${details}`);
   }
 
-  private toPlaySource(trackId: string, data: PlayData): PlaySource {
+  private getRestrictionReason(raw: unknown, data: PlayData | null | undefined): string | undefined {
+    if (!data || !this.hasPlayableUrl(data)) return "missing_url";
+    if (this.isVipPreview(data)) return "vip_preview";
+    if (this.hasTrialRestrictionSignal(data)) return "trial_restriction";
+    if (this.hasTopLevelRestrictionSignal(raw)) return "upstream_restriction";
+    return undefined;
+  }
+
+  private toPlaySource(trackId: string, raw: unknown, data: PlayData, resolvedVia: "primary" | "unblock"): PlaySource {
+    const preview = this.isVipPreview(data);
     return {
       trackId,
       url: data.url ?? "",
+      preview,
       bitrate: data.br,
+      restrictionReason: this.getRestrictionReason(raw, data),
+      resolvedVia,
       ttlSeconds: data.expi ? Math.max(10, Math.floor(data.expi)) : undefined,
       expiresAt: data.expiresAt
     };
@@ -562,12 +575,14 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     if (!unblockPath || !shouldTryUnblock) {
       if (this.hasPlayableUrl(data)) {
-        return this.toPlaySource(trackId, data);
+        return this.toPlaySource(trackId, raw, data, "primary");
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
 
-    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data) ? { raw, data } : null;
+    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
+      ? { raw, data, resolvedVia: "primary" }
+      : null;
     const fallbackSources = this.config.unblockSources?.length
       ? this.config.unblockSources
       : this.config.unblockSource
@@ -597,9 +612,13 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           preview: this.isVipPreview(unblockData),
           restricted: unblockRestricted
         });
-        bestCandidate = this.pickBetterPlayCandidate(bestCandidate, { raw: unblockRaw, data: unblockData });
+        bestCandidate = this.pickBetterPlayCandidate(bestCandidate, {
+          raw: unblockRaw,
+          data: unblockData,
+          resolvedVia: "unblock"
+        });
         if (!unblockRestricted) {
-          return this.toPlaySource(trackId, unblockData);
+          return this.toPlaySource(trackId, unblockRaw, unblockData, "unblock");
         }
       } catch {
         // 当前解灰 source 不可用时自动尝试下一个 source。
@@ -608,7 +627,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     if (bestCandidate) {
-      return this.toPlaySource(trackId, bestCandidate.data);
+      return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
     }
 
     throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });

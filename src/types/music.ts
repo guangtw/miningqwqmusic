@@ -64,7 +64,10 @@ export type PlaySourceRequestOptions = {
 export type PlaySource = {
   trackId: string;
   url: string;
+  preview: boolean;
   bitrate?: number;
+  restrictionReason?: string;
+  resolvedVia?: "primary" | "unblock" | "grace";
   expiresAt?: string;
   ttlSeconds?: number;
 };

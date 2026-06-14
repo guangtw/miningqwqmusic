@@ -20,6 +20,7 @@ import {
   searchFriends,
   sendFriendRequest,
   sendListenRoomState,
+  tryRefreshAccessTokenDetailed,
   tryRefreshAccessToken,
   updateAccountProfile,
   uploadAccountAvatar
@@ -136,7 +137,7 @@ describe("account client", () => {
     expect(thirdHeaders.get("authorization")).toBe("Bearer new-token");
   });
 
-  it("falls back to guest when refresh fails", async () => {
+  it("falls back to guest when refresh reports invalid session", async () => {
     useAuthStore.getState().setAuthenticated(
       {
         id: "u1",
@@ -164,6 +165,42 @@ describe("account client", () => {
     expect(useAuthStore.getState().accessToken).toBeNull();
   });
 
+  it("keeps authenticated state when refresh fails transiently", async () => {
+    useAuthStore.getState().setAuthenticated(
+      {
+        id: "u1",
+        email: "user@example.com"
+      },
+      "old-token"
+    );
+
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(failurePayload(5204, "Unauthorized")), {
+          status: 401,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 5403,
+            message: "Bad gateway",
+            traceId: "trace-id",
+            retryable: true
+          }),
+          {
+            status: 502,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
+
+    await expect(loadCurrentAccountUser()).rejects.toBeInstanceOf(AccountApiError);
+    expect(useAuthStore.getState().status).toBe("authenticated");
+    expect(useAuthStore.getState().accessToken).toBe("old-token");
+  });
+
   it("returns false for service detection when proxy reports not configured", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify(failurePayload(5401, "Account service is not configured")), {
@@ -187,6 +224,34 @@ describe("account client", () => {
     const refreshed = await tryRefreshAccessToken();
     expect(refreshed).toBe(true);
     expect(useAuthStore.getState().accessToken).toBe("fresh-token");
+  });
+
+  it("classifies retryable refresh failures as transient", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 5403,
+          message: "Bad gateway",
+          traceId: "trace-id",
+          retryable: true
+        }),
+        {
+          status: 502,
+          headers: { "content-type": "application/json" }
+        }
+      )
+    );
+
+    const result = await tryRefreshAccessTokenDetailed();
+    expect(result).toEqual({
+      ok: false,
+      reason: "transient_failure",
+      error: expect.objectContaining({
+        code: 5403,
+        status: 502,
+        retryable: true
+      })
+    });
   });
 
   it("uploads avatar with FormData and updates current user", async () => {

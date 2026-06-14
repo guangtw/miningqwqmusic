@@ -15,6 +15,8 @@ describe("MockMusicAdapter", () => {
     const lyric = await adapter.getTrackLyric("mock-1");
 
     expect(source.url.length).toBeGreaterThan(0);
+    expect(source.preview).toBe(false);
+    expect(source.resolvedVia).toBe("primary");
     expect(source.ttlSeconds).toBe(60);
     expect(lyric.lines.length).toBeGreaterThan(0);
   });

@@ -1,6 +1,7 @@
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { getPlaySource } from "@/src/lib/music/service";
+import { hasValidMusicUnblockGraceCookie } from "@/src/lib/music-unblock-grace";
 import { createTraceId } from "@/src/lib/trace";
 import type { PlayQualityLevel, PlayUnblockMode } from "@/src/types/music";
 
@@ -74,13 +75,27 @@ export async function GET(request: Request, context: Context) {
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
     const requestedUnblockMode = toPlayUnblockMode(searchParams.get("unblockMode"));
-    const canUseUnblock = await hasMusicUnblockEntitlement(request);
-    const effectiveUnblockMode = canUseUnblock ? (requestedUnblockMode ?? "force_on") : "force_off";
+    const graceEnabled = hasValidMusicUnblockGraceCookie(request);
+    const canUseUnblock = graceEnabled || (requestedUnblockMode === "force_off" ? false : await hasMusicUnblockEntitlement(request));
+    const effectiveUnblockMode =
+      requestedUnblockMode === "force_off"
+        ? "force_off"
+        : canUseUnblock
+          ? (requestedUnblockMode ?? "force_on")
+          : "force_off";
     const data = await getPlaySource(id, {
       level: toPlayQualityLevel(searchParams.get("level")),
       unblockMode: effectiveUnblockMode
     });
-    const response = success(data, traceId);
+    const response = success(
+      graceEnabled && effectiveUnblockMode !== "force_off"
+        ? {
+            ...data,
+            resolvedVia: "grace" as const
+          }
+        : data,
+      traceId
+    );
     response.headers.set("Cache-Control", "no-store");
     return response;
   } catch (error) {

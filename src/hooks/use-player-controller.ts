@@ -44,6 +44,11 @@ type ControllerState = {
   seekTo: (ms: number) => void;
 };
 
+type PlayerControllerOptions = {
+  playbackRefreshKey?: string;
+  resumePlaybackToken?: number;
+};
+
 const CROSSFADE_MS = 350;
 const PREFETCH_EXPIRE_BUFFER_MS = 8000;
 const FULL_AUDIO_CACHE_LIMIT = 3;
@@ -74,7 +79,9 @@ function isCachedSourceUsable(entry?: CachedPlaySource): boolean {
   return Date.now() - entry.cachedAt < Math.max(1000, ttlMs - PREFETCH_EXPIRE_BUFFER_MS);
 }
 
-export function usePlayerController(): ControllerState {
+export function usePlayerController(options?: PlayerControllerOptions): ControllerState {
+  const playbackRefreshKey = options?.playbackRefreshKey ?? "";
+  const resumePlaybackToken = options?.resumePlaybackToken ?? 0;
   const audioRef = useRef<HTMLAudioElement>(null);
   const queue = usePlayerStore((state) => state.queue);
   const currentIndex = usePlayerStore((state) => state.currentIndex);
@@ -274,6 +281,54 @@ export function usePlayerController(): ControllerState {
     fullAudioCacheRef.current.clear();
   }, []);
 
+  const refreshPreviewSource = useCallback(async () => {
+    const trackId = currentTrackIdRef.current;
+    const currentSource = currentSourceRef.current;
+    if (!trackId || !currentSource?.preview) return;
+
+    const sessionSnapshot = {
+      sessionId: playbackSessionRef.current,
+      trackId,
+      token: transitionTokenRef.current
+    };
+    const resumeMs = Math.floor((audioRef.current?.currentTime ?? 0) * 1000);
+
+    try {
+      const renewed = await requestTrackPlaySource(trackId, playSourceOptionsRef.current);
+      if (
+        !isSessionValid(
+          sessionSnapshot,
+          playbackSessionRef.current,
+          currentTrackIdRef.current,
+          transitionTokenRef.current
+        )
+      ) {
+        return;
+      }
+
+      prefetchedSourceRef.current.set(trackId, { source: renewed, cachedAt: Date.now() });
+      if (
+        renewed.url === currentSource.url &&
+        renewed.preview === currentSource.preview &&
+        renewed.resolvedVia === currentSource.resolvedVia &&
+        renewed.restrictionReason === currentSource.restrictionReason
+      ) {
+        return;
+      }
+
+      resumeAfterSourceSwitchRef.current = resumeMs;
+      setSource(renewed);
+      if (!renewed.preview) {
+        setErrorText(null);
+      }
+      if (!renewed.url.startsWith("blob:")) {
+        void cacheTrackAudioBlobRef.current?.(trackId, renewed.url);
+      }
+    } catch {
+      // 预览源重建失败时保持当前链路，避免引入额外播放抖动。
+    }
+  }, [requestTrackPlaySource]);
+
   const cacheTrackAudioBlob = useCallback(async (trackId: string, sourceUrl: string) => {
     if (!sourceUrl) return;
     const existing = fullAudioCacheRef.current.get(trackId);
@@ -415,7 +470,9 @@ export function usePlayerController(): ControllerState {
       const playSourcePromise = cachedAudio
         ? Promise.resolve<PlaySource>({
             trackId: nextTrackId,
-            url: cachedAudio.blobUrl
+            url: cachedAudio.blobUrl,
+            preview: false,
+            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary"
           })
         : validCached && cached
           ? Promise.resolve(cached.source)
@@ -694,7 +751,9 @@ export function usePlayerController(): ControllerState {
           setSource({
             trackId,
             url: cachedAudio.blobUrl,
-            bitrate: currentSourceRef.current?.bitrate
+            preview: false,
+            bitrate: currentSourceRef.current?.bitrate,
+            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary"
           });
           setErrorText("网络波动，已切换缓存继续播放");
           return;
@@ -870,7 +929,16 @@ export function usePlayerController(): ControllerState {
 
   useEffect(() => {
     clearCachedPlaySources();
-  }, [accessToken, clearCachedPlaySources, playSourceOptions]);
+  }, [accessToken, clearCachedPlaySources, playSourceOptions, playbackRefreshKey]);
+
+  useEffect(() => {
+    void refreshPreviewSource();
+  }, [playbackRefreshKey, refreshPreviewSource]);
+
+  useEffect(() => {
+    if (!resumePlaybackToken) return;
+    void refreshPreviewSource();
+  }, [resumePlaybackToken, refreshPreviewSource]);
 
   useEffect(() => {
     const trackId = currentTrackIdRef.current;

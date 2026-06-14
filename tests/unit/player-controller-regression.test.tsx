@@ -44,12 +44,29 @@ function createTrack(id: string): Track {
   };
 }
 
+function createPlaySource(trackId: string, url: string, overrides?: Partial<PlaySource>): PlaySource {
+  return {
+    trackId,
+    url,
+    preview: false,
+    resolvedVia: "primary",
+    ...overrides
+  };
+}
+
 function ControllerHarness({
-  onState
+  onState,
+  playbackRefreshKey,
+  resumePlaybackToken
 }: {
   onState: (state: { source: PlaySource | null; transitionPhase: TransitionPhase }) => void;
+  playbackRefreshKey?: string;
+  resumePlaybackToken?: number;
 }) {
-  const controller = usePlayerController();
+  const controller = usePlayerController({
+    playbackRefreshKey,
+    resumePlaybackToken
+  });
   onState({
     source: controller.currentSource,
     transitionPhase: controller.transitionPhase
@@ -137,7 +154,7 @@ describe("player controller regression", () => {
     });
 
     await act(async () => {
-      deferredB.resolve({ trackId: trackB.id, url: sharedUrl });
+      deferredB.resolve(createPlaySource(trackB.id, sharedUrl));
       await Promise.resolve();
     });
 
@@ -147,7 +164,7 @@ describe("player controller regression", () => {
     });
 
     await act(async () => {
-      deferredA.resolve({ trackId: trackA.id, url: sharedUrl });
+      deferredA.resolve(createPlaySource(trackA.id, sharedUrl));
       await Promise.resolve();
     });
 
@@ -166,7 +183,7 @@ describe("player controller regression", () => {
 
     getTrackPlaySourceMock.mockImplementation((trackId: string) => {
       if (trackId === trackA.id) {
-        return Promise.resolve({ trackId: trackA.id, url: "https://cdn.example/a.mp3" });
+        return Promise.resolve(createPlaySource(trackA.id, "https://cdn.example/a.mp3"));
       }
       if (trackId === trackB.id) {
         return deferredB.promise;
@@ -215,7 +232,7 @@ describe("player controller regression", () => {
     });
 
     await act(async () => {
-      deferredB.resolve({ trackId: trackB.id, url: "https://cdn.example/b.mp3" });
+      deferredB.resolve(createPlaySource(trackB.id, "https://cdn.example/b.mp3"));
       await Promise.resolve();
     });
 
@@ -239,15 +256,15 @@ describe("player controller regression", () => {
       if (trackId === trackA.id) {
         aRequestCount += 1;
         if (aRequestCount === 1) {
-          return Promise.resolve({ trackId: trackA.id, url: "https://cdn.example/a-main.mp3" });
+          return Promise.resolve(createPlaySource(trackA.id, "https://cdn.example/a-main.mp3"));
         }
         if (aRequestCount === 2) {
           return deferredRecoveryA.promise;
         }
-        return Promise.resolve({ trackId: trackA.id, url: "https://cdn.example/a-new.mp3" });
+        return Promise.resolve(createPlaySource(trackA.id, "https://cdn.example/a-new.mp3"));
       }
       if (trackId === trackB.id) {
-        return Promise.resolve({ trackId: trackB.id, url: "https://cdn.example/b-main.mp3" });
+        return Promise.resolve(createPlaySource(trackB.id, "https://cdn.example/b-main.mp3"));
       }
       throw new Error(`unexpected track id: ${trackId}`);
     });
@@ -294,7 +311,7 @@ describe("player controller regression", () => {
     });
 
     await act(async () => {
-      deferredRecoveryA.resolve({ trackId: trackA.id, url: "https://cdn.example/a-recovery.mp3" });
+      deferredRecoveryA.resolve(createPlaySource(trackA.id, "https://cdn.example/a-recovery.mp3"));
       await Promise.resolve();
     });
 
@@ -314,10 +331,10 @@ describe("player controller regression", () => {
 
     getTrackPlaySourceMock.mockImplementation((trackId: string) => {
       if (trackId === trackA.id) {
-        return Promise.resolve({ trackId: trackA.id, url: "https://cdn.example/a.mp3" });
+        return Promise.resolve(createPlaySource(trackA.id, "https://cdn.example/a.mp3"));
       }
       if (trackId === trackB.id) {
-        return Promise.resolve({ trackId: trackB.id, url: "https://cdn.example/b.mp3" });
+        return Promise.resolve(createPlaySource(trackB.id, "https://cdn.example/b.mp3"));
       }
       throw new Error(`unexpected track id: ${trackId}`);
     });
@@ -372,11 +389,11 @@ describe("player controller regression", () => {
 
     getTrackPlaySourceMock.mockImplementation((trackId: string, options?: { level?: string }) => {
       requestCount += 1;
-      return Promise.resolve({
-        trackId,
-        url: requestCount === 1 ? "https://cdn.example/a-standard.mp3" : "https://cdn.example/a-lossless.mp3",
-        bitrate: options?.level === "lossless" ? 999000 : 320000
-      });
+      return Promise.resolve(
+        createPlaySource(trackId, requestCount === 1 ? "https://cdn.example/a-standard.mp3" : "https://cdn.example/a-lossless.mp3", {
+          bitrate: options?.level === "lossless" ? 999000 : 320000
+        })
+      );
     });
 
     usePlayerStore.getState().setQueue([trackA], 0);
@@ -415,11 +432,15 @@ describe("player controller regression", () => {
 
     getTrackPlaySourceMock.mockImplementation((trackId: string, options?: { level?: string }) => {
       requestCount += 1;
-      return Promise.resolve({
-        trackId,
-        url: requestCount === 1 ? "https://cdn.example/playlist-standard.mp3" : "https://cdn.example/playlist-lossless.mp3",
-        bitrate: options?.level === "lossless" ? 999000 : 320000
-      });
+      return Promise.resolve(
+        createPlaySource(
+          trackId,
+          requestCount === 1 ? "https://cdn.example/playlist-standard.mp3" : "https://cdn.example/playlist-lossless.mp3",
+          {
+            bitrate: options?.level === "lossless" ? 999000 : 320000
+          }
+        )
+      );
     });
 
     usePlayerStore.getState().setQueue(playlistTracks, 0);
@@ -447,6 +468,66 @@ describe("player controller regression", () => {
     await waitFor(() => {
       expect(requestCount).toBeGreaterThan(baselineCount);
       expect(latestSource?.url).toBe("https://cdn.example/playlist-lossless.mp3");
+    });
+
+    unmount();
+  });
+
+  it("rebuilds preview playback after auth-entitlement refresh key changes", async () => {
+    const trackA = createTrack("A");
+    let requestCount = 0;
+
+    getTrackPlaySourceMock.mockImplementation((trackId: string) => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return Promise.resolve(
+          createPlaySource(trackId, "https://cdn.example/a-preview.mp3", {
+            preview: true,
+            restrictionReason: "vip_preview"
+          })
+        );
+      }
+      return Promise.resolve(
+        createPlaySource(trackId, "https://cdn.example/a-full.mp3", {
+          resolvedVia: "grace"
+        })
+      );
+    });
+
+    usePlayerStore.getState().setQueue([trackA], 0);
+    usePlayerStore.getState().setPlaying(false);
+
+    let latestSource: PlaySource | null = null;
+    const { rerender, unmount } = render(
+      <ControllerHarness
+        playbackRefreshKey="guest:A:disabled"
+        onState={({ source }) => {
+          latestSource = source;
+        }}
+      />
+    );
+
+    let baselineCount = 0;
+    await waitFor(() => {
+      expect(latestSource?.preview).toBe(true);
+      expect(requestCount).toBeGreaterThanOrEqual(1);
+    });
+    baselineCount = requestCount;
+
+    rerender(
+      <ControllerHarness
+        playbackRefreshKey="authenticated:A:enabled"
+        onState={({ source }) => {
+          latestSource = source;
+        }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(requestCount).toBeGreaterThan(baselineCount);
+      expect(latestSource?.url).toBe("https://cdn.example/a-full.mp3");
+      expect(latestSource?.preview).toBe(false);
+      expect(latestSource?.resolvedVia).toBe("grace");
     });
 
     unmount();

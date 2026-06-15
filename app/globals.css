@@ -3936,6 +3936,29 @@ input:focus-visible {
   gap: 8px;
 }
 
+.spotify-player-inline-meta {
+  display: none;
+}
+
+.spotify-player-inline-meta .player-inline-title {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.spotify-player-inline-meta .player-inline-subtitle {
+  font-size: 12px;
+  color: var(--text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  margin-top: 2px;
+}
+
 .spotify-player-controls {
   display: flex;
   justify-content: center;
@@ -4991,7 +5014,7 @@ input:focus-visible {
 @media (max-width: 899px), (pointer: coarse), (hover: none) {
   .spotify-shell {
     --shell-gap: 8px;
-    --player-bar-height: 138px;
+    --player-bar-height: 170px;
     padding: 8px;
     padding-bottom: calc(var(--player-bar-height-actual, var(--player-bar-height)) + var(--player-safe-bottom) + var(--shell-gap) + 8px);
     overflow-x: hidden;
@@ -5198,8 +5221,20 @@ input:focus-visible {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
     gap: 8px;
-    min-height: 132px;
+    min-height: 164px;
     padding: 8px 10px 10px;
+  }
+
+  .spotify-player-left {
+    display: none;
+  }
+
+  .spotify-player-inline-meta {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 0;
+    text-align: center;
   }
 
   .spotify-player-right {
@@ -5215,7 +5250,7 @@ input:focus-visible {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
-    min-height: 52px;
+    min-height: 50px;
     padding-top: 7px;
   }
 
@@ -5469,7 +5504,7 @@ input:focus-visible {
 @media (max-width: 760px) and ((pointer: coarse) or (hover: none)) {
   .spotify-shell {
     --shell-gap: 6px;
-    --player-bar-height: 126px;
+    --player-bar-height: 158px;
     padding: 6px;
     padding-bottom: calc(var(--player-bar-height-actual, var(--player-bar-height)) + var(--player-safe-bottom) + var(--shell-gap) + 8px);
   }
@@ -5854,7 +5889,7 @@ input:focus-visible {
   }
 
   .spotify-player-bar {
-    min-height: 120px;
+    min-height: 152px;
     padding: 6px 8px 8px;
     gap: 6px;
     grid-template-columns: 1fr;
@@ -5863,6 +5898,22 @@ input:focus-visible {
 
   .spotify-player-left {
     display: none;
+  }
+
+  .spotify-player-inline-meta {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    padding: 0;
+    text-align: center;
+  }
+
+  .spotify-player-inline-meta .player-inline-title {
+    font-size: 13px;
+  }
+
+  .spotify-player-inline-meta .player-inline-subtitle {
+    font-size: 11px;
   }
 
   .spotify-progress-row span {

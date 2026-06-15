@@ -1,0 +1,76 @@
+"filename", "language", "JSON", "TypeScript", "TypeScript JSX", "Log", "JavaScript", "Markdown", "PostCSS", "PowerShell", "Shell Script", "HTML", "Properties", "comment", "blank", "total"
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-21_21-41-52\details.md", "Markdown", 0, 0, 0, 0, 0, 57, 0, 0, 0, 0, 0, 0, 6, 63
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-21_21-41-52\diff-details.md", "Markdown", 0, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 6, 15
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-21_21-41-52\diff.md", "Markdown", 0, 0, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 7, 19
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-21_21-41-52\results.json", "JSON", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-21_21-41-52\results.md", "Markdown", 0, 0, 0, 0, 0, 53, 0, 0, 0, 0, 0, 0, 7, 60
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-25_22-09-46\details.md", "Markdown", 0, 0, 0, 0, 0, 89, 0, 0, 0, 0, 0, 0, 6, 95
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-25_22-09-46\diff-details.md", "Markdown", 0, 0, 0, 0, 0, 55, 0, 0, 0, 0, 0, 0, 6, 61
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-25_22-09-46\diff.md", "Markdown", 0, 0, 0, 0, 0, 61, 0, 0, 0, 0, 0, 0, 7, 68
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-25_22-09-46\results.json", "JSON", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\MiningQwQMusic\.VSCodeCounter\2026-05-25_22-09-46\results.md", "Markdown", 0, 0, 0, 0, 0, 74, 0, 0, 0, 0, 0, 0, 7, 81
+"c:\MiningQwQMusic\README.md", "Markdown", 0, 0, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 3, 13
+"c:\MiningQwQMusic\app\api\account\[...path]\route.ts", "TypeScript", 0, 142, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 162
+"c:\MiningQwQMusic\app\api\music\playlist\resolve\route.ts", "TypeScript", 0, 65, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 78
+"c:\MiningQwQMusic\app\api\music\track\[id]\play-url\route.ts", "TypeScript", 0, 81, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 87
+"c:\MiningQwQMusic\app\globals.css", "PostCSS", 0, 0, 0, 0, 0, 0, 1930, 0, 0, 0, 0, 0, 331, 2261
+"c:\MiningQwQMusic\app\layout.tsx", "TypeScript JSX", 0, 0, 42, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 43
+"c:\MiningQwQMusic\app\robots.ts", "TypeScript", 0, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 13
+"c:\MiningQwQMusic\app\sitemap.ts", "TypeScript", 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 21
+"c:\MiningQwQMusic\devserver.log", "Log", 0, 0, 0, 137, 0, 0, 0, 0, 0, 0, 0, 0, 4, 141
+"c:\MiningQwQMusic\docs\echo-subdomain-deploy.md", "Markdown", 0, 0, 0, 0, 0, 88, 0, 0, 0, 0, 0, 0, 43, 131
+"c:\MiningQwQMusic\next-dev.err.log", "Log", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1
+"c:\MiningQwQMusic\next-dev.log", "Log", 0, 0, 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 4, 22
+"c:\MiningQwQMusic\next.config.mjs", "JavaScript", 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 20
+"c:\MiningQwQMusic\ops\nginx\echo.miningqwq.cn.conf", "Properties", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 34, 3, 11, 48
+"c:\MiningQwQMusic\ops\scripts\verify-echo-subdomain.ps1", "PowerShell", 0, 0, 0, 0, 0, 0, 0, 89, 0, 0, 0, 0, 14, 103
+"c:\MiningQwQMusic\ops\scripts\verify-echo-subdomain.sh", "Shell Script", 0, 0, 0, 0, 0, 0, 0, 0, 64, 0, 0, 1, 14, 79
+"c:\MiningQwQMusic\public\desktop-shell\index.html", "HTML", 0, 0, 0, 0, 0, 0, 0, 0, 0, 43, 0, 0, 1, 44
+"c:\MiningQwQMusic\public\desktop-shell\shell.css", "PostCSS", 0, 0, 0, 0, 0, 0, 169, 0, 0, 0, 0, 0, 25, 194
+"c:\MiningQwQMusic\public\desktop-shell\shell.js", "JavaScript", 0, 0, 0, 0, 165, 0, 0, 0, 0, 0, 0, 0, 33, 198
+"c:\MiningQwQMusic\public\manifest.webmanifest", "JSON", 24, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24
+"c:\MiningQwQMusic\public\sw.js", "JavaScript", 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 0, 9
+"c:\MiningQwQMusic\src\components\player-app.tsx", "TypeScript JSX", 0, 0, 3510, 0, 0, 0, 0, 0, 0, 0, 0, 2, 198, 3710
+"c:\MiningQwQMusic\src\components\user-avatar.tsx", "TypeScript JSX", 0, 0, 53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 58
+"c:\MiningQwQMusic\src\hooks\use-player-controller.ts", "TypeScript", 0, 161, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 17, 182
+"c:\MiningQwQMusic\src\lib\account-client.ts", "TypeScript", 0, 527, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 61, 588
+"c:\MiningQwQMusic\src\lib\client-api.ts", "TypeScript", 0, 66, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 70
+"c:\MiningQwQMusic\src\lib\cloud-sync.ts", "TypeScript", 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 26
+"c:\MiningQwQMusic\src\lib\desktop-host.ts", "TypeScript", 0, 302, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 51, 354
+"c:\MiningQwQMusic\src\lib\image-url.ts", "TypeScript", 0, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 38
+"c:\MiningQwQMusic\src\lib\music-unblock-grace.ts", "TypeScript", 0, 71, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 84
+"c:\MiningQwQMusic\src\lib\music\adapter.ts", "TypeScript", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\MiningQwQMusic\src\lib\music\providers\mock.ts", "TypeScript", 0, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15
+"c:\MiningQwQMusic\src\lib\music\providers\netease-like.ts", "TypeScript", 0, 78, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 88
+"c:\MiningQwQMusic\src\lib\music\service.ts", "TypeScript", 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"c:\MiningQwQMusic\src\lib\player-ui.ts", "TypeScript", 0, 61, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 68
+"c:\MiningQwQMusic\src\lib\playlist-import.ts", "TypeScript", 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 10
+"c:\MiningQwQMusic\src\lib\shell-chrome.ts", "TypeScript", 0, 154, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 182
+"c:\MiningQwQMusic\src\lib\user-facing-error.ts", "TypeScript", 0, 115, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 15, 130
+"c:\MiningQwQMusic\src\store\auth-store.ts", "TypeScript", 0, 82, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 89
+"c:\MiningQwQMusic\src\store\friend-store.ts", "TypeScript", 0, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 55
+"c:\MiningQwQMusic\src\store\listen-together-store.ts", "TypeScript", 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 42
+"c:\MiningQwQMusic\src\store\player-store.ts", "TypeScript", 0, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 101
+"c:\MiningQwQMusic\src\types\account.ts", "TypeScript", 0, 148, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 176
+"c:\MiningQwQMusic\src\types\music.ts", "TypeScript", 0, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"c:\MiningQwQMusic\tests\e2e\home.spec.ts", "TypeScript", 0, 1436, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 103, 1539
+"c:\MiningQwQMusic\tests\e2e\site-assets.spec.ts", "TypeScript", 0, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 113
+"c:\MiningQwQMusic\tests\integration\account-proxy-route.test.ts", "TypeScript", 0, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 96
+"c:\MiningQwQMusic\tests\integration\music-discover-routes.test.ts", "TypeScript", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1
+"c:\MiningQwQMusic\tests\integration\music-play-url-route.test.ts", "TypeScript", 0, 157, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 181
+"c:\MiningQwQMusic\tests\integration\music-playlist-resolve-route.test.ts", "TypeScript", 0, 54, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9, 63
+"c:\MiningQwQMusic\tests\unit\account-client.test.ts", "TypeScript", 0, 540, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 37, 577
+"c:\MiningQwQMusic\tests\unit\cloud-sync.test.ts", "TypeScript", 0, 18, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 22
+"c:\MiningQwQMusic\tests\unit\desktop-host.test.ts", "TypeScript", 0, 124, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 22, 146
+"c:\MiningQwQMusic\tests\unit\image-url.test.ts", "TypeScript", 0, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 26
+"c:\MiningQwQMusic\tests\unit\mock-adapter.test.ts", "TypeScript", 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2
+"c:\MiningQwQMusic\tests\unit\netease-adapter.test.ts", "TypeScript", 0, 112, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 119
+"c:\MiningQwQMusic\tests\unit\player-controller-regression.test.tsx", "TypeScript JSX", 0, 0, 332, 0, 0, 0, 0, 0, 0, 0, 0, 0, 63, 395
+"c:\MiningQwQMusic\tests\unit\player-store.test.ts", "TypeScript", 0, 80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 23, 103
+"c:\MiningQwQMusic\tests\unit\player-ui.test.ts", "TypeScript", 0, 54, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 59
+"c:\MiningQwQMusic\tests\unit\playlist-import.test.ts", "TypeScript", 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 8
+"c:\MiningQwQMusic\tests\unit\shell-chrome.test.ts", "TypeScript", 0, 99, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 123
+"c:\MiningQwQMusic\tests\unit\user-avatar.test.tsx", "TypeScript JSX", 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 45
+"c:\MiningQwQMusic\tests\unit\user-facing-error.test.ts", "TypeScript", 0, 48, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, 55
+"c:\MiningQwQMusic\tsconfig.tsbuildinfo", "JSON", 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1
+"Total", "-", 27, 5299, 3976, 155, 194, 508, 2099, 89, 64, 43, 34, 11, 1423, 13922

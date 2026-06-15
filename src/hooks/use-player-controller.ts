@@ -279,6 +279,10 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
       URL.revokeObjectURL(entry.blobUrl);
     });
     fullAudioCacheRef.current.clear();
+    // Reset the loaded track marker so that the main loader re-fetches
+    // the current track source with the current auth context (e.g. after
+    // login, when the previous source was a 30 s preview).
+    lastLoadedTrackIdRef.current = null;
   }, []);
 
   const refreshPreviewSource = useCallback(async () => {

@@ -2480,6 +2480,14 @@ export function PlayerApp() {
 
     syncPollTimerRef.current = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
+      // Silently refresh the access token before it expires so that the
+      // authenticated state survives extended foreground sessions.
+      void restoreAuthenticatedSession({
+        mode: "auto",
+        transientRetries: 1,
+        setAuthenticatingBefore: false,
+        syncOnSuccess: false
+      });
       void triggerCloudPull("polling");
     }, ACCOUNT_PULL_POLLING_MS);
 
@@ -2489,7 +2497,7 @@ export function PlayerApp() {
         syncPollTimerRef.current = null;
       }
     };
-  }, [authStatus, isAccountEnabled, player.hasHydrated, triggerCloudPull]);
+  }, [authStatus, isAccountEnabled, player.hasHydrated, restoreAuthenticatedSession, triggerCloudPull]);
 
   useEffect(() => {
     if (!isAccountEnabled || authStatus !== "authenticated") return;
@@ -4726,6 +4734,10 @@ export function PlayerApp() {
       </div>
 
       <div className="spotify-player-center">
+        <div className="spotify-player-inline-meta">
+          <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
+          <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
+        </div>
         <div className="spotify-progress-row">
           <span>{formatMs(player.currentTimeMs)}</span>
           <input

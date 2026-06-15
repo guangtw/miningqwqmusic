@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { createJSONStorage, persist } from "zustand/middleware";
 import type { AccountUser, AuthStatus, SyncState } from "@/src/types/account";
 
 type AuthState = {
@@ -31,44 +32,57 @@ const initialState: AuthState = {
   errorMessage: null
 };
 
-export const useAuthStore = create<AuthStore>()((set) => ({
-  ...initialState,
-  setAuthenticating: () =>
-    set((state) => ({
-      ...state,
-      status: "authenticating",
-      errorMessage: null
-    })),
-  setAuthenticated: (user, accessToken) =>
-    set({
-      status: "authenticated",
-      user,
-      accessToken,
-      lastSyncState: "idle",
-      errorMessage: null
+export const useAuthStore = create<AuthStore>()(
+  persist(
+    (set) => ({
+      ...initialState,
+      setAuthenticating: () =>
+        set((state) => ({
+          ...state,
+          status: "authenticating",
+          errorMessage: null
+        })),
+      setAuthenticated: (user, accessToken) =>
+        set({
+          status: "authenticated",
+          user,
+          accessToken,
+          lastSyncState: "idle",
+          errorMessage: null
+        }),
+      updateUser: (user) =>
+        set((state) => ({
+          ...state,
+          user,
+          status: state.accessToken ? "authenticated" : state.status
+        })),
+      updateAccessToken: (accessToken) =>
+        set((state) => ({
+          ...state,
+          accessToken,
+          status: state.user ? "authenticated" : state.status
+        })),
+      setGuest: () => set({ ...initialState }),
+      setError: (message) =>
+        set((state) => ({
+          ...state,
+          status: "error",
+          errorMessage: message
+        })),
+      setSyncState: (lastSyncState) =>
+        set((state) => ({
+          ...state,
+          lastSyncState
+        }))
     }),
-  updateUser: (user) =>
-    set((state) => ({
-      ...state,
-      user,
-      status: state.accessToken ? "authenticated" : state.status
-    })),
-  updateAccessToken: (accessToken) =>
-    set((state) => ({
-      ...state,
-      accessToken,
-      status: state.user ? "authenticated" : state.status
-    })),
-  setGuest: () => set({ ...initialState }),
-  setError: (message) =>
-    set((state) => ({
-      ...state,
-      status: "error",
-      errorMessage: message
-    })),
-  setSyncState: (lastSyncState) =>
-    set((state) => ({
-      ...state,
-      lastSyncState
-    }))
-}));
+    {
+      name: "qwq-auth-store-v1",
+      storage: createJSONStorage(() => localStorage),
+      partialize: (state) => ({
+        status: state.status,
+        user: state.user,
+        accessToken: state.accessToken
+      })
+    }
+  )
+);

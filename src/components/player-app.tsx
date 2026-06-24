@@ -4291,15 +4291,19 @@ export function PlayerApp() {
   const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
   const musicUnblockEnabled = musicUnblockEntitlement?.enabled === true;
   const accountTierText = musicUnblockEnabled ? "高级用户" : "普通用户";
-  const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : accountStateText;
+  const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : hasAuthRefreshIssue ? accountStateText : "本地模式";
+  const accountOverviewTierText = authStatus === "authenticated" ? accountTierText : "未启用";
+  const accountOverviewSyncText = authStatus === "authenticated" ? accountStateText : hasAuthRefreshIssue ? accountStateText : "本地保存";
+  const accountSurfaceTitle = authStatus === "authenticated" ? accountDisplayName : "本地模式";
+  const accountSurfaceDescription = authStatus === "authenticated" ? accountEntryStatusText : "当前仅提供本地保存与播放记录";
   const desktopContext = desktopHost.context;
   const showDesktopSettings = !isMobileUi && desktopHost.isDesktopHost && Boolean(desktopContext);
   const desktopActionPending = desktopActionState.action;
   const desktopCapabilities = desktopContext?.capabilities;
   const accountManagerTabs = [
-    { id: "profile" as const, label: "资料", visible: true, disabled: authStatus !== "authenticated" },
-    { id: "security" as const, label: "安全", visible: true, disabled: authStatus !== "authenticated" },
-    { id: "advanced" as const, label: "高级", visible: true, disabled: authStatus !== "authenticated" },
+    { id: "profile" as const, label: "资料", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
+    { id: "security" as const, label: "安全", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
+    { id: "advanced" as const, label: "高级", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
     { id: "desktop" as const, label: "桌面", visible: showDesktopSettings, disabled: !showDesktopSettings }
   ].filter((tab) => tab.visible);
   const listenDrawerTabs = [
@@ -4342,12 +4346,13 @@ export function PlayerApp() {
   const musicUnblockStatusText = !isAccountEnabled
     ? "账号服务未启用"
     : authStatus !== "authenticated"
-      ? "登录后兑换"
+      ? "暂未开放"
       : musicUnblockLoading
         ? "检查中"
         : musicUnblockEnabled
           ? "已启用"
           : "未兑换";
+  const accountOverviewUnblockText = authStatus === "authenticated" ? musicUnblockStatusText : "暂未开放";
   const listenPanelContent = (
     <>
       <div className="listen-drawer-head">
@@ -4884,15 +4889,6 @@ export function PlayerApp() {
               退出登录
             </button>
           </>
-        ) : isAccountEnabled ? (
-          <>
-            <button type="button" onClick={openLoginDialog}>
-              登录同步
-            </button>
-            <button type="button" className="ghost" onClick={openRegisterDialog}>
-              注册
-            </button>
-          </>
         ) : null}
         <button type="button" className="ghost" onClick={closeAccountManager}>
           关闭
@@ -4951,16 +4947,9 @@ export function PlayerApp() {
                 <section className="account-manager-section">
                   <div className="account-manager-section-head">
                     <span>资料</span>
-                    <small>登录后可修改头像、昵称和资料信息</small>
+                    <small>当前仅提供本地资料展示，云端资料入口后续开放。</small>
                   </div>
-                  <div className="account-manager-desktop-auth-actions">
-                    <button type="button" onClick={openLoginDialog}>
-                      立即登录
-                    </button>
-                    <button type="button" className="ghost" onClick={openRegisterDialog}>
-                      注册账号
-                    </button>
-                  </div>
+                  <p className="account-manager-status">本地收藏、最近播放与播放设置可继续使用。</p>
                 </section>
               )
             ) : null}
@@ -5006,13 +4995,9 @@ export function PlayerApp() {
                 <section className="account-manager-section">
                   <div className="account-manager-section-head">
                     <span>安全</span>
-                    <small>登录后可管理密码和登录状态</small>
+                    <small>当前仅保留本地使用，安全设置入口后续开放。</small>
                   </div>
-                  <div className="account-manager-desktop-auth-actions">
-                    <button type="button" onClick={openLoginDialog}>
-                      登录后管理
-                    </button>
-                  </div>
+                  <p className="account-manager-status">本次不会影响游客模式下的本地数据与播放能力。</p>
                 </section>
               )
             ) : null}
@@ -5055,13 +5040,9 @@ export function PlayerApp() {
                 <section className="account-manager-section">
                   <div className="account-manager-section-head">
                     <span>高级</span>
-                    <small>登录后可兑换高级资格并同步到桌面端</small>
+                    <small>高级资格兑换入口暂未开放。</small>
                   </div>
-                  <div className="account-manager-desktop-auth-actions">
-                    <button type="button" onClick={openLoginDialog}>
-                      登录后兑换
-                    </button>
-                  </div>
+                  <p className="account-manager-status">当前仍可继续使用本地播放与基础音乐库功能。</p>
                 </section>
               )
             ) : null}
@@ -5134,9 +5115,9 @@ export function PlayerApp() {
                 <small>{authStatus === "authenticated" ? "资料与同步状态" : "当前桌面环境"}</small>
               </div>
               <div className="drawer-info-list">
-                <p>会员层级：{accountTierText}</p>
-                <p>同步状态：{accountStateText}</p>
-                <p>高级资格：{musicUnblockStatusText}</p>
+                <p>会员层级：{accountOverviewTierText}</p>
+                <p>同步状态：{accountOverviewSyncText}</p>
+                <p>高级资格：{accountOverviewUnblockText}</p>
                 <p>桌面状态：{showDesktopSettings ? "已连接桌面端" : "当前为网页端"}</p>
               </div>
             </section>
@@ -5179,12 +5160,9 @@ export function PlayerApp() {
             <div className="mobile-library-account-row passive">
               <UserAvatar user={authUser} size="sm" />
               <span>
-                <strong>{accountDisplayName}</strong>
-                <small>{accountStateText}</small>
+                <strong>本地模式</strong>
+                <small>当前仅提供本地保存与播放记录</small>
               </span>
-              <button type="button" onClick={openLoginDialog}>
-                登录同步
-              </button>
             </div>
           )
         ) : (
@@ -5319,12 +5297,12 @@ export function PlayerApp() {
             </div>
             {isAccountEnabled ? (
               <div className="account-switch-card">
-                <span>账号同步</span>
+                <span>{authStatus === "authenticated" ? "账号同步" : "本地模式"}</span>
                 <div className="account-switch-body">
                   <UserAvatar user={authUser} size="md" />
                   <div className="account-switch-meta">
-                    <strong>{accountDisplayName}</strong>
-                    <small>{accountEntryStatusText}</small>
+                    <strong>{accountSurfaceTitle}</strong>
+                    <small>{accountSurfaceDescription}</small>
                   </div>
                   {authStatus === "authenticated" ? (
                     <div className="account-switch-actions">
@@ -5343,23 +5321,9 @@ export function PlayerApp() {
                     </div>
                   ) : (
                     <div className="account-switch-actions">
-                      <button
-                        type="button"
-                        onClick={openLoginDialog}
-                      >
-                        登录同步
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={openRegisterDialog}
-                      >
-                        注册
-                      </button>
                       {showDesktopSettings ? (
                         <button
                           type="button"
-                          className="ghost"
                           onClick={openDesktopSettings}
                         >
                           桌面设置

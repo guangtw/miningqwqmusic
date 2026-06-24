@@ -57,7 +57,7 @@ test("empty search gives explicit feedback", async ({ page }) => {
   await expect(page.getByText("请输入关键词后再搜索。")).toBeVisible();
 });
 
-test("account dialog traps focus and returns focus after escape", async ({ page }) => {
+test("guest account entry stays hidden even when account proxy responds", async ({ page }) => {
   await page.route("**/api/account/auth/refresh", async (route) => {
     await route.fulfill({
       status: 401,
@@ -86,27 +86,10 @@ test("account dialog traps focus and returns focus after escape", async ({ page 
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
   await openMobileTabIfNeeded(page, "我的");
-  const loginButton = page.getByRole("button", { name: "登录同步" }).first();
-  await expect(loginButton).toBeVisible();
-  await loginButton.click();
-
-  const dialog = page.getByRole("dialog", { name: "账号登录" });
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute("aria-modal", "true");
-  await expect(page.getByPlaceholder("you@example.com")).toBeVisible();
-  await page.getByPlaceholder("you@example.com").fill("test@example.com");
-  await page.getByPlaceholder("至少 8 位").fill("wrong-password");
-  await page.keyboard.press("Enter");
-  await expect(dialog.getByText("邮箱或密码不正确，请重新输入。")).toBeVisible();
-
-  await page.keyboard.press("Shift+Tab");
-  const activeInsideDialog = await page.evaluate(() => {
-    const dialogNode = document.querySelector(".account-dialog-panel");
-    return Boolean(dialogNode && document.activeElement && dialogNode.contains(document.activeElement));
-  });
-  expect(activeInsideDialog).toBe(true);
-
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-  await expect(loginButton).toBeFocused();
+  await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "注册" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
+  if (await usesMobileShell(page)) {
+    await expect(page.locator(".mobile-library-account-row")).toContainText("本地模式");
+  }
 });

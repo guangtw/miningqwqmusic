@@ -109,6 +109,38 @@ async function openHomeTab(page: Page) {
   });
 }
 
+async function installPersistedAuthSession(
+  page: Page,
+  user: {
+    id: string;
+    email: string;
+    nickname: string;
+    avatarFallbackText: string;
+    avatarFallbackBg: string;
+  },
+  accessToken = "e2e-token"
+) {
+  await page.addInitScript(
+    ({ user: seededUser, token }) => {
+      window.localStorage.setItem(
+        "qwq-auth-store-v1",
+        JSON.stringify({
+          state: {
+            status: "authenticated",
+            user: seededUser,
+            accessToken: token
+          },
+          version: 0
+        })
+      );
+    },
+    {
+      user,
+      token: accessToken
+    }
+  );
+}
+
 async function installDesktopHostMock(page: Page) {
   await page.addInitScript(() => {
     const listeners = new Set<(event: { data: unknown }) => void>();
@@ -140,7 +172,12 @@ async function installDesktopHostMock(page: Page) {
           listeners.delete(listener);
         },
         postMessage: (message: string) => {
-          const payload = JSON.parse(message) as { action?: string; requestId?: string; type?: string };
+          let payload: { action?: string; requestId?: string; type?: string } | null = null;
+          try {
+            payload = JSON.parse(message) as { action?: string; requestId?: string; type?: string };
+          } catch {
+            return;
+          }
           if (payload.type !== "miningqwq-desktop-action") return;
           if (payload.action === "ready") {
             queueMicrotask(() => {
@@ -227,7 +264,7 @@ test("browser environment keeps desktop-only settings hidden", async ({ page }, 
   await expect(page.getByText("桌面客户端")).toHaveCount(0);
 });
 
-test("account entry is available when account proxy responds and can open dialog", async ({ page }) => {
+test("guest account UI stays in local mode when account proxy responds", async ({ page }) => {
   await page.route("**/api/account/auth/refresh", async (route) => {
     await route.fulfill({
       status: 401,
@@ -242,13 +279,17 @@ test("account entry is available when account proxy responds and can open dialog
   });
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
+  await openLibraryTab(page);
+  await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "注册" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
   if (await usesMobileShell(page)) {
-    await openLibraryTab(page);
+    await expect(page.locator(".mobile-library-account-row")).toContainText("本地模式");
+    await expect(page.locator(".mobile-library-account-row")).toContainText("当前仅提供本地保存与播放记录");
+  } else {
+    await expect(page.locator(".account-switch-card")).toContainText("本地模式");
+    await expect(page.locator(".account-switch-card")).toContainText("当前仅提供本地保存与播放记录");
   }
-  const loginButton = page.getByRole("button", { name: "登录同步" }).first();
-  await expect(loginButton).toBeVisible();
-  await loginButton.click();
-  await expect(page.getByRole("dialog", { name: "账号登录" })).toBeVisible();
 });
 
 test("logged-in account entry opens account management drawer", async ({ page }) => {
@@ -266,7 +307,7 @@ test("logged-in account entry opens account management drawer", async ({ page })
       message: "ok",
       traceId: "e2e-account-manager"
     });
-  let loggedIn = false;
+  let loggedIn = true;
 
   await page.route("**/api/account/auth/refresh", async (route) => {
     if (loggedIn) {
@@ -340,6 +381,7 @@ test("logged-in account entry opens account management drawer", async ({ page })
     });
   });
 
+  await installPersistedAuthSession(page, user);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   if (!(await usesMobileShell(page))) {
@@ -348,11 +390,6 @@ test("logged-in account entry opens account management drawer", async ({ page })
   if (await usesMobileShell(page)) {
     await openLibraryTab(page);
   }
-
-  await page.getByRole("button", { name: "登录同步" }).first().click();
-  await page.getByLabel("邮箱").fill("user@example.com");
-  await page.getByLabel("密码").fill("StrongP@ss1");
-  await page.getByRole("button", { name: "登录并同步" }).click();
   await page.waitForLoadState("networkidle");
   await openLibraryTab(page);
 
@@ -379,7 +416,8 @@ test("logged-in account entry opens account management drawer", async ({ page })
   await drawer.getByRole("button", { name: "退出登录" }).click();
   await page.waitForLoadState("networkidle");
   await openLibraryTab(page);
-  await expect(page.getByRole("button", { name: "登录同步" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+  await expect(page.locator(".mobile-library-account-row")).toContainText("本地模式");
 });
 
 test("library sync status stays stable during silent background refreshes", async ({ page }) => {
@@ -646,12 +684,9 @@ test("listen drawer groups room friends and activity with partial friend search"
     });
   });
 
+  await installPersistedAuthSession(page, user);
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
-  await page.getByRole("button", { name: "登录同步" }).first().click();
-  await page.getByLabel("邮箱").fill("listen@example.com");
-  await page.getByLabel("密码").fill("StrongP@ss1");
-  await page.getByRole("button", { name: "登录并同步" }).click();
   await page.waitForLoadState("networkidle");
 
   await page.locator(".listen-sidebar-entry").first().click();
@@ -672,7 +707,7 @@ test("listen drawer groups room friends and activity with partial friend search"
   await expect(drawer.getByRole("tab", { name: /好友请求/ })).toBeVisible();
 });
 
-test("guest preview source is rebuilt after advanced login reload and detail hides unblock controls", async ({ page }, testInfo) => {
+test("guest preview source is rebuilt after authenticated session restore and detail hides unblock controls", async ({ page }, testInfo) => {
   const user = {
     id: "vip-user",
     email: "vip@example.com",
@@ -718,18 +753,6 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
         traceId: "e2e-playback-refresh",
         retryable: false
       })
-    });
-  });
-  await page.route("**/api/account/auth/login", async (route) => {
-    loggedIn = true;
-    entitlementEnabled = true;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      headers: {
-        "set-cookie": "mqm_refresh_token=vip-refresh; Path=/; HttpOnly; SameSite=Lax"
-      },
-      body: successPayload({ user, accessToken: "vip-token" })
     });
   });
   await page.route("**/api/account/auth/me", async (route) => {
@@ -808,13 +831,22 @@ test("guest preview source is rebuilt after advanced login reload and detail hid
   await expect.poll(() => guestPlayRequestCount).toBeGreaterThan(0);
   await expectActivePlayerTitle();
 
-  if (testInfo.project.name.includes("mobile")) {
-    await openLibraryTab(page);
-  }
-  await page.getByRole("button", { name: "登录同步" }).first().click();
-  await page.getByLabel("邮箱").fill("vip@example.com");
-  await page.getByLabel("密码").fill("StrongP@ss1");
-  await page.getByRole("button", { name: "登录并同步" }).click();
+  loggedIn = true;
+  entitlementEnabled = true;
+  await page.evaluate((seededUser) => {
+    window.localStorage.setItem(
+      "qwq-auth-store-v1",
+      JSON.stringify({
+        state: {
+          status: "authenticated",
+          user: seededUser,
+          accessToken: "vip-token"
+        },
+        version: 0
+      })
+    );
+  }, user);
+  await page.reload();
   await page.waitForLoadState("networkidle");
 
   await expect.poll(() => entitledPlayRequestCount).toBeGreaterThan(0);
@@ -879,31 +911,32 @@ test("short desktop sidebar keeps account warning, retry and theme switch visibl
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const loginButton = page.getByRole("button", { name: "登录同步" }).first();
+    const localModeCard = page.locator(".account-switch-card").first();
     const retryButton = page.getByRole("button", { name: "重试连接" }).first();
     const themeSwitch = page.locator(".theme-switch-card .theme-switch").first();
-    await expect(loginButton).toBeVisible();
+    await expect(localModeCard).toBeVisible();
+    await expect(localModeCard).toContainText("本地模式");
     await expect(retryButton).toBeVisible();
     await expect(themeSwitch).toBeVisible();
 
     const playerBox = await page.locator(".spotify-player-bar:visible").first().boundingBox();
     const sidebarBox = await page.locator(".spotify-sidebar:visible").first().boundingBox();
-    const loginBox = await loginButton.boundingBox();
+    const localModeBox = await localModeCard.boundingBox();
     const retryBox = await retryButton.boundingBox();
     const themeBox = await themeSwitch.boundingBox();
     const themePosition = await themeSwitch.evaluate((node) => getComputedStyle(node.closest(".theme-switch-card") ?? node).position);
     expect(playerBox).not.toBeNull();
     expect(sidebarBox).not.toBeNull();
-    expect(loginBox).not.toBeNull();
+    expect(localModeBox).not.toBeNull();
     expect(retryBox).not.toBeNull();
     expect(themeBox).not.toBeNull();
     expect(themePosition).not.toBe("fixed");
-    if (playerBox && sidebarBox && loginBox && retryBox && themeBox) {
+    if (playerBox && sidebarBox && localModeBox && retryBox && themeBox) {
       expect(themeBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
       expect(themeBox.x + themeBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 1);
       expect(retryBox.y + retryBox.height).toBeLessThan(playerBox.y);
       expect(themeBox.y).toBeGreaterThanOrEqual(retryBox.y + retryBox.height - 1);
-      expect(themeBox.y).toBeGreaterThanOrEqual(loginBox.y + loginBox.height - 1);
+      expect(themeBox.y).toBeGreaterThanOrEqual(localModeBox.y + localModeBox.height - 1);
       expect(Math.round(retryBox.height)).toBeGreaterThanOrEqual(36);
     }
 
@@ -940,6 +973,7 @@ test("desktop host exposes desktop settings for signed-out users", async ({ page
 
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
+  await openLibraryTab(page);
 
   const desktopButton = page.getByRole("button", { name: "桌面设置" }).first();
   await expect(desktopButton).toBeVisible();
@@ -954,6 +988,8 @@ test("desktop host exposes desktop settings for signed-out users", async ({ page
   await expect(drawer.getByRole("button", { name: "清理缓存并重载" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "打开下载页" })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "在浏览器打开网页版" })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "登录同步" })).toHaveCount(0);
+  await expect(drawer.getByRole("button", { name: "注册" })).toHaveCount(0);
   await expect(page.getByRole("dialog", { name: "账号登录" })).toHaveCount(0);
 });
 

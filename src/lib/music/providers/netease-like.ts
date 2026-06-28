@@ -578,6 +578,34 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
   }
 
+  async searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>> {
+    const offset = (input.page - 1) * input.pageSize;
+    const raw = await this.request<{
+      result?: {
+        playlists?: Array<{ id?: number | string; name?: string; coverImgUrl?: string; picUrl?: string; description?: string }>;
+        playlistCount?: number;
+      };
+    }>(this.config.pathSearch, {
+      keywords: input.keyword,
+      type: 1000,
+      limit: input.pageSize,
+      offset
+    });
+    const playlists = raw.result?.playlists ?? [];
+    return {
+      items: playlists.map((playlist) => ({
+        id: String(playlist.id ?? ""),
+        name: playlist.name ?? "未知歌单",
+        coverUrl: playlist.coverImgUrl ?? playlist.picUrl,
+        description: asString(playlist.description),
+        tracks: []
+      })),
+      page: input.page,
+      pageSize: input.pageSize,
+      total: raw.result?.playlistCount ?? playlists.length
+    };
+  }
+
   async getTrackDetail(trackId: string): Promise<Track> {
     const raw = await this.request<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
     const song = raw.songs?.[0];

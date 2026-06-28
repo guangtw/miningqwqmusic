@@ -77,6 +77,18 @@ export async function searchArtists(input: ArtistSearchInput): Promise<PagedResu
   }
 }
 
+export async function searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>> {
+  try {
+    return await breaker.execute(() => getAdapter().searchPlaylists(input));
+  } catch (error) {
+    const fallbackToMock = envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false);
+    if (!fallbackToMock) throw error;
+
+    adapter = createMockMusicAdapter();
+    return adapter.searchPlaylists(input);
+  }
+}
+
 export async function getTrack(trackId: string): Promise<Track> {
   try {
     return await breaker.execute(() => getAdapter().getTrackDetail(trackId));

@@ -3283,13 +3283,14 @@ input:focus-visible {
 }
 
 .search-mode-switch {
-  --search-mode-thumb-x: 0%;
+  --search-mode-count: 3;
+  --search-mode-index: 0;
   --search-mode-inset: 4px;
-  --search-mode-thumb-w: calc((100% - (var(--search-mode-inset) * 2)) / 2);
+  --search-mode-thumb-w: calc((100% - (var(--search-mode-inset) * 2)) / var(--search-mode-count));
   margin-top: 0;
   position: relative;
   display: inline-grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--search-mode-count), minmax(0, 1fr));
   gap: 0;
   padding: var(--search-mode-inset);
   border-radius: var(--radius-pill);
@@ -3301,8 +3302,16 @@ input:focus-visible {
   -webkit-backdrop-filter: blur(8px);
 }
 
+.search-mode-switch.mode-track {
+  --search-mode-index: 0;
+}
+
 .search-mode-switch.mode-artist {
-  --search-mode-thumb-x: 100%;
+  --search-mode-index: 1;
+}
+
+.search-mode-switch.mode-playlist {
+  --search-mode-index: 2;
 }
 
 .search-mode-switch-thumb {
@@ -3313,7 +3322,7 @@ input:focus-visible {
   width: var(--search-mode-thumb-w);
   height: calc(100% - (var(--search-mode-inset) * 2));
   border-radius: var(--radius-pill);
-  transform: translate3d(var(--search-mode-thumb-x), 0, 0);
+  transform: translate3d(calc(100% * var(--search-mode-index)), 0, 0);
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(237, 244, 252, 0.88));
   border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow:
@@ -3502,6 +3511,49 @@ input:focus-visible {
 
 .artist-search-row:active {
   transform: translateY(1px);
+}
+
+.playlist-search-row {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  padding: 8px;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-main);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.14s var(--ease), background 0.2s ease;
+}
+
+.playlist-search-row:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.playlist-search-row:active {
+  transform: translateY(1px);
+}
+
+.playlist-search-cover {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background-size: cover;
+  background-position: center;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.playlist-search-main h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.playlist-search-main p {
+  margin: 4px 0 0 0;
+  color: var(--text-sub);
+  font-size: 12px;
 }
 
 .artist-search-cover {

@@ -117,6 +117,43 @@ export class MockMusicAdapter implements MusicSourceAdapter {
     };
   }
 
+  async searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>> {
+    const playlists: Playlist[] = [
+      {
+        id: "mock-playlist-night",
+        name: "Neon Night Drive",
+        description: "城市夜行与合成器流光。",
+        coverUrl: MOCK_TRACKS[0].coverUrl,
+        tracks: [MOCK_TRACKS[0], MOCK_TRACKS[2]]
+      },
+      {
+        id: "mock-playlist-rain",
+        name: "Rain Signal Archive",
+        description: "偏冷调的雨夜循环歌单。",
+        coverUrl: MOCK_TRACKS[1].coverUrl,
+        tracks: [MOCK_TRACKS[1], MOCK_TRACKS[3]]
+      },
+      {
+        id: "mock-playlist-mix",
+        name: "Aurora Unit 收藏集",
+        description: "适合搜索与抽屉联调的示例歌单。",
+        coverUrl: MOCK_TRACKS[0].coverUrl,
+        tracks: MOCK_TRACKS
+      }
+    ];
+    const q = input.keyword.trim().toLowerCase();
+    const filtered = !q
+      ? playlists
+      : playlists.filter((playlist) => `${playlist.name} ${playlist.description ?? ""}`.toLowerCase().includes(q));
+    const start = (input.page - 1) * input.pageSize;
+    return {
+      items: filtered.slice(start, start + input.pageSize),
+      page: input.page,
+      pageSize: input.pageSize,
+      total: filtered.length
+    };
+  }
+
   async getTrackDetail(trackId: string): Promise<Track> {
     return MOCK_TRACKS.find((track) => track.id === trackId) ?? MOCK_TRACKS[0];
   }

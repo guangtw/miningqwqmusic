@@ -81,6 +81,35 @@ describe("NeteaseLikeAdapter mapping", () => {
     });
   });
 
+  it("maps playlist search result to Playlist list", async () => {
+    const adapter = createAdapter();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        result: {
+          playlistCount: 1,
+          playlists: [
+            {
+              id: 9001,
+              name: "深夜循环",
+              coverImgUrl: "playlist.png",
+              description: "适合凌晨的歌单"
+            }
+          ]
+        }
+      })
+    );
+
+    const result = await adapter.searchPlaylists({ keyword: "深夜", page: 1, pageSize: 20 });
+    expect(result.total).toBe(1);
+    expect(result.items[0]).toMatchObject({
+      id: "9001",
+      name: "深夜循环",
+      coverUrl: "playlist.png",
+      description: "适合凌晨的歌单",
+      tracks: []
+    });
+  });
+
   it("maps lyric response", async () => {
     const adapter = createAdapter();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(

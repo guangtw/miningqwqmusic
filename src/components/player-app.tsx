@@ -58,7 +58,8 @@ import {
   getTrackInsight,
   getTrackQualityAvailability,
   getToplistDetail,
-  searchMusic
+  searchMusic,
+  searchPlaylists
 } from "@/src/lib/client-api";
 import { computeHomeGridPlan } from "@/src/lib/home-grid";
 import { resolveCloudPullMode, shouldShowCloudSyncing, shouldSkipRecentCloudPull, type CloudPullOptions } from "@/src/lib/cloud-sync";
@@ -77,6 +78,12 @@ import {
   nextVolumeAfterMuteToggle,
   shouldTogglePlaybackBySpace
 } from "@/src/lib/player-ui";
+import {
+  appendPagedItems,
+  getSearchLoadingPlaceholderCount,
+  shouldLoadNextSearchPage,
+  shouldLoadNextSearchPageByScroll
+} from "@/src/lib/search-pagination";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { toUserFacingMessage } from "@/src/lib/user-facing-error";
 import { useAuthStore } from "@/src/store/auth-store";
@@ -103,7 +110,7 @@ import type {
 
 type NavTab = "home" | "search" | "library";
 type SearchStatus = "idle" | "loading" | "success" | "empty" | "error";
-type SearchMode = "track" | "artist";
+type SearchMode = "track" | "artist" | "playlist";
 type LibraryView = "library-favorites" | "library-recent" | "library-playlists";
 type HomePlaylistView = "featured" | "more";
 type DetailViewTab = "lyric" | "meta";
@@ -160,6 +167,7 @@ const AUTH_RESUME_REFRESH_RETRIES = 2;
 const AUTH_RESUME_REFRESH_BACKOFF_MS = 450;
 const ARTWORK_DETAIL_FETCH_BATCH = 3;
 const FRIEND_SEARCH_DEBOUNCE_MS = 280;
+const SEARCH_PAGE_SIZE = 20;
 const SEARCH_ASSIST_MAX_ITEMS = 20;
 const SEARCH_ASSIST_MAX_ROWS = 2;
 const HOME_GRID_GAP = 12;
@@ -197,6 +205,11 @@ const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = 
   { value: "sky", label: PLAY_QUALITY_LABELS.sky },
   { value: "dolby", label: PLAY_QUALITY_LABELS.dolby },
   { value: "jymaster", label: PLAY_QUALITY_LABELS.jymaster }
+];
+const SEARCH_MODE_OPTIONS: Array<{ value: SearchMode; label: string }> = [
+  { value: "track", label: "单曲" },
+  { value: "artist", label: "歌手" },
+  { value: "playlist", label: "歌单" }
 ];
 
 function desktopActionBusyLabel(action: DesktopHostUserAction | null): string | null {
@@ -978,6 +991,29 @@ function ArtistSearchRow({
   );
 }
 
+function PlaylistSearchRow({
+  playlist,
+  onOpen
+}: {
+  playlist: Playlist;
+  onOpen: (playlist: Playlist) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="playlist-search-row"
+      onClick={() => onOpen(playlist)}
+    >
+      <div className="playlist-search-cover" style={toCoverBackgroundStyle(playlist.coverUrl, SMALL_COVER_WIDTHS.playlistRow)} />
+      <div className="playlist-search-main">
+        <h3>{playlist.name}</h3>
+        <p>{playlist.description || "打开查看完整歌单内容"}</p>
+      </div>
+      <span className="artist-search-entry">打开歌单</span>
+    </button>
+  );
+}
+
 function ThemedSelect({
   buttonId,
   labelId,
@@ -1124,6 +1160,10 @@ export function PlayerApp() {
   const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
   const [trackResult, setTrackResult] = useState<Track[]>([]);
   const [artistResult, setArtistResult] = useState<ArtistSearchItem[]>([]);
+  const [playlistResult, setPlaylistResult] = useState<Playlist[]>([]);
+  const [searchPage, setSearchPage] = useState(0);
+  const [searchTotal, setSearchTotal] = useState(0);
+  const [searchLoadingMore, setSearchLoadingMore] = useState(false);
   const [searchArtistDetail, setSearchArtistDetail] = useState<ArtistDetail | null>(null);
   const [searchArtistDetailLoading, setSearchArtistDetailLoading] = useState(false);
   const [searchArtistDetailError, setSearchArtistDetailError] = useState<string | null>(null);
@@ -1263,11 +1303,15 @@ export function PlayerApp() {
   const homeChannelGridRef = useRef<HTMLElement>(null);
   const homePlaylistGridRef = useRef<HTMLDivElement>(null);
   const homeEventGridRef = useRef<HTMLDivElement>(null);
+  const searchResultsBodyRef = useRef<HTMLDivElement>(null);
   const hotAssistRowRef = useRef<HTMLDivElement>(null);
   const suggestAssistRowRef = useRef<HTMLDivElement>(null);
   const playlistSummaryRef = useRef<HTMLParagraphElement>(null);
   const homePlaylistListRef = useRef<HTMLDivElement>(null);
   const panelTrackRowRefsRef = useRef<Map<number, HTMLElement>>(new Map());
+  const searchRequestIdRef = useRef(0);
+  const searchLoadingMoreRef = useRef(false);
+  const searchHasUserScrolledRef = useRef(false);
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
   const lyricAutoScrollRafRef = useRef<number | null>(null);
   const lyricAutoScrollTimerRef = useRef<number | null>(null);
@@ -1406,6 +1450,21 @@ export function PlayerApp() {
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
   );
+  const activeSearchResultCount = useMemo(() => {
+    if (searchMode === "artist") return artistResult.length;
+    if (searchMode === "playlist") return playlistResult.length;
+    return trackResult.length;
+  }, [artistResult.length, playlistResult.length, searchMode, trackResult.length]);
+  const canLoadMoreSearchResults = useMemo(() => {
+    if (searchMode === "artist" && searchArtistDetail) return false;
+    return shouldLoadNextSearchPage({
+      status: searchStatus,
+      loadingMore: searchLoadingMore,
+      loadedCount: activeSearchResultCount,
+      total: searchTotal
+    });
+  }, [activeSearchResultCount, searchArtistDetail, searchLoadingMore, searchMode, searchStatus, searchTotal]);
+  const searchLoadingPlaceholderCount = useMemo(() => getSearchLoadingPlaceholderCount(searchMode), [searchMode]);
 
   useEffect(() => {
     if (!currentTrackId) {
@@ -3139,41 +3198,148 @@ export function PlayerApp() {
     }
   };
 
+  const openSearchPlaylist = (playlist: Playlist) => {
+    void openPlaylistPanel(
+      {
+        id: `search-playlist-${playlist.id}`,
+        title: playlist.name,
+        subtitle: playlist.description,
+        coverUrl: playlist.coverUrl,
+        type: "playlist",
+        targetId: playlist.id
+      },
+      "playlist"
+    );
+  };
+
+  const fetchSearchPage = useCallback(async (q: string, mode: SearchMode, page: number) => {
+    if (mode === "artist") {
+      return {
+        mode,
+        data: await searchArtists(q, page, SEARCH_PAGE_SIZE)
+      };
+    }
+    if (mode === "playlist") {
+      return {
+        mode,
+        data: await searchPlaylists(q, page, SEARCH_PAGE_SIZE)
+      };
+    }
+    return {
+      mode,
+      data: await searchMusic(q, page, SEARCH_PAGE_SIZE)
+    };
+  }, []);
+
   const runSearch = async (nextKeyword: string, mode: SearchMode) => {
     const q = nextKeyword.trim();
     if (!q) {
+      searchLoadingMoreRef.current = false;
+      searchHasUserScrolledRef.current = false;
       setSearchStatus("error");
       setTrackResult([]);
       setArtistResult([]);
+      setPlaylistResult([]);
+      setSearchPage(0);
+      setSearchTotal(0);
+      setSearchLoadingMore(false);
       setSearchArtistDetail(null);
       setSearchArtistDetailError(null);
       setSearchError("请输入关键词后再搜索。");
       return;
     }
 
+    const requestId = ++searchRequestIdRef.current;
+    searchLoadingMoreRef.current = false;
+    searchHasUserScrolledRef.current = false;
     setSearchStatus("loading");
+    setSearchLoadingMore(false);
+    setSearchPage(0);
+    setSearchTotal(0);
     setSearchArtistDetail(null);
     setSearchArtistDetailError(null);
     setSearchError(null);
     try {
-      if (mode === "artist") {
-        const data = await searchArtists(q, 1, 20);
+      const response = await fetchSearchPage(q, mode, 1);
+      if (requestId !== searchRequestIdRef.current) return;
+      if (response.mode === "artist") {
+        const data = response.data;
         setArtistResult(data.items);
         setTrackResult([]);
+        setPlaylistResult([]);
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
+        setSearchStatus(data.items.length === 0 ? "empty" : "success");
+      } else if (response.mode === "playlist") {
+        const data = response.data;
+        setPlaylistResult(data.items);
+        setTrackResult([]);
+        setArtistResult([]);
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
         setSearchStatus(data.items.length === 0 ? "empty" : "success");
       } else {
-        const data = await searchMusic(q, 1, 20);
+        const data = response.data;
         setTrackResult(data.items);
         setArtistResult([]);
+        setPlaylistResult([]);
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
         setSearchStatus(data.items.length === 0 ? "empty" : "success");
       }
     } catch (error) {
+      if (requestId !== searchRequestIdRef.current) return;
       setTrackResult([]);
       setArtistResult([]);
+      setPlaylistResult([]);
+      setSearchPage(0);
+      setSearchTotal(0);
+      setSearchLoadingMore(false);
       setSearchStatus("error");
       setSearchError(toUserFacingMessage(error, "搜索失败，请稍后重试"));
     }
   };
+
+  const loadMoreSearchResults = useCallback(async () => {
+    const q = keyword.trim();
+    if (!q) return;
+    if (!canLoadMoreSearchResults) return;
+    if (searchLoadingMoreRef.current) return;
+
+    const nextPage = searchPage + 1;
+    const requestId = searchRequestIdRef.current;
+    searchLoadingMoreRef.current = true;
+    setSearchLoadingMore(true);
+    setSearchError(null);
+    try {
+      const response = await fetchSearchPage(q, searchMode, nextPage);
+      if (requestId !== searchRequestIdRef.current) return;
+
+      if (response.mode === "artist") {
+        const data = response.data;
+        setArtistResult((previous) => appendPagedItems(previous, data.items));
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
+      } else if (response.mode === "playlist") {
+        const data = response.data;
+        setPlaylistResult((previous) => appendPagedItems(previous, data.items));
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
+      } else {
+        const data = response.data;
+        setTrackResult((previous) => appendPagedItems(previous, data.items));
+        setSearchPage(data.page);
+        setSearchTotal(data.total);
+      }
+    } catch (error) {
+      if (requestId !== searchRequestIdRef.current) return;
+      setSearchError(toUserFacingMessage(error, "更多搜索结果加载失败，请稍后重试"));
+    } finally {
+      searchLoadingMoreRef.current = false;
+      if (requestId !== searchRequestIdRef.current) return;
+      setSearchLoadingMore(false);
+    }
+  }, [canLoadMoreSearchResults, fetchSearchPage, keyword, searchMode, searchPage]);
 
   const doSearch = async () => {
     await runSearch(keyword, searchMode);
@@ -3215,6 +3381,8 @@ export function PlayerApp() {
   const switchSearchMode = (nextMode: SearchMode) => {
     if (nextMode === searchMode) return;
     setSearchMode(nextMode);
+    searchLoadingMoreRef.current = false;
+    searchHasUserScrolledRef.current = false;
     setSearchArtistDetail(null);
     setSearchArtistDetailError(null);
     setSearchArtistDetailLoading(false);
@@ -3222,11 +3390,43 @@ export function PlayerApp() {
       setSearchStatus("idle");
       setTrackResult([]);
       setArtistResult([]);
+      setPlaylistResult([]);
+      setSearchPage(0);
+      setSearchTotal(0);
+      setSearchLoadingMore(false);
       setSearchError(null);
       return;
     }
     void runSearch(keyword, nextMode);
   };
+
+  useEffect(() => {
+    if (activeTab !== "search") return;
+    const root = searchResultsBodyRef.current;
+    if (!root) return;
+
+    const handleScroll = () => {
+      if (root.scrollTop > 12) {
+        searchHasUserScrolledRef.current = true;
+      }
+      if (
+        shouldLoadNextSearchPageByScroll({
+          canLoadMore: canLoadMoreSearchResults,
+          hasUserScrolled: searchHasUserScrolledRef.current,
+          scrollTop: root.scrollTop,
+          clientHeight: root.clientHeight,
+          scrollHeight: root.scrollHeight
+        })
+      ) {
+        void loadMoreSearchResults();
+      }
+    };
+
+    root.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      root.removeEventListener("scroll", handleScroll);
+    };
+  }, [activeTab, canLoadMoreSearchResults, loadMoreSearchResults]);
 
   const tryPlaySceneTrack = async (trackId?: string) => {
     if (!trackId) return;
@@ -5639,7 +5839,7 @@ export function PlayerApp() {
               <div className="search-sticky-head">
                 <div className="spotify-section-title">
                   <h2>搜索音乐</h2>
-                  <span>支持歌曲、歌手、专辑关键词</span>
+                  <span>支持单曲、歌手、歌单与专辑关键词</span>
                 </div>
 
                 <form
@@ -5671,24 +5871,18 @@ export function PlayerApp() {
                 </form>
                 <div className={`search-mode-switch mode-${searchMode}`} role="tablist" aria-label="搜索类型切换">
                   <span className="search-mode-switch-thumb" aria-hidden="true" />
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={searchMode === "track"}
-                    className={searchMode === "track" ? "active" : ""}
-                    onClick={() => switchSearchMode("track")}
-                  >
-                    单曲
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={searchMode === "artist"}
-                    className={searchMode === "artist" ? "active" : ""}
-                    onClick={() => switchSearchMode("artist")}
-                  >
-                    歌手
-                  </button>
+                  {SEARCH_MODE_OPTIONS.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={searchMode === option.value}
+                      className={searchMode === option.value ? "active" : ""}
+                      onClick={() => switchSearchMode(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
                 </div>
                 {searchAssist ? (
                   <div className="search-assist-block">
@@ -5728,7 +5922,7 @@ export function PlayerApp() {
                 ) : null}
               </div>
 
-              <div className="search-results-body">
+              <div ref={searchResultsBodyRef} className="search-results-body">
                 {searchMode === "track" ? (
                   <>
                     <div className="spotify-track-table-head">
@@ -5767,9 +5961,19 @@ export function PlayerApp() {
                       {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“林俊杰”或“修炼爱情”。</p> : null}
                       {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
                       {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
+                      {searchLoadingMore
+                        ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
+                            <div key={`loading-track-${index}`} className="track-skeleton-row" aria-hidden="true">
+                              <div />
+                              <div />
+                              <div />
+                              <div />
+                            </div>
+                          ))
+                        : null}
                     </div>
                   </>
-                ) : (
+                ) : searchMode === "artist" ? (
                   <div className="spotify-track-list">
                     {searchArtistDetail ? (
                       <section className="artist-detail-panel">
@@ -5847,10 +6051,48 @@ export function PlayerApp() {
                       {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
                       {searchArtistDetailLoading ? <p className="spotify-empty">歌手详情加载中...</p> : null}
                       {searchArtistDetailError ? <p className="error error-inline">{searchArtistDetailError}</p> : null}
+                      {searchLoadingMore
+                        ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
+                            <div key={`loading-artist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
+                              <div />
+                              <div />
+                              <div />
+                            </div>
+                          ))
+                        : null}
                     </>
                     )}
                   </div>
+                ) : (
+                  <div className="spotify-track-list">
+                    {searchStatus === "loading"
+                      ? Array.from({ length: 5 }).map((_, index) => (
+                          <div key={`skeleton-playlist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
+                            <div />
+                            <div />
+                            <div />
+                          </div>
+                        ))
+                      : null}
+                    {playlistResult.map((playlist) => (
+                      <PlaylistSearchRow key={playlist.id} playlist={playlist} onOpen={openSearchPlaylist} />
+                    ))}
+                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索歌单，例如“周杰伦”或“深夜循环”。</p> : null}
+                    {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配歌单，换个关键词试试。</p> : null}
+                    {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
+                    {searchLoadingMore
+                      ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
+                          <div key={`loading-playlist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
+                            <div />
+                            <div />
+                            <div />
+                          </div>
+                        ))
+                      : null}
+                  </div>
                 )}
+                {searchStatus === "success" && searchError ? <p className="error error-inline">{searchError}</p> : null}
+                {searchStatus === "success" && !canLoadMoreSearchResults && activeSearchResultCount > 0 ? <p className="spotify-empty">已展示全部搜索结果。</p> : null}
               </div>
             </section>
           ) : null}

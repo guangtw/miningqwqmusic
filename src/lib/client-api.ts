@@ -96,6 +96,13 @@ export async function searchArtists(keyword: string, page = 1, pageSize = 20): P
   return readResult<PagedResult<ArtistSearchItem>>(response);
 }
 
+export async function searchPlaylists(keyword: string, page = 1, pageSize = 20): Promise<PagedResult<Playlist>> {
+  const response = await fetch(`/api/music/search/playlists?q=${encodeURIComponent(keyword)}&page=${page}&pageSize=${pageSize}`, {
+    method: "GET"
+  });
+  return readResult<PagedResult<Playlist>>(response);
+}
+
 export async function getTrackPlaySource(
   trackId: string,
   options?: PlaySourceRequestOptions,

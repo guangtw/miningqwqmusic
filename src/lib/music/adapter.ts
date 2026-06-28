@@ -32,6 +32,7 @@ export type ArtistSearchInput = {
 export interface MusicSourceAdapter {
   searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>>;
   searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>>;
+  searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>>;
   getTrackDetail(trackId: string): Promise<Track>;
   getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability>;
   getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource>;

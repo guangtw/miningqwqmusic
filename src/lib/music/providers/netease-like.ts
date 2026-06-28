@@ -25,6 +25,7 @@ import type {
   Track,
   TrackLyric
 } from "@/src/types/music";
+import { toPlayQualityLevel } from "@/src/lib/play-quality";
 
 type NeteaseArtist = {
   id: number | string;
@@ -494,6 +495,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       trackId,
       url: data.url ?? "",
       preview,
+      level: toPlayQualityLevel(data.level),
       bitrate: data.br,
       restrictionReason: this.getRestrictionReason(raw, data),
       resolvedVia,

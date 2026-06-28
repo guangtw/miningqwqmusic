@@ -56,6 +56,7 @@ import {
   getTrackDetail,
   getTrackDownloadUrl,
   getTrackInsight,
+  getTrackQualityAvailability,
   getToplistDetail,
   searchMusic
 } from "@/src/lib/client-api";
@@ -68,6 +69,7 @@ import { installDesktopHostBridge, requestDesktopHostAction, useDesktopHost } fr
 import { getSizedImageUrl } from "@/src/lib/image-url";
 import { locateCurrentLyricIndex } from "@/src/lib/lyrics";
 import { installShellChromeBridge, postShellChromeTokens } from "@/src/lib/shell-chrome";
+import { getPlayQualityLabel, PLAY_QUALITY_LABELS } from "@/src/lib/play-quality";
 import {
   canOpenPlayerDetail,
   countItemsWithinRows,
@@ -95,6 +97,7 @@ import type {
   Playlist,
   SceneData,
   SongInsight,
+  TrackQualityAvailability,
   Track
 } from "@/src/types/music";
 
@@ -185,15 +188,15 @@ const SMALL_COVER_WIDTHS = {
   playlistRow: 88
 } as const;
 const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = [
-  { value: "standard", label: "standard" },
-  { value: "higher", label: "higher" },
-  { value: "exhigh", label: "exhigh" },
-  { value: "lossless", label: "lossless" },
-  { value: "hires", label: "hires" },
-  { value: "jyeffect", label: "jyeffect" },
-  { value: "sky", label: "sky" },
-  { value: "dolby", label: "dolby" },
-  { value: "jymaster", label: "jymaster" }
+  { value: "standard", label: PLAY_QUALITY_LABELS.standard },
+  { value: "higher", label: PLAY_QUALITY_LABELS.higher },
+  { value: "exhigh", label: PLAY_QUALITY_LABELS.exhigh },
+  { value: "lossless", label: PLAY_QUALITY_LABELS.lossless },
+  { value: "hires", label: PLAY_QUALITY_LABELS.hires },
+  { value: "jyeffect", label: PLAY_QUALITY_LABELS.jyeffect },
+  { value: "sky", label: PLAY_QUALITY_LABELS.sky },
+  { value: "dolby", label: PLAY_QUALITY_LABELS.dolby },
+  { value: "jymaster", label: PLAY_QUALITY_LABELS.jymaster }
 ];
 
 function desktopActionBusyLabel(action: DesktopHostUserAction | null): string | null {
@@ -975,9 +978,102 @@ function ArtistSearchRow({
   );
 }
 
+function ThemedSelect({
+  buttonId,
+  labelId,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  className
+}: {
+  buttonId: string;
+  labelId: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find((option) => option.value === value) ?? options[0] ?? { value, label: value };
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (rootRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className={`themed-select${className ? ` ${className}` : ""}${open ? " open" : ""}${disabled ? " disabled" : ""}`}>
+      <button
+        id={buttonId}
+        type="button"
+        className="themed-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-labelledby={`${labelId} ${buttonId}`}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) return;
+          setOpen((previous) => !previous);
+        }}
+      >
+        <span>{selected.label}</span>
+        <span className="themed-select-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open ? (
+        <div className="themed-select-menu" role="listbox" aria-labelledby={labelId}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              className={`themed-select-option${option.value === value ? " active" : ""}`}
+              aria-selected={option.value === value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value ? <span aria-hidden="true">✓</span> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PlayerApp() {
   const player = usePlayerStore();
   const authStatus = useAuthStore((state) => state.status);
+  const authAccessToken = useAuthStore((state) => state.accessToken);
   const authUser = useAuthStore((state) => state.user);
   const authPlaybackAuthorization = useAuthStore((state) => state.playbackAuthorization);
   const authSyncState = useAuthStore((state) => state.lastSyncState);
@@ -1067,6 +1163,8 @@ export function PlayerApp() {
     level: "exhigh",
     message: null
   });
+  const [trackQualityAvailability, setTrackQualityAvailability] = useState<TrackQualityAvailability | null>(null);
+  const [trackQualityLoading, setTrackQualityLoading] = useState(false);
   const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
   const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
   const [isMobileUi, setIsMobileUi] = useState(false);
@@ -1212,7 +1310,12 @@ export function PlayerApp() {
   const listenLastProgressPublishedAtRef = useRef(0);
   const friendSearchRequestIdRef = useRef(0);
   const playbackRefreshKey = `${authStatus}:${authUser?.id ?? "guest"}:${authPlaybackAuthorization?.enabled ? "enabled" : "disabled"}:${authPlaybackAuthorization?.version ?? 0}`;
+  const effectivePlayQualityLevel = useMemo<PlayQualityLevel>(() => {
+    if (!trackQualityAvailability?.fallbackMap) return player.playQualityLevel;
+    return trackQualityAvailability.fallbackMap[player.playQualityLevel] ?? player.playQualityLevel;
+  }, [player.playQualityLevel, trackQualityAvailability]);
   const controller = usePlayerController({
+    effectivePlayQualityLevel,
     playbackRefreshKey,
     resumePlaybackToken: playbackResumeToken
   });
@@ -1261,6 +1364,18 @@ export function PlayerApp() {
   const currentTrack = controller.currentTrack ?? queueTrack;
   const currentTrackId = currentTrack?.id ?? null;
   const currentTrackName = currentTrack?.name ?? null;
+  const currentTrackAvailablePlayQualityOptions = useMemo(() => {
+    const levels = trackQualityAvailability?.availableLevels;
+    if (!levels?.length) return PLAY_QUALITY_OPTIONS;
+    return PLAY_QUALITY_OPTIONS.filter((option) => levels.includes(option.value));
+  }, [trackQualityAvailability]);
+  const playQualityFallbackNotice = useMemo(() => {
+    if (!currentTrack || !trackQualityAvailability?.availableLevels.length) return null;
+    if (effectivePlayQualityLevel === player.playQualityLevel) return null;
+    const currentLabel = getPlayQualityLabel(effectivePlayQualityLevel);
+    const preferredLabel = getPlayQualityLabel(player.playQualityLevel);
+    return `当前歌曲不支持 ${preferredLabel}，已自动按 ${currentLabel} 播放。`;
+  }, [currentTrack, effectivePlayQualityLevel, player.playQualityLevel, trackQualityAvailability]);
   const favoriteSet = player.favorites;
   const modeMeta = MODE_META[player.mode];
   const hotAssistCandidates = useMemo(() => searchAssist?.hotKeywords.slice(0, SEARCH_ASSIST_MAX_ITEMS) ?? [], [searchAssist]);
@@ -1291,6 +1406,34 @@ export function PlayerApp() {
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
   );
+
+  useEffect(() => {
+    if (!currentTrackId) {
+      setTrackQualityAvailability(null);
+      setTrackQualityLoading(false);
+      return;
+    }
+
+    let active = true;
+    setTrackQualityLoading(true);
+    getTrackQualityAvailability(currentTrackId, authAccessToken)
+      .then((availability) => {
+        if (!active) return;
+        setTrackQualityAvailability(availability);
+      })
+      .catch(() => {
+        if (!active) return;
+        setTrackQualityAvailability(null);
+      })
+      .finally(() => {
+        if (!active) return;
+        setTrackQualityLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [authAccessToken, currentTrackId, playbackRefreshKey]);
 
   const captureListenPlaybackState = useCallback((): ListenPlaybackState => {
     const playerState = usePlayerStore.getState();
@@ -6278,38 +6421,39 @@ export function PlayerApp() {
                     ) : null}
                     {!isMobileUi ? (
                       <div className="download-row">
-                        <label htmlFor="playback-level">播放音质</label>
-                        <select
-                          id="playback-level"
-                          value={player.playQualityLevel}
-                          onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
-                        >
-                          {PLAY_QUALITY_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
+                        <span id="playback-level-label" className="download-row-label">播放音质</span>
+                        <ThemedSelect
+                          buttonId="playback-level"
+                          labelId="playback-level-label"
+                          value={effectivePlayQualityLevel}
+                          options={currentTrackAvailablePlayQualityOptions}
+                          onChange={(nextValue) => player.setPlayQualityLevel(nextValue as PlayQualityLevel)}
+                        />
+                        {trackQualityLoading ? <p>正在侦测当前歌曲可用音质...</p> : null}
+                        {!trackQualityLoading && playQualityFallbackNotice ? <p>{playQualityFallbackNotice}</p> : null}
                       </div>
                     ) : null}
                     {!isMobileUi ? (
                       <div className="download-row">
-                        <label htmlFor="download-level">下载音质</label>
-                        <select
-                          id="download-level"
+                        <span id="download-level-label" className="download-row-label">下载音质</span>
+                        <ThemedSelect
+                          buttonId="download-level"
+                          labelId="download-level-label"
                           value={downloadState.level}
-                          onChange={(event) =>
+                          options={[
+                            { value: "standard", label: PLAY_QUALITY_LABELS.standard },
+                            { value: "exhigh", label: PLAY_QUALITY_LABELS.exhigh },
+                            { value: "lossless", label: PLAY_QUALITY_LABELS.lossless },
+                            { value: "hires", label: PLAY_QUALITY_LABELS.hires }
+                          ]}
+                          onChange={(nextValue) =>
                             setDownloadState((previous) => ({
                               ...previous,
-                              level: event.target.value
+                              level: nextValue
                             }))
                           }
-                        >
-                          <option value="standard">standard</option>
-                          <option value="exhigh">exhigh</option>
-                          <option value="lossless">lossless</option>
-                          <option value="hires">hires</option>
-                        </select>
+                          disabled={downloadState.loading || !currentTrack}
+                        />
                         <button
                           type="button"
                           className="meta-action-btn"
@@ -6325,15 +6469,17 @@ export function PlayerApp() {
                         <label htmlFor="playback-level-mobile">播放音质</label>
                         <select
                           id="playback-level-mobile"
-                          value={player.playQualityLevel}
+                          value={effectivePlayQualityLevel}
                           onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
                         >
-                          {PLAY_QUALITY_OPTIONS.map((option) => (
+                          {currentTrackAvailablePlayQualityOptions.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>
                           ))}
                         </select>
+                        {trackQualityLoading ? <p>正在侦测当前歌曲可用音质...</p> : null}
+                        {!trackQualityLoading && playQualityFallbackNotice ? <p>{playQualityFallbackNotice}</p> : null}
                       </div>
                     ) : null}
                     {downloadState.message ? <p>{downloadState.message}</p> : null}

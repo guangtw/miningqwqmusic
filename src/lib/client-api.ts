@@ -16,6 +16,7 @@ import type {
   SceneData,
   SearchAssist,
   SongInsight,
+  TrackQualityAvailability,
   ToplistItem,
   Track,
   TrackLyric
@@ -132,6 +133,19 @@ export async function getTrackDetail(trackId: string): Promise<Track> {
     method: "GET"
   });
   return readResult<Track>(response);
+}
+
+export async function getTrackQualityAvailability(trackId: string, accessToken?: string | null): Promise<TrackQualityAvailability> {
+  const headers = new Headers();
+  if (accessToken) {
+    headers.set("authorization", `Bearer ${accessToken}`);
+  }
+  const response = await fetch(`/api/music/track/${trackId}/quality-options`, {
+    method: "GET",
+    headers,
+    cache: "no-store"
+  });
+  return readResult<TrackQualityAvailability>(response);
 }
 
 export async function getPlaylistDetail(playlistId: string): Promise<Playlist> {

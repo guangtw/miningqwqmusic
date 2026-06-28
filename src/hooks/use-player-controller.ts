@@ -13,7 +13,7 @@ import {
 } from "@/src/lib/playback-guard";
 import { pickCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { useAuthStore } from "@/src/store/auth-store";
-import type { LyricLine, PlaySource, PlaybackMode, PlaySourceRequestOptions, Track } from "@/src/types/music";
+import type { LyricLine, PlayQualityLevel, PlaySource, PlaybackMode, PlaySourceRequestOptions, Track } from "@/src/types/music";
 
 type TransitionPhase = "idle" | "fadingOut" | "switching" | "fadingIn";
 
@@ -47,6 +47,7 @@ type ControllerState = {
 };
 
 type PlayerControllerOptions = {
+  effectivePlayQualityLevel?: PlayQualityLevel;
   playbackRefreshKey?: string;
   resumePlaybackToken?: number;
 };
@@ -82,6 +83,7 @@ function isCachedSourceUsable(entry?: CachedPlaySource): boolean {
 }
 
 export function usePlayerController(options?: PlayerControllerOptions): ControllerState {
+  const effectivePlayQualityLevel = options?.effectivePlayQualityLevel ?? "standard";
   const playbackRefreshKey = options?.playbackRefreshKey ?? "";
   const resumePlaybackToken = options?.resumePlaybackToken ?? 0;
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -96,7 +98,6 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
   const nextTrack = usePlayerStore((state) => state.nextTrack);
   const rememberTrack = usePlayerStore((state) => state.rememberTrack);
   const playTrackNow = usePlayerStore((state) => state.playTrackNow);
-  const playQualityLevel = usePlayerStore((state) => state.playQualityLevel);
   const accessToken = useAuthStore((state) => state.accessToken);
 
   const queueTrack = useMemo(() => pickCurrentTrack(queue, currentIndex), [queue, currentIndex]);
@@ -110,8 +111,8 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
   const [errorText, setErrorText] = useState<string | null>(null);
   const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>("idle");
   const playSourceOptions = useMemo<PlaySourceRequestOptions | undefined>(
-    () => (playQualityLevel === "standard" ? undefined : { level: playQualityLevel }),
-    [playQualityLevel]
+    () => (effectivePlayQualityLevel === "standard" ? undefined : { level: effectivePlayQualityLevel }),
+    [effectivePlayQualityLevel]
   );
 
   const renewTimerRef = useRef<number | null>(null);

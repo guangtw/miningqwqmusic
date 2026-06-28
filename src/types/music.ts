@@ -65,6 +65,7 @@ export type PlaySource = {
   trackId: string;
   url: string;
   preview: boolean;
+  level?: PlayQualityLevel;
   bitrate?: number;
   restrictionReason?: string;
   resolvedVia?: "primary" | "unblock" | "grace";
@@ -189,6 +190,14 @@ export type DownloadSource = {
   size?: number;
   format?: string;
   ttlSeconds?: number;
+};
+
+export type TrackQualityAvailability = {
+  trackId: string;
+  availableLevels: PlayQualityLevel[];
+  fallbackMap: Partial<Record<PlayQualityLevel, PlayQualityLevel>>;
+  authorizationScope?: "guest" | "authorized";
+  authorizationVersion?: number;
 };
 
 export type SceneTag = {

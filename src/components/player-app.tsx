@@ -6394,75 +6394,90 @@ export function PlayerApp() {
 
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list">
-                    <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
-                    {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
-                    {trackInsight?.creators.length ? (
-                      <p>
-                        创作者：
-                        {isMobileUi
-                          ? trackInsight.creators
-                              .slice(0, 2)
-                              .map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`)
-                              .join(" / ")
-                          : trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
-                      </p>
-                    ) : null}
-                    {trackInsight?.wikiSummary ? (
-                      <p>百科：{isMobileUi ? `${trackInsight.wikiSummary.slice(0, 56)}...` : trackInsight.wikiSummary}</p>
-                    ) : null}
-                    {trackInsight?.chorusStartMs ? (
-                      <button
-                        type="button"
-                        className="meta-action-btn"
-                        onClick={() => handleSeekTo(trackInsight.chorusStartMs ?? 0)}
-                      >
-                        跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
-                      </button>
-                    ) : null}
+                    <div className="detail-meta-copy">
+                      <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
+                      {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
+                      {trackInsight?.creators.length ? (
+                        <p>
+                          创作者：
+                          {isMobileUi
+                            ? trackInsight.creators
+                                .slice(0, 2)
+                                .map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`)
+                                .join(" / ")
+                            : trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
+                        </p>
+                      ) : null}
+                      {trackInsight?.wikiSummary ? (
+                        <p>百科：{isMobileUi ? `${trackInsight.wikiSummary.slice(0, 56)}...` : trackInsight.wikiSummary}</p>
+                      ) : null}
+                    </div>
                     {!isMobileUi ? (
-                      <div className="download-row">
-                        <span id="playback-level-label" className="download-row-label">播放音质</span>
-                        <ThemedSelect
-                          buttonId="playback-level"
-                          labelId="playback-level-label"
-                          value={effectivePlayQualityLevel}
-                          options={currentTrackAvailablePlayQualityOptions}
-                          onChange={(nextValue) => player.setPlayQualityLevel(nextValue as PlayQualityLevel)}
-                        />
-                        {trackQualityLoading ? <p>正在侦测当前歌曲可用音质...</p> : null}
-                        {!trackQualityLoading && playQualityFallbackNotice ? <p>{playQualityFallbackNotice}</p> : null}
-                      </div>
-                    ) : null}
-                    {!isMobileUi ? (
-                      <div className="download-row">
-                        <span id="download-level-label" className="download-row-label">下载音质</span>
-                        <ThemedSelect
-                          buttonId="download-level"
-                          labelId="download-level-label"
-                          value={downloadState.level}
-                          options={[
-                            { value: "standard", label: PLAY_QUALITY_LABELS.standard },
-                            { value: "exhigh", label: PLAY_QUALITY_LABELS.exhigh },
-                            { value: "lossless", label: PLAY_QUALITY_LABELS.lossless },
-                            { value: "hires", label: PLAY_QUALITY_LABELS.hires }
-                          ]}
-                          onChange={(nextValue) =>
-                            setDownloadState((previous) => ({
-                              ...previous,
-                              level: nextValue
-                            }))
-                          }
-                          disabled={downloadState.loading || !currentTrack}
-                        />
-                        <button
-                          type="button"
-                          className="meta-action-btn"
-                          disabled={downloadState.loading || !currentTrack}
-                          onClick={() => void handleDownloadTrack()}
-                        >
-                          {downloadState.loading ? "获取中..." : "获取下载链接"}
-                        </button>
-                      </div>
+                      <section className="detail-control-card" aria-label="播放与下载控制">
+                        <div className="detail-control-card-head">
+                          <div>
+                            <span>播放与下载</span>
+                            <small>桌面端控制区会固定保留在可视范围内。</small>
+                          </div>
+                          {trackInsight?.chorusStartMs ? (
+                            <button
+                              type="button"
+                              className="meta-action-btn meta-action-btn-compact"
+                              onClick={() => handleSeekTo(trackInsight.chorusStartMs ?? 0)}
+                            >
+                              跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
+                            </button>
+                          ) : null}
+                        </div>
+                        <div className="detail-control-card-body">
+                          <div className="download-row detail-control-row">
+                            <span id="playback-level-label" className="download-row-label">播放音质</span>
+                            <ThemedSelect
+                              buttonId="playback-level"
+                              labelId="playback-level-label"
+                              value={effectivePlayQualityLevel}
+                              options={currentTrackAvailablePlayQualityOptions}
+                              onChange={(nextValue) => player.setPlayQualityLevel(nextValue as PlayQualityLevel)}
+                              className="menu-upward detail-control-select"
+                            />
+                          </div>
+                          {trackQualityLoading ? <p className="detail-control-hint">正在侦测当前歌曲可用音质...</p> : null}
+                          {!trackQualityLoading && playQualityFallbackNotice ? (
+                            <p className="detail-control-hint">{playQualityFallbackNotice}</p>
+                          ) : null}
+                          <div className="download-row detail-control-row detail-control-row-download">
+                            <span id="download-level-label" className="download-row-label">下载音质</span>
+                            <ThemedSelect
+                              buttonId="download-level"
+                              labelId="download-level-label"
+                              value={downloadState.level}
+                              options={[
+                                { value: "standard", label: PLAY_QUALITY_LABELS.standard },
+                                { value: "exhigh", label: PLAY_QUALITY_LABELS.exhigh },
+                                { value: "lossless", label: PLAY_QUALITY_LABELS.lossless },
+                                { value: "hires", label: PLAY_QUALITY_LABELS.hires }
+                              ]}
+                              onChange={(nextValue) =>
+                                setDownloadState((previous) => ({
+                                  ...previous,
+                                  level: nextValue
+                                }))
+                              }
+                              disabled={downloadState.loading || !currentTrack}
+                              className="menu-upward detail-control-select"
+                            />
+                            <button
+                              type="button"
+                              className="meta-action-btn detail-download-action"
+                              disabled={downloadState.loading || !currentTrack}
+                              onClick={() => void handleDownloadTrack()}
+                            >
+                              {downloadState.loading ? "获取中..." : "获取下载链接"}
+                            </button>
+                          </div>
+                          {downloadState.message ? <p className="detail-control-hint">{downloadState.message}</p> : null}
+                        </div>
+                      </section>
                     ) : null}
                     {isMobileUi ? (
                       <div className="download-row">

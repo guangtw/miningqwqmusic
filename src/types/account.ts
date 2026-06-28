@@ -3,6 +3,7 @@ import type { ImportedPlaylist, Track } from "@/src/types/music";
 export type AccountUser = {
   id: string;
   email: string;
+  role?: "user" | "admin";
   nickname?: string | null;
   avatarUrl?: string | null;
   avatarFallbackText?: string;
@@ -11,13 +12,22 @@ export type AccountUser = {
   updatedAt?: string;
 };
 
-export type AuthStatus = "guest" | "authenticating" | "authenticated" | "error";
+export type PlaybackAuthorization = {
+  enabled: boolean;
+  version: number;
+  source: "manual" | "invite" | null;
+  grantedAt?: string;
+  inviteLabel?: string | null;
+};
+
+export type AuthStatus = "guest" | "restoring" | "authenticating" | "authenticated" | "degraded" | "error";
 
 export type SyncState = "idle" | "syncing" | "failed" | "success";
 
 export type AuthTokenData = {
   accessToken: string;
   user?: AccountUser;
+  playbackAuthorization?: PlaybackAuthorization;
 };
 
 export type AuthPayload = AuthTokenData & {
@@ -26,6 +36,8 @@ export type AuthPayload = AuthTokenData & {
 
 export type MusicUnblockEntitlement = {
   enabled: boolean;
+  version?: number;
+  source?: "manual" | "invite" | null;
   redeemedAt?: string;
   inviteLabel?: string | null;
 };

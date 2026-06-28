@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createMusicUnblockGraceToken } from "@/src/lib/music-unblock-grace";
 
 const mocks = vi.hoisted(() => ({
   getPlaySource: vi.fn(async (trackId: string) => ({
@@ -26,8 +25,6 @@ describe("GET /api/music/track/:id/play-url", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     mocks.getPlaySource.mockClear();
-    process.env.MUSIC_UNBLOCK_GRACE_SECRET = "test-music-unblock-grace-secret-at-least-32";
-    process.env.MUSIC_UNBLOCK_GRACE_COOKIE_NAME = "mqm_music_unblock_grace";
   });
 
   it("forces unblock off when request has no account token", async () => {
@@ -42,12 +39,46 @@ describe("GET /api/music/track/:id/play-url", () => {
   });
 
   it("preserves requested unblock mode when entitlement is enabled", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ code: 0, data: { enabled: true }, message: "ok", traceId: "trace" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      })
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 7
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 7
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
 
     const response = await GET(
       new Request("http://localhost:3000/api/music/track/1002/play-url?level=lossless&unblockMode=force_on", {
@@ -60,7 +91,8 @@ describe("GET /api/music/track/:id/play-url", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/account/music/unblock/entitlement", {
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
       method: "GET",
       headers: {
         authorization: "Bearer token"
@@ -71,15 +103,52 @@ describe("GET /api/music/track/:id/play-url", () => {
       level: "lossless",
       unblockMode: "force_on"
     });
+    const payload = await response.json();
+    expect(payload.data.authorizationScope).toBe("authorized");
+    expect(payload.data.authorizationVersion).toBe(7);
   });
 
   it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ code: 0, data: { enabled: true }, message: "ok", traceId: "trace" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      })
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 3
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 3
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
 
     const response = await GET(
       new Request("http://localhost:3000/api/music/track/1004/play-url", {
@@ -95,15 +164,52 @@ describe("GET /api/music/track/:id/play-url", () => {
       level: undefined,
       unblockMode: "force_on"
     });
+    const payload = await response.json();
+    expect(payload.data.authorizationScope).toBe("authorized");
+    expect(payload.data.authorizationVersion).toBe(3);
   });
 
-  it("uses entitlement cookie during page reload playback rebuilds", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ code: 0, data: { enabled: true }, message: "ok", traceId: "trace" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      })
-    );
+  it("uses session cookies to restore authorized playback during page reloads", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 5
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              playbackAuthorization: {
+                enabled: true,
+                version: 5
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
 
     const response = await GET(
       new Request("http://localhost:3000/api/music/track/1005/play-url", {
@@ -115,7 +221,8 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledWith("http://localhost:3000/api/account/music/unblock/entitlement", {
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
       method: "GET",
       headers: {
         cookie: "mqm_refresh=refresh-token"
@@ -126,31 +233,9 @@ describe("GET /api/music/track/:id/play-url", () => {
       level: undefined,
       unblockMode: "force_on"
     });
-  });
-
-  it("uses a valid grace cookie without rechecking entitlement service", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    const graceCookie = createMusicUnblockGraceToken("u1", new Date(Date.now() + 60_000));
-
-    const response = await GET(
-      new Request("http://localhost:3000/api/music/track/1006/play-url?unblockMode=force_on", {
-        headers: {
-          cookie: `mqm_music_unblock_grace=${encodeURIComponent(graceCookie)}`
-        }
-      }),
-      context("1006")
-    );
-
-    expect(response.status).toBe(200);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.getPlaySource).toHaveBeenCalledWith("1006", {
-      level: undefined,
-      unblockMode: "force_on"
-    });
-
     const payload = await response.json();
-    expect(payload.data.preview).toBe(false);
-    expect(payload.data.resolvedVia).toBe("grace");
+    expect(payload.data.authorizationScope).toBe("authorized");
+    expect(payload.data.authorizationVersion).toBe(5);
   });
 
   it("falls back to normal source when entitlement service fails", async () => {
@@ -176,5 +261,8 @@ describe("GET /api/music/track/:id/play-url", () => {
       level: undefined,
       unblockMode: "force_off"
     });
+    const payload = await response.json();
+    expect(payload.data.authorizationScope).toBe("guest");
+    expect(payload.data.authorizationVersion).toBe(0);
   });
 });

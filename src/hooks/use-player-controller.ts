@@ -26,6 +26,8 @@ type CachedAudioBlob = {
   trackId: string;
   sourceUrl: string;
   blobUrl: string;
+  authorizationScope?: "guest" | "authorized";
+  authorizationVersion?: number;
   size: number;
   cachedAt: number;
 };
@@ -315,7 +317,9 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
         renewed.url === currentSource.url &&
         renewed.preview === currentSource.preview &&
         renewed.resolvedVia === currentSource.resolvedVia &&
-        renewed.restrictionReason === currentSource.restrictionReason
+        renewed.restrictionReason === currentSource.restrictionReason &&
+        renewed.authorizationScope === currentSource.authorizationScope &&
+        renewed.authorizationVersion === currentSource.authorizationVersion
       ) {
         return;
       }
@@ -334,7 +338,9 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
   }, [requestTrackPlaySource]);
 
   const cacheTrackAudioBlob = useCallback(async (trackId: string, sourceUrl: string) => {
+    const currentSource = currentSourceRef.current;
     if (!sourceUrl) return;
+    if (currentSource?.preview) return;
     const existing = fullAudioCacheRef.current.get(trackId);
     if (existing?.sourceUrl === sourceUrl) return;
     const previousController = fullAudioFetchControllerRef.current.get(trackId);
@@ -362,6 +368,8 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
         trackId,
         sourceUrl,
         blobUrl,
+        authorizationScope: currentSource?.authorizationScope,
+        authorizationVersion: currentSource?.authorizationVersion,
         size: blob.size,
         cachedAt: Date.now()
       });
@@ -476,7 +484,9 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
             trackId: nextTrackId,
             url: cachedAudio.blobUrl,
             preview: false,
-            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary"
+            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary",
+            authorizationScope: cachedAudio.authorizationScope,
+            authorizationVersion: cachedAudio.authorizationVersion
           })
         : validCached && cached
           ? Promise.resolve(cached.source)
@@ -675,9 +685,10 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
 
   useEffect(() => {
     if (!currentTrackId || !source?.url) return;
+    if (source.preview) return;
     if (source.url.startsWith("blob:")) return;
     void cacheTrackAudioBlob(currentTrackId, source.url);
-  }, [cacheTrackAudioBlob, currentTrackId, source?.url]);
+  }, [cacheTrackAudioBlob, currentTrackId, source?.preview, source?.url]);
 
   useEffect(() => {
     if (!audioRef.current) return;
@@ -757,7 +768,9 @@ export function usePlayerController(options?: PlayerControllerOptions): Controll
             url: cachedAudio.blobUrl,
             preview: false,
             bitrate: currentSourceRef.current?.bitrate,
-            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary"
+            resolvedVia: currentSourceRef.current?.resolvedVia ?? "primary",
+            authorizationScope: cachedAudio.authorizationScope,
+            authorizationVersion: cachedAudio.authorizationVersion
           });
           setErrorText("网络波动，已切换缓存继续播放");
           return;

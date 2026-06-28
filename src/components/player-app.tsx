@@ -18,7 +18,6 @@ import {
   getLibraryChanges,
   getLibrarySnapshot,
   getListenRoom,
-  getMusicUnblockEntitlement,
   loadCurrentAccountUser,
   loginAccount,
   logoutAccount,
@@ -84,7 +83,7 @@ import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
 import { UserAvatar } from "@/src/components/user-avatar";
-import type { AuthStatus, FriendRelationStatus, ListenPlaybackState, MusicUnblockEntitlement, SyncState } from "@/src/types/account";
+import type { AuthStatus, FriendRelationStatus, ListenPlaybackState, SyncState } from "@/src/types/account";
 import type {
   ArtistDetail,
   ArtistSearchItem,
@@ -285,6 +284,8 @@ function syncStateLabel(state: SyncState): string {
 }
 
 function authStatusLabel(status: AuthStatus): string {
+  if (status === "restoring") return "恢复连接中";
+  if (status === "degraded") return "连接波动";
   if (status === "authenticated") return "已登录";
   if (status === "authenticating") return "连接中";
   if (status === "error") return "连接异常";
@@ -978,10 +979,12 @@ export function PlayerApp() {
   const player = usePlayerStore();
   const authStatus = useAuthStore((state) => state.status);
   const authUser = useAuthStore((state) => state.user);
+  const authPlaybackAuthorization = useAuthStore((state) => state.playbackAuthorization);
   const authSyncState = useAuthStore((state) => state.lastSyncState);
   const authErrorMessage = useAuthStore((state) => state.errorMessage);
+  const setAuthRestoring = useAuthStore((state) => state.setRestoring);
   const setAuthAuthenticating = useAuthStore((state) => state.setAuthenticating);
-  const setAuthAuthenticated = useAuthStore((state) => state.setAuthenticated);
+  const setAuthDegraded = useAuthStore((state) => state.setDegraded);
   const setAuthGuest = useAuthStore((state) => state.setGuest);
   const setAuthError = useAuthStore((state) => state.setError);
   const setAuthSyncState = useAuthStore((state) => state.setSyncState);
@@ -1101,7 +1104,6 @@ export function PlayerApp() {
     message: null,
     error: null
   });
-  const [musicUnblockEntitlement, setMusicUnblockEntitlement] = useState<MusicUnblockEntitlement | null>(null);
   const [musicUnblockLoading, setMusicUnblockLoading] = useState(false);
   const [musicUnblockInviteInput, setMusicUnblockInviteInput] = useState("");
   const [musicUnblockMessage, setMusicUnblockMessage] = useState<string | null>(null);
@@ -1209,7 +1211,7 @@ export function PlayerApp() {
   const listenLastStrongPublishedRef = useRef("");
   const listenLastProgressPublishedAtRef = useRef(0);
   const friendSearchRequestIdRef = useRef(0);
-  const playbackRefreshKey = `${authStatus}:${authUser?.id ?? "guest"}:${musicUnblockEntitlement?.enabled ? "enabled" : "disabled"}`;
+  const playbackRefreshKey = `${authStatus}:${authUser?.id ?? "guest"}:${authPlaybackAuthorization?.enabled ? "enabled" : "disabled"}:${authPlaybackAuthorization?.version ?? 0}`;
   const controller = usePlayerController({
     playbackRefreshKey,
     resumePlaybackToken: playbackResumeToken
@@ -2095,12 +2097,7 @@ export function PlayerApp() {
           password
         });
       }
-      const me = await loadCurrentAccountUser();
-      const token = useAuthStore.getState().accessToken;
-      if (!token) {
-        throw new Error("AUTH_TOKEN_MISSING");
-      }
-      setAuthAuthenticated(me, token);
+      await loadCurrentAccountUser();
       setAuthRefreshIssue(null);
       await syncAfterLogin();
       setAuthFormState({
@@ -2116,14 +2113,13 @@ export function PlayerApp() {
     } finally {
       setAuthFormSubmitting(false);
     }
-  }, [authFormMode, authFormState, closeAccountDialog, setAuthAuthenticated, setAuthAuthenticating, setAuthError, syncAfterLogin]);
+  }, [authFormMode, authFormState, closeAccountDialog, setAuthAuthenticating, setAuthError, syncAfterLogin]);
 
   const handleLogout = useCallback(async () => {
     try {
       await logoutAccount();
       setAuthRefreshIssue(null);
       resetCloudSyncSession();
-      setMusicUnblockEntitlement(null);
       setAuthGuest();
       setAuthSyncState("idle");
     } catch {
@@ -2178,19 +2174,21 @@ export function PlayerApp() {
     async ({
       mode,
       transientRetries,
-      setAuthenticatingBefore,
+      phase,
       syncOnSuccess
     }: {
       mode: "auto" | "manual";
       transientRetries: number;
-      setAuthenticatingBefore: boolean;
+      phase: "restoring" | "authenticating";
       syncOnSuccess: boolean;
     }): Promise<"authenticated" | "invalid_session" | "transient_failure"> => {
       if (!isAccountEnabled) {
         return "transient_failure";
       }
-      if (setAuthenticatingBefore) {
+      if (phase === "authenticating") {
         setAuthAuthenticating();
+      } else {
+        setAuthRestoring();
       }
       setAuthRefreshIssue(null);
 
@@ -2217,20 +2215,13 @@ export function PlayerApp() {
               continue;
             }
 
+            setAuthDegraded(resolveAuthRefreshIssue(refreshResult.error, mode));
             setAuthRefreshIssue(resolveAuthRefreshIssue(refreshResult.error, mode));
             return "transient_failure";
           }
 
           try {
-            const me = await loadCurrentAccountUser();
-            const token = useAuthStore.getState().accessToken;
-            if (!token) {
-              resetCloudSyncSession();
-              setAuthGuest();
-              setAuthRefreshIssue("登录状态异常，请重新登录。");
-              return "invalid_session";
-            }
-            setAuthAuthenticated(me, token);
+            await loadCurrentAccountUser();
             if (syncOnSuccess) {
               await syncAfterLogin();
             }
@@ -2251,11 +2242,13 @@ export function PlayerApp() {
               continue;
             }
 
+            setAuthDegraded("账号信息加载失败，请稍后重试。");
             setAuthRefreshIssue("账号信息加载失败，请稍后重试。");
             return "transient_failure";
           }
         }
 
+        setAuthDegraded(mode === "manual" ? "暂时无法连接登录服务，请稍后重试。" : "暂时无法恢复登录状态，请稍后重试。");
         setAuthRefreshIssue(mode === "manual" ? "暂时无法连接登录服务，请稍后重试。" : "暂时无法恢复登录状态，请稍后重试。");
         return "transient_failure";
       })();
@@ -2267,7 +2260,7 @@ export function PlayerApp() {
         authRefreshPromiseRef.current = null;
       }
     },
-    [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticated, setAuthAuthenticating, setAuthGuest, syncAfterLogin]
+    [isAccountEnabled, resetCloudSyncSession, setAuthAuthenticating, setAuthDegraded, setAuthGuest, setAuthRestoring, syncAfterLogin]
   );
 
   const handleAuthRefreshRetry = useCallback(async () => {
@@ -2275,29 +2268,10 @@ export function PlayerApp() {
     await restoreAuthenticatedSession({
       mode: "manual",
       transientRetries: AUTH_RESUME_REFRESH_RETRIES,
-      setAuthenticatingBefore: true,
+      phase: "authenticating",
       syncOnSuccess: true
     });
   }, [isAccountEnabled, restoreAuthenticatedSession]);
-
-  const refreshMusicUnblockEntitlement = useCallback(async () => {
-    if (!isAccountEnabled || authStatus !== "authenticated") {
-      setMusicUnblockEntitlement(null);
-      return;
-    }
-
-    setMusicUnblockLoading(true);
-    setMusicUnblockError(null);
-    try {
-      const entitlement = await getMusicUnblockEntitlement();
-      setMusicUnblockEntitlement(entitlement);
-    } catch {
-      setMusicUnblockEntitlement({ enabled: false });
-      setMusicUnblockError("资格状态暂时无法确认，播放会使用正常来源。");
-    } finally {
-      setMusicUnblockLoading(false);
-    }
-  }, [authStatus, isAccountEnabled]);
 
   const handleRedeemMusicUnblockInvite = useCallback(async () => {
     if (authStatus !== "authenticated") {
@@ -2315,7 +2289,6 @@ export function PlayerApp() {
     setMusicUnblockError(null);
     try {
       const entitlement = await redeemMusicUnblockInvite(inviteCode);
-      setMusicUnblockEntitlement(entitlement);
       setMusicUnblockInviteInput("");
       setMusicUnblockMessage(entitlement.enabled ? "兑换成功，当前账号已获得解锁资格。" : "兑换已处理，但当前账号暂未获得有效资格。");
     } catch (error) {
@@ -2399,7 +2372,7 @@ export function PlayerApp() {
       const result = await restoreAuthenticatedSession({
         mode: "auto",
         transientRetries: AUTH_RESUME_REFRESH_RETRIES,
-        setAuthenticatingBefore: true,
+        phase: "restoring",
         syncOnSuccess: true
       });
       if (!active) return;
@@ -2418,13 +2391,9 @@ export function PlayerApp() {
     setMusicUnblockMessage(null);
     setMusicUnblockError(null);
     if (!isAccountEnabled || authStatus !== "authenticated") {
-      setMusicUnblockEntitlement(null);
       setMusicUnblockInviteInput("");
-      return;
     }
-
-    void refreshMusicUnblockEntitlement();
-  }, [authStatus, authUser?.id, isAccountEnabled, refreshMusicUnblockEntitlement]);
+  }, [authStatus, isAccountEnabled]);
 
   useEffect(() => {
     if (activeTab !== "library") return;
@@ -2444,7 +2413,7 @@ export function PlayerApp() {
       void restoreAuthenticatedSession({
         mode: "auto",
         transientRetries: AUTH_RESUME_REFRESH_RETRIES,
-        setAuthenticatingBefore: false,
+        phase: "restoring",
         syncOnSuccess: false
       });
       setPlaybackResumeToken((previous) => previous + 1);
@@ -2452,12 +2421,12 @@ export function PlayerApp() {
     };
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
-      void restoreAuthenticatedSession({
-        mode: "auto",
-        transientRetries: AUTH_RESUME_REFRESH_RETRIES,
-        setAuthenticatingBefore: false,
-        syncOnSuccess: false
-      });
+        void restoreAuthenticatedSession({
+          mode: "auto",
+          transientRetries: AUTH_RESUME_REFRESH_RETRIES,
+          phase: "restoring",
+          syncOnSuccess: false
+        });
       setPlaybackResumeToken((previous) => previous + 1);
       void triggerCloudPull("tab-visible");
     };
@@ -2485,7 +2454,7 @@ export function PlayerApp() {
       void restoreAuthenticatedSession({
         mode: "auto",
         transientRetries: 1,
-        setAuthenticatingBefore: false,
+        phase: "restoring",
         syncOnSuccess: false
       });
       void triggerCloudPull("polling");
@@ -4289,7 +4258,7 @@ export function PlayerApp() {
   const accountDisplayName = authUser?.nickname?.trim() || authUser?.email || "游客";
   const hasAuthRefreshIssue = Boolean(authRefreshIssue && authStatus !== "authenticated");
   const accountStateText = hasAuthRefreshIssue ? "连接异常" : authStatus === "authenticated" ? syncStateLabel(authSyncState) : authStatusLabel(authStatus);
-  const musicUnblockEnabled = musicUnblockEntitlement?.enabled === true;
+  const musicUnblockEnabled = authPlaybackAuthorization?.enabled === true;
   const accountTierText = musicUnblockEnabled ? "高级用户" : "普通用户";
   const accountEntryStatusText = authStatus === "authenticated" ? accountTierText : hasAuthRefreshIssue ? accountStateText : "本地模式";
   const accountOverviewTierText = authStatus === "authenticated" ? accountTierText : "未启用";
@@ -4348,7 +4317,7 @@ export function PlayerApp() {
     : authStatus !== "authenticated"
       ? "暂未开放"
       : musicUnblockLoading
-        ? "检查中"
+        ? "处理中"
         : musicUnblockEnabled
           ? "已启用"
           : "未兑换";
@@ -5011,7 +4980,7 @@ export function PlayerApp() {
                   </div>
                   {musicUnblockEnabled ? (
                     <p className="music-unblock-status enabled">
-                      已启用{musicUnblockEntitlement?.inviteLabel ? ` · ${musicUnblockEntitlement.inviteLabel}` : ""}
+                      已启用{authPlaybackAuthorization?.inviteLabel ? ` · ${authPlaybackAuthorization.inviteLabel}` : ""}
                     </p>
                   ) : (
                     <form

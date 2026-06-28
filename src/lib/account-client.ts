@@ -19,6 +19,7 @@ import type {
   LibrarySnapshot,
   LoginInput,
   MusicUnblockEntitlement,
+  PlaybackAuthorization,
   RegisterInput,
   UpdateProfileInput
 } from "@/src/types/account";
@@ -101,6 +102,41 @@ function isInvalidSessionError(error: AccountApiError | undefined): boolean {
 
 function classifyRefreshFailure(error: AccountApiError | undefined): "invalid_session" | "transient_failure" {
   return isInvalidSessionError(error) ? "invalid_session" : "transient_failure";
+}
+
+function normalizePlaybackAuthorization(
+  playbackAuthorization?: PlaybackAuthorization | null,
+  fallback?: MusicUnblockEntitlement | null
+): PlaybackAuthorization | null {
+  if (playbackAuthorization) {
+    return {
+      enabled: Boolean(playbackAuthorization.enabled),
+      version: Math.max(0, playbackAuthorization.version ?? 0),
+      source: playbackAuthorization.source ?? null,
+      grantedAt: playbackAuthorization.grantedAt,
+      inviteLabel: playbackAuthorization.inviteLabel ?? null
+    };
+  }
+  if (!fallback) return null;
+  return {
+    enabled: Boolean(fallback.enabled),
+    version: Math.max(0, fallback.version ?? 0),
+    source: fallback.source ?? null,
+    grantedAt: fallback.redeemedAt,
+    inviteLabel: fallback.inviteLabel ?? null
+  };
+}
+
+function applyAuthPayload(data: AuthTokenData | AuthPayload) {
+  if (data.accessToken) {
+    useAuthStore.getState().updateAccessToken(data.accessToken);
+  }
+  if (data.user) {
+    useAuthStore.getState().updateUser(data.user);
+  }
+  if ("playbackAuthorization" in data) {
+    useAuthStore.getState().updatePlaybackAuthorization(normalizePlaybackAuthorization(data.playbackAuthorization));
+  }
 }
 
 async function fetchAccount<T>(path: string, options: RequestOptions): Promise<T> {
@@ -240,10 +276,7 @@ export async function tryRefreshAccessTokenDetailed(): Promise<RefreshAttemptRes
       method: "POST",
       retryOnUnauthorized: false
     });
-    useAuthStore.getState().updateAccessToken(data.accessToken);
-    if (data.user) {
-      useAuthStore.getState().updateUser(data.user);
-    }
+    applyAuthPayload(data);
     return { ok: true };
   } catch (error) {
     if (error instanceof AccountApiError) {
@@ -263,7 +296,11 @@ export async function registerAccount(input: RegisterInput): Promise<AuthPayload
     body: input,
     retryOnUnauthorized: false
   });
-  useAuthStore.getState().setAuthenticated(data.user, data.accessToken);
+  useAuthStore.getState().setAuthenticated(
+    data.user,
+    data.accessToken,
+    normalizePlaybackAuthorization(data.playbackAuthorization)
+  );
   return data;
 }
 
@@ -273,14 +310,20 @@ export async function loginAccount(input: LoginInput): Promise<AuthPayload> {
     body: input,
     retryOnUnauthorized: false
   });
-  useAuthStore.getState().setAuthenticated(data.user, data.accessToken);
+  useAuthStore.getState().setAuthenticated(
+    data.user,
+    data.accessToken,
+    normalizePlaybackAuthorization(data.playbackAuthorization)
+  );
   return data;
 }
 
 export async function loadCurrentAccountUser() {
-  return fetchAccount<AuthPayload["user"]>("/api/account/auth/me", {
+  const data = await fetchAccount<AuthPayload>("/api/account/auth/me", {
     method: "GET"
   });
+  applyAuthPayload(data);
+  return data.user;
 }
 
 export async function uploadAccountAvatar(file: File): Promise<AuthPayload["user"]> {
@@ -471,16 +514,20 @@ export async function openListenRoomStream(
 }
 
 export async function getMusicUnblockEntitlement(): Promise<MusicUnblockEntitlement> {
-  return fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/entitlement", {
+  const data = await fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/entitlement", {
     method: "GET"
   });
+  useAuthStore.getState().updatePlaybackAuthorization(normalizePlaybackAuthorization(undefined, data));
+  return data;
 }
 
 export async function redeemMusicUnblockInvite(inviteCode: string): Promise<MusicUnblockEntitlement> {
-  return fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/redeem", {
+  const data = await fetchAccount<MusicUnblockEntitlement>("/api/account/music/unblock/redeem", {
     method: "POST",
     body: { inviteCode }
   });
+  useAuthStore.getState().updatePlaybackAuthorization(normalizePlaybackAuthorization(undefined, data));
+  return data;
 }
 
 export async function logoutAccount(): Promise<void> {

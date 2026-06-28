@@ -2,21 +2,25 @@
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
-import type { AccountUser, AuthStatus, SyncState } from "@/src/types/account";
+import type { AccountUser, AuthStatus, PlaybackAuthorization, SyncState } from "@/src/types/account";
 
 type AuthState = {
   status: AuthStatus;
   user: AccountUser | null;
   accessToken: string | null;
+  playbackAuthorization: PlaybackAuthorization | null;
   lastSyncState: SyncState;
   errorMessage: string | null;
 };
 
 type AuthActions = {
+  setRestoring: () => void;
   setAuthenticating: () => void;
-  setAuthenticated: (user: AccountUser, accessToken: string) => void;
+  setAuthenticated: (user: AccountUser, accessToken: string, playbackAuthorization?: PlaybackAuthorization | null) => void;
   updateUser: (user: AccountUser) => void;
   updateAccessToken: (accessToken: string) => void;
+  updatePlaybackAuthorization: (playbackAuthorization: PlaybackAuthorization | null) => void;
+  setDegraded: (message: string) => void;
   setGuest: () => void;
   setError: (message: string) => void;
   setSyncState: (state: SyncState) => void;
@@ -28,6 +32,7 @@ const initialState: AuthState = {
   status: "guest",
   user: null,
   accessToken: null,
+  playbackAuthorization: null,
   lastSyncState: "idle",
   errorMessage: null
 };
@@ -36,17 +41,24 @@ export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
       ...initialState,
+      setRestoring: () =>
+        set((state) => ({
+          ...state,
+          status: "restoring",
+          errorMessage: null
+        })),
       setAuthenticating: () =>
         set((state) => ({
           ...state,
           status: "authenticating",
           errorMessage: null
         })),
-      setAuthenticated: (user, accessToken) =>
+      setAuthenticated: (user, accessToken, playbackAuthorization) =>
         set({
           status: "authenticated",
           user,
           accessToken,
+          playbackAuthorization: playbackAuthorization ?? null,
           lastSyncState: "idle",
           errorMessage: null
         }),
@@ -61,6 +73,17 @@ export const useAuthStore = create<AuthStore>()(
           ...state,
           accessToken,
           status: state.user ? "authenticated" : state.status
+        })),
+      updatePlaybackAuthorization: (playbackAuthorization) =>
+        set((state) => ({
+          ...state,
+          playbackAuthorization
+        })),
+      setDegraded: (message) =>
+        set((state) => ({
+          ...state,
+          status: state.user || state.accessToken ? "degraded" : "guest",
+          errorMessage: message
         })),
       setGuest: () => set({ ...initialState }),
       setError: (message) =>
@@ -81,7 +104,8 @@ export const useAuthStore = create<AuthStore>()(
       partialize: (state) => ({
         status: state.status,
         user: state.user,
-        accessToken: state.accessToken
+        accessToken: state.accessToken,
+        playbackAuthorization: state.playbackAuthorization
       })
     }
   )

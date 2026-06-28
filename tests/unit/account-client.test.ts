@@ -114,9 +114,17 @@ describe("account client", () => {
         new Response(
           JSON.stringify(
             successPayload({
-              id: "u1",
-              email: "user@example.com",
-              nickname: "mqm"
+              accessToken: "new-token",
+              user: {
+                id: "u1",
+                email: "user@example.com",
+                nickname: "mqm"
+              },
+              playbackAuthorization: {
+                enabled: false,
+                version: 0,
+                source: null
+              }
             })
           ),
           {

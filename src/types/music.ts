@@ -68,6 +68,8 @@ export type PlaySource = {
   bitrate?: number;
   restrictionReason?: string;
   resolvedVia?: "primary" | "unblock" | "grace";
+  authorizationScope?: "guest" | "authorized";
+  authorizationVersion?: number;
   expiresAt?: string;
   ttlSeconds?: number;
 };

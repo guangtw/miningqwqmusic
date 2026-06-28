@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  getTrackQualityAvailability: vi.fn(async (trackId: string) => ({
+    trackId,
+    availableLevels: ["standard", "higher", "exhigh", "lossless", "hires", "sky", "dolby"],
+    fallbackMap: {
+      standard: "standard",
+      higher: "higher",
+      exhigh: "exhigh",
+      lossless: "lossless",
+      hires: "hires",
+      jyeffect: "hires",
+      sky: "sky",
+      dolby: "dolby",
+      jymaster: "dolby"
+    }
+  })),
   getPlaySource: vi.fn(async (trackId: string) => ({
     trackId,
     url: `https://music.example/${trackId}.mp3`,
@@ -10,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/src/lib/music/service", () => ({
+  getTrackQualityAvailability: mocks.getTrackQualityAvailability,
   getPlaySource: mocks.getPlaySource
 }));
 
@@ -24,6 +40,7 @@ function context(trackId: string) {
 describe("GET /api/music/track/:id/play-url", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mocks.getTrackQualityAvailability.mockClear();
     mocks.getPlaySource.mockClear();
   });
 
@@ -92,6 +109,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mocks.getTrackQualityAvailability).toHaveBeenCalledWith("1002");
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
       method: "GET",
       headers: {
@@ -106,6 +124,60 @@ describe("GET /api/music/track/:id/play-url", () => {
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");
     expect(payload.data.authorizationVersion).toBe(7);
+  });
+
+  it("falls back to the best available level for the current track without overwriting the requested preference", async () => {
+    mocks.getTrackQualityAvailability.mockResolvedValueOnce({
+      trackId: "2001",
+      availableLevels: ["standard", "higher", "exhigh", "lossless", "hires", "sky"],
+      fallbackMap: {
+        standard: "standard",
+        higher: "higher",
+        exhigh: "exhigh",
+        lossless: "lossless",
+        hires: "hires",
+        jyeffect: "hires",
+        sky: "sky",
+        dolby: "sky",
+        jymaster: "sky"
+      }
+    });
+
+    const response = await GET(new Request("http://localhost:3000/api/music/track/2001/play-url?level=dolby"), context("2001"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getTrackQualityAvailability).toHaveBeenCalledWith("2001");
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("2001", {
+      level: "sky",
+      unblockMode: "force_off"
+    });
+  });
+
+  it("restores the originally requested level when the next track supports it again", async () => {
+    mocks.getTrackQualityAvailability.mockResolvedValueOnce({
+      trackId: "2002",
+      availableLevels: ["standard", "higher", "exhigh", "lossless", "hires", "sky", "dolby"],
+      fallbackMap: {
+        standard: "standard",
+        higher: "higher",
+        exhigh: "exhigh",
+        lossless: "lossless",
+        hires: "hires",
+        jyeffect: "hires",
+        sky: "sky",
+        dolby: "dolby",
+        jymaster: "dolby"
+      }
+    });
+
+    const response = await GET(new Request("http://localhost:3000/api/music/track/2002/play-url?level=dolby"), context("2002"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getTrackQualityAvailability).toHaveBeenCalledWith("2002");
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("2002", {
+      level: "dolby",
+      unblockMode: "force_off"
+    });
   });
 
   it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {

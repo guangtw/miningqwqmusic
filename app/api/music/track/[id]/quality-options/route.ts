@@ -1,10 +1,9 @@
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
-import { getAuthorizationVersion, hasMusicUnblockEntitlement, PLAY_QUALITY_LEVELS } from "@/src/lib/music-playback-auth";
-import { getPlaySource } from "@/src/lib/music/service";
-import { resolvePlayableQualityFallback, sortPlayQualityLevels } from "@/src/lib/play-quality";
+import { getAuthorizationVersion, hasMusicUnblockEntitlement } from "@/src/lib/music-playback-auth";
+import { getTrackQualityAvailability } from "@/src/lib/music/service";
 import { createTraceId } from "@/src/lib/trace";
-import type { PlayQualityLevel, TrackQualityAvailability } from "@/src/types/music";
+import type { TrackQualityAvailability } from "@/src/types/music";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -16,36 +15,10 @@ export async function GET(request: Request, context: Context) {
     const { id } = await context.params;
     const canUseUnblock = await hasMusicUnblockEntitlement(request);
     const authorizationVersion = canUseUnblock ? await getAuthorizationVersion(request) : 0;
-    const effectiveUnblockMode = canUseUnblock ? "force_on" : "force_off";
-
-    const discoveredLevels: PlayQualityLevel[] = [];
-
-    for (const requestedLevel of PLAY_QUALITY_LEVELS) {
-      try {
-        const source = await getPlaySource(id, {
-          level: requestedLevel,
-          unblockMode: effectiveUnblockMode
-        });
-        const resolvedLevel = source.level ?? requestedLevel;
-        discoveredLevels.push(resolvedLevel);
-      } catch {
-        // 当前档位不可播放时跳过，避免一次失败让整组音质探测失效。
-      }
-    }
-
-    const availableLevels = sortPlayQualityLevels(discoveredLevels);
-    const fallbackMap: Partial<Record<PlayQualityLevel, PlayQualityLevel>> = {};
-    for (const requestedLevel of PLAY_QUALITY_LEVELS) {
-      const fallbackLevel = resolvePlayableQualityFallback(requestedLevel, availableLevels);
-      if (fallbackLevel) {
-        fallbackMap[requestedLevel] = fallbackLevel;
-      }
-    }
+    const availability = await getTrackQualityAvailability(id);
 
     const payload: TrackQualityAvailability = {
-      trackId: id,
-      availableLevels,
-      fallbackMap,
+      ...availability,
       authorizationScope: canUseUnblock ? "authorized" : "guest",
       authorizationVersion
     };

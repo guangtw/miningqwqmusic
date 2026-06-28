@@ -19,6 +19,7 @@ import type {
   SearchAssist,
   SongInsight,
   ToplistItem,
+  TrackQualityAvailability,
   Track,
   TrackLyric
 } from "@/src/types/music";
@@ -83,6 +84,16 @@ export async function getTrack(trackId: string): Promise<Track> {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     adapter = createMockMusicAdapter();
     return adapter.getTrackDetail(trackId);
+  }
+}
+
+export async function getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
+  try {
+    return await breaker.execute(() => getAdapter().getTrackQualityAvailability(trackId));
+  } catch (error) {
+    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    adapter = createMockMusicAdapter();
+    return adapter.getTrackQualityAvailability(trackId);
   }
 }
 

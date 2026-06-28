@@ -22,10 +22,11 @@ import type {
   SongCreator,
   SongInsight,
   ToplistItem,
+  TrackQualityAvailability,
   Track,
   TrackLyric
 } from "@/src/types/music";
-import { toPlayQualityLevel } from "@/src/lib/play-quality";
+import { PLAY_QUALITY_LEVELS, resolvePlayableQualityFallback, sortPlayQualityLevels, toPlayQualityLevel } from "@/src/lib/play-quality";
 
 type NeteaseArtist = {
   id: number | string;
@@ -54,6 +55,26 @@ type NeteaseSong = {
   coverImgUrl?: string;
   dt?: number;
   duration?: number;
+  h?: Record<string, unknown> | null;
+  m?: Record<string, unknown> | null;
+  l?: Record<string, unknown> | null;
+  sq?: Record<string, unknown> | null;
+  hr?: Record<string, unknown> | null;
+  mark?: number;
+};
+
+type NeteaseSongQualityDetail = {
+  songId?: number | string;
+  h?: Record<string, unknown> | null;
+  m?: Record<string, unknown> | null;
+  l?: Record<string, unknown> | null;
+  sq?: Record<string, unknown> | null;
+  hr?: Record<string, unknown> | null;
+  db?: Record<string, unknown> | null;
+  jm?: Record<string, unknown> | null;
+  je?: Record<string, unknown> | null;
+  sk?: Record<string, unknown> | null;
+  sks?: Array<Record<string, unknown>> | null;
 };
 
 type AdapterConfig = {
@@ -94,6 +115,7 @@ type AdapterConfig = {
   pathSongChorus: string;
   pathSongCopyrightRcmd: string;
   pathSongDownloadUrl: string;
+  pathSongMusicDetail: string;
   pathSatiTagList: string;
   pathSatiResourceList: string;
   pathRadioSportGet: string;
@@ -144,6 +166,12 @@ function asNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+function hasQualityPayload(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).length > 0 && (asNumber(record.br) !== undefined || asNumber(record.size) !== undefined || asNumber(record.sr) !== undefined);
 }
 
 function asIdString(value: unknown): string | undefined {
@@ -291,6 +319,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       pathSongChorus: config.pathSongChorus ?? "/song/chorus",
       pathSongCopyrightRcmd: config.pathSongCopyrightRcmd ?? "/song/copyright/rcmd",
       pathSongDownloadUrl: config.pathSongDownloadUrl ?? "/song/download/url/v1",
+      pathSongMusicDetail: config.pathSongMusicDetail ?? "/song/music/detail",
       pathSatiTagList: config.pathSatiTagList ?? "/sati/tag/list",
       pathSatiResourceList: config.pathSatiResourceList ?? "/sati/resource/list",
       pathRadioSportGet: config.pathRadioSportGet ?? "/radio/sport/get"
@@ -556,6 +585,49 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       throw new AppError("Track not found", { code: 3001, status: 404, retryable: false });
     }
     return toTrack(song);
+  }
+
+  async getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
+    const [detailRaw, qualityRaw] = await Promise.all([
+      this.request<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId }),
+      this.request<{ data?: NeteaseSongQualityDetail }>(this.config.pathSongMusicDetail, { id: trackId })
+    ]);
+
+    const detailSong = detailRaw.songs?.[0];
+    const qualityDetail = qualityRaw.data;
+
+    if (!detailSong && !qualityDetail) {
+      throw new AppError("Track not found", { code: 3001, status: 404, retryable: false });
+    }
+
+    const availableLevels = sortPlayQualityLevels(
+      PLAY_QUALITY_LEVELS.filter((level) => {
+        if (level === "standard") return hasQualityPayload(detailSong?.l) || hasQualityPayload(qualityDetail?.l);
+        if (level === "higher") return hasQualityPayload(detailSong?.m) || hasQualityPayload(qualityDetail?.m);
+        if (level === "exhigh") return hasQualityPayload(detailSong?.h) || hasQualityPayload(qualityDetail?.h);
+        if (level === "lossless") return hasQualityPayload(detailSong?.sq) || hasQualityPayload(qualityDetail?.sq);
+        if (level === "hires") return hasQualityPayload(detailSong?.hr) || hasQualityPayload(qualityDetail?.hr);
+        if (level === "jyeffect") return hasQualityPayload(qualityDetail?.je);
+        if (level === "sky") return hasQualityPayload(qualityDetail?.sk) || Boolean(qualityDetail?.sks?.length);
+        if (level === "dolby") return hasQualityPayload(qualityDetail?.db);
+        if (level === "jymaster") return hasQualityPayload(qualityDetail?.jm);
+        return false;
+      })
+    );
+
+    const fallbackMap: TrackQualityAvailability["fallbackMap"] = {};
+    for (const level of PLAY_QUALITY_LEVELS) {
+      const fallback = resolvePlayableQualityFallback(level, availableLevels);
+      if (fallback) {
+        fallbackMap[level] = fallback;
+      }
+    }
+
+    return {
+      trackId,
+      availableLevels,
+      fallbackMap
+    };
   }
 
   async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
@@ -1044,6 +1116,7 @@ export function createNeteaseLikeAdapterFromEnv() {
     pathSongChorus: process.env.MUSIC_SOURCE_PATH_SONG_CHORUS ?? "/song/chorus",
     pathSongCopyrightRcmd: process.env.MUSIC_SOURCE_PATH_SONG_COPYRIGHT_RCMD ?? "/song/copyright/rcmd",
     pathSongDownloadUrl: process.env.MUSIC_SOURCE_PATH_SONG_DOWNLOAD_URL ?? "/song/download/url/v1",
+    pathSongMusicDetail: process.env.MUSIC_SOURCE_PATH_SONG_MUSIC_DETAIL ?? "/song/music/detail",
     pathSatiTagList: process.env.MUSIC_SOURCE_PATH_SATI_TAG_LIST ?? "/sati/tag/list",
     pathSatiResourceList: process.env.MUSIC_SOURCE_PATH_SATI_RESOURCE_LIST ?? "/sati/resource/list",
     pathRadioSportGet: process.env.MUSIC_SOURCE_PATH_RADIO_SPORT_GET ?? "/radio/sport/get"

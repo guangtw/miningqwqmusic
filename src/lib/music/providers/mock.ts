@@ -14,9 +14,11 @@ import type {
   SearchAssist,
   SongInsight,
   ToplistItem,
+  TrackQualityAvailability,
   Track,
   TrackLyric
 } from "@/src/types/music";
+import { PLAY_QUALITY_LEVELS, resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 
 const MOCK_TRACKS: Track[] = [
   {
@@ -117,6 +119,22 @@ export class MockMusicAdapter implements MusicSourceAdapter {
 
   async getTrackDetail(trackId: string): Promise<Track> {
     return MOCK_TRACKS.find((track) => track.id === trackId) ?? MOCK_TRACKS[0];
+  }
+
+  async getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
+    const availableLevels = ["standard", "higher", "exhigh", "lossless", "hires"] as const;
+    const fallbackMap: TrackQualityAvailability["fallbackMap"] = {};
+    for (const level of PLAY_QUALITY_LEVELS) {
+      const fallback = resolvePlayableQualityFallback(level, availableLevels);
+      if (fallback) {
+        fallbackMap[level] = fallback;
+      }
+    }
+    return {
+      trackId,
+      availableLevels: [...availableLevels],
+      fallbackMap
+    };
   }
 
   async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {

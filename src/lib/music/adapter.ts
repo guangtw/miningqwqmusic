@@ -12,6 +12,7 @@ import type {
   SearchAssist,
   SongInsight,
   ToplistItem,
+  TrackQualityAvailability,
   Track,
   TrackLyric
 } from "@/src/types/music";
@@ -32,6 +33,7 @@ export interface MusicSourceAdapter {
   searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>>;
   searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>>;
   getTrackDetail(trackId: string): Promise<Track>;
+  getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability>;
   getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource>;
   getTrackLyric(trackId: string): Promise<TrackLyric>;
   getPlaylist(playlistId: string): Promise<Playlist>;

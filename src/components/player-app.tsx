@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
   AccountApiError,
@@ -74,7 +75,6 @@ import { getPlayQualityLabel, PLAY_QUALITY_LABELS } from "@/src/lib/play-quality
 import {
   canOpenPlayerDetail,
   countItemsWithinRows,
-  heroActionLabel,
   nextVolumeAfterMuteToggle,
   shouldTogglePlaybackBySpace
 } from "@/src/lib/player-ui";
@@ -91,6 +91,9 @@ import { useFriendStore } from "@/src/store/friend-store";
 import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
+import AnimatedList from "@/src/components/animated-list";
+import { EditorialHome } from "@/src/components/immersive/editorial-home";
+import { FloatingNav } from "@/src/components/immersive/floating-nav";
 import { UserAvatar } from "@/src/components/user-avatar";
 import type { AuthStatus, FriendRelationStatus, ListenPlaybackState, SyncState } from "@/src/types/account";
 import type {
@@ -630,6 +633,15 @@ function LibraryIcon() {
         strokeWidth="2"
       />
       <path d="M8.2 9h5.6M8.2 12.6h5.6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function ListenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8.5 12.5a4 4 0 1 0-3 0A6 6 0 0 0 2 18v1.5h10V18a6 6 0 0 0-3.5-5.5Z" />
+      <path d="M15 7.5a3 3 0 1 1 0 5.7M15.5 15.5c3.5.2 5.5 1.6 5.5 4" />
     </svg>
   );
 }
@@ -1176,6 +1188,8 @@ export function PlayerApp() {
   const [homePlaylistView, setHomePlaylistView] = useState<HomePlaylistView>("featured");
   const [playlistSummaryExpanded, setPlaylistSummaryExpanded] = useState(false);
   const [playlistSummaryOverflowing, setPlaylistSummaryOverflowing] = useState(false);
+  const [expandedPanelTrackId, setExpandedPanelTrackId] = useState<string | null>(null);
+  const [expandedPanelTrackSourceId, setExpandedPanelTrackSourceId] = useState<string | null>(null);
   const [searchAssist, setSearchAssist] = useState<{ hotKeywords: string[]; suggestions: string[]; defaultKeyword?: string } | null>(null);
   const [visibleHotAssistCount, setVisibleHotAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
   const [visibleSuggestAssistCount, setVisibleSuggestAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
@@ -1191,9 +1205,7 @@ export function PlayerApp() {
     message: null,
     error: null
   });
-  const [channelGridWidth, setChannelGridWidth] = useState(0);
   const [playlistGridWidth, setPlaylistGridWidth] = useState(0);
-  const [eventGridWidth, setEventGridWidth] = useState(0);
   const [downloadState, setDownloadState] = useState<{
     loading: boolean;
     level: string;
@@ -1300,9 +1312,7 @@ export function PlayerApp() {
   const listenPanelPhaseRef = useRef<PlaylistPanelPhase>("closed");
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null);
   const [playlistPortalTarget, setPlaylistPortalTarget] = useState<HTMLElement | null>(null);
-  const homeChannelGridRef = useRef<HTMLElement>(null);
   const homePlaylistGridRef = useRef<HTMLDivElement>(null);
-  const homeEventGridRef = useRef<HTMLDivElement>(null);
   const searchResultsBodyRef = useRef<HTMLDivElement>(null);
   const hotAssistRowRef = useRef<HTMLDivElement>(null);
   const suggestAssistRowRef = useRef<HTMLDivElement>(null);
@@ -1319,7 +1329,7 @@ export function PlayerApp() {
   const lyricLastTrackIdRef = useRef<string | null>(null);
   const lyricLastAutoIndexRef = useRef<number>(-1);
   const lyricLastDetailTabRef = useRef<DetailViewTab>("lyric");
-  const lyricLineRefsRef = useRef<Map<number, HTMLParagraphElement>>(new Map());
+  const lyricLineRefsRef = useRef<Map<number, HTMLElement>>(new Map());
   const lyricUserScrollLockUntilRef = useRef(0);
   const lyricUserLockTimerRef = useRef<number | null>(null);
   const locatedPanelTrackTimerRef = useRef<number | null>(null);
@@ -1446,6 +1456,10 @@ export function PlayerApp() {
     if (!canLocatePlayingTrack) return "当前播放歌曲不在此列表中";
     return "定位到正在播放歌曲";
   }, [canLocatePlayingTrack, currentTrackId, homePlaylistPanel?.tracks.length]);
+  const activePanelTrackSourceId = useMemo(
+    () => (homePlaylistPanel ? `${homePlaylistPanel.sourceType}:${homePlaylistPanel.id}` : null),
+    [homePlaylistPanel]
+  );
   const currentCoverUrl = useMemo(
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
@@ -3503,6 +3517,25 @@ export function PlayerApp() {
     homePlaylistPanel.tracks.forEach((track) => player.addToQueue(track));
   };
 
+  const collapseExpandedPanelTrack = useCallback(() => {
+    setExpandedPanelTrackId(null);
+    setExpandedPanelTrackSourceId(null);
+  }, []);
+
+  const toggleExpandedPanelTrack = useCallback(
+    (trackId: string) => {
+      if (!activePanelTrackSourceId) return;
+      const isSameTrack = expandedPanelTrackId === trackId && expandedPanelTrackSourceId === activePanelTrackSourceId;
+      if (isSameTrack) {
+        collapseExpandedPanelTrack();
+        return;
+      }
+      setExpandedPanelTrackId(trackId);
+      setExpandedPanelTrackSourceId(activePanelTrackSourceId);
+    },
+    [activePanelTrackSourceId, collapseExpandedPanelTrack, expandedPanelTrackId, expandedPanelTrackSourceId]
+  );
+
   const locatePlayingTrackInPanel = useCallback(() => {
     if (!canLocatePlayingTrack || !homePlaylistPanel?.tracks.length) return;
     const index = playingTrackIndexInPanel;
@@ -3594,18 +3627,16 @@ export function PlayerApp() {
   const progressPercent =
     player.durationMs > 0 ? Math.min(100, Math.max(0, (player.currentTimeMs / player.durationMs) * 100)) : 0;
   const volumePercent = Math.min(100, Math.max(0, player.volume * 100));
-  const activeDetailLyricLines = useMemo(() => {
-    if (isMobileUi) {
-      return controller.lyricLines;
-    }
-    if (detailLyricMode === "translated" && controller.lyricTranslatedLines.length) {
-      return controller.lyricTranslatedLines;
-    }
-    if (detailLyricMode === "karaoke" && controller.lyricKaraokeLines.length) {
-      return controller.lyricKaraokeLines;
-    }
-    return controller.lyricLines;
-  }, [controller.lyricKaraokeLines, controller.lyricLines, controller.lyricTranslatedLines, detailLyricMode, isMobileUi]);
+  const activeDetailLyricLines = useMemo(() => controller.lyricLines, [controller.lyricLines]);
+  const activeDetailLyricSecondaryLines = useMemo(() => {
+    if (detailLyricMode === "translated") return controller.lyricTranslatedLines;
+    if (detailLyricMode === "karaoke") return controller.lyricKaraokeLines;
+    return [];
+  }, [controller.lyricKaraokeLines, controller.lyricTranslatedLines, detailLyricMode]);
+  const activeDetailLyricSecondaryByTime = useMemo(
+    () => new Map(activeDetailLyricSecondaryLines.map((line) => [line.timeMs, line.text])),
+    [activeDetailLyricSecondaryLines]
+  );
   const activeDetailLyricIndex = useMemo(
     () => locateCurrentLyricIndex(activeDetailLyricLines, player.currentTimeMs),
     [activeDetailLyricLines, player.currentTimeMs]
@@ -3686,21 +3717,15 @@ export function PlayerApp() {
     return merged;
   }, [discoverBlocks, sceneSati, sceneSport]);
 
-  const homeChannelPlan = useMemo(
-    () => computeHomeGridPlan(channelGridWidth, homeChannelItems.length, HOME_CHANNEL_MIN_CARD_WIDTH, HOME_GRID_GAP),
-    [channelGridWidth, homeChannelItems.length]
-  );
   const homePlaylistPlan = useMemo(
     () => computeHomeGridPlan(playlistGridWidth, homePlaylistItems.length, HOME_PLAYLIST_MIN_CARD_WIDTH, HOME_GRID_GAP),
     [playlistGridWidth, homePlaylistItems.length]
   );
-  const homeEventPlan = useMemo(
-    () => computeHomeGridPlan(eventGridWidth, homeEventItems.length, HOME_EVENT_MIN_CARD_WIDTH, HOME_GRID_GAP),
-    [eventGridWidth, homeEventItems.length]
-  );
-  const visibleChannelItems = useMemo(() => homeChannelItems.slice(0, homeChannelPlan.count), [homeChannelItems, homeChannelPlan.count]);
-  const visiblePlaylistItems = useMemo(() => homePlaylistItems.slice(0, homePlaylistPlan.count), [homePlaylistItems, homePlaylistPlan.count]);
-  const visibleEventItems = useMemo(() => homeEventItems.slice(0, homeEventPlan.count), [homeEventItems, homeEventPlan.count]);
+  const editorialHero = homePlaylistItems[0] ?? homeChannelItems[0] ?? homeEventItems[0];
+  const editorialFeaturedItems = [...homePlaylistItems, ...homeChannelItems]
+    .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
+    .slice(0, 10);
+  const editorialExploreItems = homeEventItems.slice(0, 10);
   const artworkSourceTracks = useMemo(() => {
     const sourceTracks = [
       ...(activeTab === "home" ? homeSeedTracks.slice(0, 16) : []),
@@ -3987,29 +4012,17 @@ export function PlayerApp() {
   }, []);
 
   useEffect(() => {
-    const channelNode = homeChannelGridRef.current;
     const playlistNode = homePlaylistGridRef.current;
-    const eventNode = homeEventGridRef.current;
-    if (!channelNode && !playlistNode && !eventNode) return;
+    if (!playlistNode) return;
 
     const update = () => {
-      if (channelNode) {
-        setChannelGridWidth(Math.ceil(channelNode.getBoundingClientRect().width));
-      }
-      if (playlistNode) {
-        setPlaylistGridWidth(Math.ceil(playlistNode.getBoundingClientRect().width));
-      }
-      if (eventNode) {
-        setEventGridWidth(Math.ceil(eventNode.getBoundingClientRect().width));
-      }
+      setPlaylistGridWidth(Math.ceil(playlistNode.getBoundingClientRect().width));
     };
 
     update();
     const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
     if (resizeObserver) {
-      if (channelNode) resizeObserver.observe(channelNode);
-      if (playlistNode) resizeObserver.observe(playlistNode);
-      if (eventNode) resizeObserver.observe(eventNode);
+      resizeObserver.observe(playlistNode);
     }
     window.addEventListener("resize", update);
     return () => {
@@ -4329,7 +4342,7 @@ export function PlayerApp() {
   }, []);
 
   const bindLyricLineRef = useCallback(
-    (index: number) => (node: HTMLParagraphElement | null) => {
+    (index: number) => (node: HTMLElement | null) => {
       if (node) {
         lyricLineRefsRef.current.set(index, node);
       } else {
@@ -4393,6 +4406,16 @@ export function PlayerApp() {
       }
       lyricAutoScrollTimerRef.current = window.setTimeout(() => {
         lyricAutoScrollTimerRef.current = null;
+        if (behavior === "smooth" && detailLyricRef.current && Date.now() >= lyricUserScrollLockUntilRef.current) {
+          const latestActive = lyricLineRefsRef.current.get(activeDetailLyricIndex);
+          const latestContainer = detailLyricRef.current;
+          if (latestActive instanceof HTMLElement && latestContainer) {
+            const refinedTop = latestActive.offsetTop - latestContainer.clientHeight / 2 + latestActive.clientHeight / 2;
+            const refinedMaxTop = Math.max(latestContainer.scrollHeight - latestContainer.clientHeight, 0);
+            const finalTop = Math.max(0, Math.min(refinedTop, refinedMaxTop));
+            latestContainer.scrollTo({ top: finalTop, behavior: "auto" });
+          }
+        }
       }, behavior === "smooth" ? 340 : 80);
     },
     [activeDetailLyricIndex, detailTab, isDetailMounted]
@@ -4477,9 +4500,32 @@ export function PlayerApp() {
   }, [homePlaylistPanel?.id, homePlaylistPanel?.sourceType]);
 
   useEffect(() => {
+    if (!homePlaylistPanel || homePlaylistPanel.sourceType === "queue" || homePlaylistPanel.loading) {
+      collapseExpandedPanelTrack();
+      return;
+    }
+    if (!expandedPanelTrackId || !activePanelTrackSourceId) return;
+    if (expandedPanelTrackSourceId !== activePanelTrackSourceId) {
+      collapseExpandedPanelTrack();
+      return;
+    }
+    const hasExpandedTrack = homePlaylistPanel.tracks.some((track) => track.id === expandedPanelTrackId);
+    if (!hasExpandedTrack) {
+      collapseExpandedPanelTrack();
+    }
+  }, [
+    activePanelTrackSourceId,
+    collapseExpandedPanelTrack,
+    expandedPanelTrackId,
+    expandedPanelTrackSourceId,
+    homePlaylistPanel
+  ]);
+
+  useEffect(() => {
     if (homePlaylistPhase !== "closed") return;
     setPlaylistSummaryExpanded(false);
-  }, [homePlaylistPhase]);
+    collapseExpandedPanelTrack();
+  }, [collapseExpandedPanelTrack, homePlaylistPhase]);
 
   useEffect(() => {
     if (!homePlaylistPanel || homePlaylistPanel.sourceType === "queue") {
@@ -4498,6 +4544,28 @@ export function PlayerApp() {
       window.removeEventListener("resize", measure);
     };
   }, [homePlaylistPanel, homePlaylistPhase, homePlaylistSubtitle, playlistSummaryExpanded]);
+
+  useEffect(() => {
+    if (!expandedPanelTrackId || !expandedPanelTrackSourceId) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest<HTMLElement>("[data-panel-expandable-row='true']");
+      if (row) {
+        const isCurrentRow =
+          row.dataset.panelTrackId === expandedPanelTrackId && row.dataset.panelTrackSourceId === expandedPanelTrackSourceId;
+        if (isCurrentRow) {
+          return;
+        }
+        return;
+      }
+      collapseExpandedPanelTrack();
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [collapseExpandedPanelTrack, expandedPanelTrackId, expandedPanelTrackSourceId]);
 
   useEffect(() => {
     const applyNextPalette = (nextPalette: DetailPalette, nextForeground: DetailForegroundTone) => {
@@ -5010,8 +5078,9 @@ export function PlayerApp() {
     </>
   );
 
-  const mobilePrimaryTabs: Array<{ tab: NavTab; label: string; icon: ReactNode; onSelect: () => void }> = [
+  const mobilePrimaryTabs: Array<{ id: string; tab?: NavTab; label: string; icon: ReactNode; onSelect: () => void }> = [
     {
+      id: "home",
       tab: "home",
       label: "首页",
       icon: <HomeIcon />,
@@ -5021,23 +5090,31 @@ export function PlayerApp() {
       }
     },
     {
+      id: "search",
       tab: "search",
       label: "搜索",
       icon: <SearchIcon />,
       onSelect: () => goTab("search")
     },
     {
+      id: "library",
       tab: "library",
-      label: "我的",
+      label: "音乐库",
       icon: <LibraryIcon />,
       onSelect: () => goTab("library", "library-favorites")
+    },
+    {
+      id: "listen",
+      label: "一起听",
+      icon: <ListenIcon />,
+      onSelect: openListenPanel
     }
   ];
 
   const playerDock = (
     <footer
       ref={playerDockRef}
-      className={`spotify-player-bar ${canOpenDetail ? "clickable" : "empty"}`.trim()}
+      className={`spotify-player-bar immersive-player-dock player-dock-shell ${canOpenDetail ? "clickable" : "empty"}`.trim()}
       data-disabled={!canOpenDetail}
       onClick={(event) => {
         if (canOpenDetail) {
@@ -5046,8 +5123,11 @@ export function PlayerApp() {
       }}
     >
       <div className="spotify-player-left">
-        <p className="player-title">{currentTrack?.name ?? ""}</p>
-        <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</p>
+        <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
+        <div className="player-dock-copy">
+          <p className="player-title">{currentTrack?.name ?? "还没有播放音乐"}</p>
+          <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}</p>
+        </div>
       </div>
 
       <div className="spotify-player-center">
@@ -5072,27 +5152,33 @@ export function PlayerApp() {
           <span>{formatMs(player.durationMs)}</span>
         </div>
         <div className="spotify-player-controls">
-          <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
-            <QueueIcon />
-          </IconButton>
-          <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
-            <PreviousIcon />
-          </IconButton>
-          <IconButton
-            ariaLabel={player.isPlaying ? "暂停" : "播放"}
-            title={player.isPlaying ? "暂停" : "播放"}
-            className="play-main"
-            disabled={controlDisabled}
-            onClick={() => player.togglePlay()}
-          >
-            {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-          </IconButton>
-          <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-            <NextIcon />
-          </IconButton>
-          <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
-            {modeMeta.icon}
-          </IconButton>
+          <div className="player-control-side player-control-side-left">
+            <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
+              <QueueIcon />
+            </IconButton>
+          </div>
+          <div className="player-control-transport">
+            <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
+              <PreviousIcon />
+            </IconButton>
+            <IconButton
+              ariaLabel={player.isPlaying ? "暂停" : "播放"}
+              title={player.isPlaying ? "暂停" : "播放"}
+              className="play-main"
+              disabled={controlDisabled}
+              onClick={() => player.togglePlay()}
+            >
+              {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
+            </IconButton>
+            <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
+              <NextIcon />
+            </IconButton>
+          </div>
+          <div className="player-control-side player-control-side-right">
+            <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
+              {modeMeta.icon}
+            </IconButton>
+          </div>
         </div>
       </div>
 
@@ -5121,10 +5207,10 @@ export function PlayerApp() {
       {isMobileUi ? (
         <nav className="mobile-bottom-tabs" role="tablist" aria-label="页面切换">
           {mobilePrimaryTabs.map((item) => {
-            const active = activeTab === item.tab;
+            const active = item.tab ? activeTab === item.tab : false;
             return (
               <button
-                key={item.tab}
+                key={item.id}
                 type="button"
                 role="tab"
                 aria-selected={active}
@@ -5517,7 +5603,17 @@ export function PlayerApp() {
   } as CSSProperties;
 
   return (
-    <main ref={shellRef} className={desktopHost.isDesktopHost ? "spotify-shell desktop-host-shell" : "spotify-shell"}>
+    <main
+      ref={shellRef}
+      className={desktopHost.isDesktopHost ? "spotify-shell immersive-shell desktop-host-shell" : "spotify-shell immersive-shell"}
+      style={
+        {
+          "--ambient-bg-a": currentPalette.bgA,
+          "--ambient-bg-b": currentPalette.bgB,
+          "--ambient-glow": currentPalette.glow
+        } as CSSProperties
+      }
+    >
       <audio ref={controller.audioRef} preload="auto" />
       {listenPanelOpen && listenPanelPhase !== "closed" ? (
         <section
@@ -5558,251 +5654,44 @@ export function PlayerApp() {
         </section>
       ) : null}
 
-      <section className={`spotify-layout ${hasTrack ? "" : "without-right-rail"}`.trim()}>
-        {!isMobileUi ? (
-        <aside className="spotify-sidebar">
-          <div className="spotify-logo">MiningQwQ Music</div>
-          <div className="spotify-nav-row">
-            <nav className="spotify-nav">
-              <button
-                className={activeTab === "home" ? "active" : ""}
-                onClick={() => {
-                  setHomePlaylistView("featured");
-                  goTab("home");
-                }}
-              >
-                主页
-              </button>
-              <button className={activeTab === "search" ? "active" : ""} onClick={() => goTab("search")}>
-                搜索
-              </button>
-              <button className={activeTab === "library" ? "active" : ""} onClick={() => goTab("library", "library-favorites")}>
-                你的音乐库
-              </button>
-            </nav>
-          </div>
+      {!isMobileUi ? (
+        <FloatingNav
+          active={activeTab}
+          onSelect={(destination) => {
+            if (destination === "listen") {
+              openListenPanel();
+              return;
+            }
+            if (destination === "home") {
+              setHomePlaylistView("featured");
+            }
+            goTab(destination, destination === "library" ? "library-favorites" : undefined);
+          }}
+          onProfile={() => {
+            if (isAccountEnabled) {
+              openAccountManager();
+            }
+          }}
+          onSettings={toggleTheme}
+        />
+      ) : null}
 
-          <section className="spotify-collections">
-            <h3>我的音乐</h3>
-            <div className="sidebar-entry-list">
-              <button
-                className={`sidebar-entry ${activeTab === "library" && libraryView === "library-favorites" ? "active" : ""}`.trim()}
-                onClick={() => goTab("library", "library-favorites")}
-              >
-                <span>收藏歌曲</span>
-                <small>{Object.keys(player.favorites).length} 首</small>
-                <em>›</em>
-              </button>
-              <button
-                className={`sidebar-entry ${activeTab === "library" && libraryView === "library-recent" ? "active" : ""}`.trim()}
-                onClick={() => goTab("library", "library-recent")}
-              >
-                <span>最近播放</span>
-                <small>{player.recent.length} 首</small>
-                <em>›</em>
-              </button>
-              <button
-                className={`sidebar-entry ${activeTab === "library" && libraryView === "library-playlists" ? "active" : ""}`.trim()}
-                onClick={() => goTab("library", "library-playlists")}
-              >
-                <span>我的歌单</span>
-                <small>{importedPlaylists.length} 个</small>
-                <em>›</em>
-              </button>
-            </div>
-            {isAccountEnabled ? (
-              <div className="account-switch-card">
-                <span>账号同步</span>
-                <div className="account-switch-body">
-                  <UserAvatar user={authUser} size="md" />
-                  <div className="account-switch-meta">
-                    <strong>{accountSurfaceTitle}</strong>
-                    <small>{accountSurfaceDescription}</small>
-                  </div>
-                  {authStatus === "authenticated" ? (
-                    <div className="account-switch-actions">
-                      <button type="button" onClick={openAccountManager}>
-                        账户管理
-                      </button>
-                      {showDesktopSettings ? (
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={openDesktopSettings}
-                        >
-                          桌面设置
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="account-switch-actions">
-                      <button
-                        type="button"
-                        onClick={openLoginDialog}
-                      >
-                        登录同步
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost"
-                        onClick={openRegisterDialog}
-                      >
-                        注册
-                      </button>
-                      {showDesktopSettings ? (
-                        <button
-                          type="button"
-                          className="ghost"
-                          onClick={openDesktopSettings}
-                        >
-                          桌面设置
-                        </button>
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-                {authNotice ? <p className="account-switch-tip">{authNotice}</p> : null}
-                {authErrorMessage ? <p className="account-switch-tip error">{authErrorMessage}</p> : null}
-                {hasAuthRefreshIssue ? (
-                  <div className="account-refresh-warning">
-                    <p>{authRefreshIssue}</p>
-                    <button type="button" onClick={() => void handleAuthRefreshRetry()}>
-                      重试连接
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            {!isMobileUi ? (
-              <button type="button" className={`sidebar-entry listen-sidebar-entry ${listenRoom ? "active" : ""}`.trim()} onClick={openListenPanel}>
-                <span>一起听</span>
-                <small>{listenRoom ? `${listenRoom.members.length} 人在线` : "好友邀请与多人同步"}</small>
-                <em>›</em>
-              </button>
-            ) : null}
-            {!isMobileUi ? (
-              <div className="theme-switch-card">
-                <span>网页主题</span>
-                {themeSwitchControl}
-              </div>
-            ) : null}
-          </section>
-        </aside>
-        ) : null}
-
+      <section className="spotify-layout immersive-layout without-right-rail">
         <section className={`spotify-main tab-${activeTab}`.trim()}>
           {activeTab === "home" ? (
             <>
-              <header className={`home-toolbar ${isMobileUi ? "mobile-priority" : ""}`.trim()}>
-                <div className="home-toolbar-main">
-                  <h1>发现音乐</h1>
-                  <p>精选内容与你的播放偏好</p>
-                </div>
-                <div className={`home-toolbar-actions ${isMobileUi ? "mobile-cta" : ""}`.trim()}>
-                  <button className="primary" onClick={() => goTab("search")}>搜索音乐</button>
-                  <button onClick={() => goTab("library")}>我的音乐库</button>
-                </div>
-              </header>
               {homePlaylistView === "featured" ? (
-                <>
-                  <section
-                    ref={homeChannelGridRef}
-                    className="home-channel-row"
-                    style={{ "--home-grid-columns": homeChannelPlan.columns } as CSSProperties}
-                  >
-                    {visibleChannelItems.map((item, index) => (
-                      <button
-                        key={`discover-channel-${item.id}-${index}`}
-                        className="home-channel-card"
-                        onClick={() => {
-                          void handleDiscoverItem(item);
-                        }}
-                      >
-                        <div className="home-channel-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
-                        <span className="home-channel-tag">推荐频道</span>
-                        <h3>{item.title}</h3>
-                        <p>{visibleSubtitle(item.subtitle, "精选内容推荐")}</p>
-                      </button>
-                    ))}
-                    {!visibleChannelItems.length ? (
-                      <article className="home-channel-card placeholder">
-                        <span className="home-channel-tag">今日推荐</span>
-                        <h3>还没有播放任何歌曲</h3>
-                        <p>去搜索页选择喜欢的歌曲，马上开始播放</p>
-                        <button
-                          className="home-channel-cta"
-                          onClick={() => {
-                            if (hasTrack) {
-                              player.togglePlay();
-                            } else {
-                              goTab("search");
-                            }
-                          }}
-                        >
-                          {heroActionLabel(hasTrack, player.isPlaying)}
-                        </button>
-                      </article>
-                    ) : null}
-                  </section>
-
-                  <section className="home-playlist-section">
-                    <div className="home-section-head">
-                      <h2>推荐歌单</h2>
-                      <button onClick={() => setHomePlaylistView("more")}>查看更多</button>
-                    </div>
-                    <div
-                      ref={homePlaylistGridRef}
-                      className="home-playlist-grid"
-                      style={{ "--home-grid-columns": homePlaylistPlan.columns } as CSSProperties}
-                    >
-                      {visiblePlaylistItems.map((item, index) => (
-                        <button
-                          key={`playlist-discover-${item.id}-${index}`}
-                          className="home-playlist-card"
-                          onClick={() => {
-                            void handleDiscoverItem(item);
-                          }}
-                        >
-                          <div className="home-playlist-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
-                          <h3>{item.title}</h3>
-                          <p>{visibleSubtitle(item.subtitle, "推荐歌单")}</p>
-                        </button>
-                      ))}
-                      {!visiblePlaylistItems.length ? (
-                        <p className="spotify-empty">还没有可推荐内容，先去搜索并播放一首歌吧。</p>
-                      ) : null}
-                    </div>
-                  </section>
-
-                  <section className="home-event-section">
-                    <div className="home-section-head">
-                      <h2>精选活动</h2>
-                    </div>
-                    <div
-                      ref={homeEventGridRef}
-                      className="home-event-grid"
-                      style={{ "--home-grid-columns": homeEventPlan.columns } as CSSProperties}
-                    >
-                      {visibleEventItems.map((item, index) => (
-                        <button
-                          key={`event-${item.id}-${index}`}
-                          className="home-playlist-card home-event-card-square"
-                          onClick={() => {
-                            void handleDiscoverItem(item);
-                          }}
-                        >
-                          <div className="home-playlist-cover" style={toCoverBackgroundStyle(item.coverUrl, SMALL_COVER_WIDTHS.homeCard)} />
-                          <h3>{item.title}</h3>
-                          <p>{visibleSubtitle(item.subtitle, "精选活动")}</p>
-                        </button>
-                      ))}
-                      {!visibleEventItems.length ? (
-                        <p className="spotify-empty">暂无精选活动，稍后再来看看。</p>
-                      ) : null}
-                    </div>
-                    {discoverError ? <p className="error error-inline">{discoverError}</p> : null}
-                  </section>
-                </>
+                <EditorialHome
+                  hero={editorialHero}
+                  featured={editorialFeaturedItems}
+                  recent={editorialExploreItems}
+                  onSelect={(item) => {
+                    void handleDiscoverItem(item);
+                  }}
+                  onMore={() => setHomePlaylistView("more")}
+                  onExplore={() => goTab("search")}
+                  error={discoverError}
+                />
               ) : (
                 <section className="home-playlist-section home-playlist-more-section">
                   <div className="home-section-head">
@@ -6254,54 +6143,9 @@ export function PlayerApp() {
           ) : null}
         </section>
 
-        {hasTrack ? (
-          <aside className="spotify-right">
-            <>
-              <section className="spotify-panel">
-                <h2>歌词</h2>
-                <div className="spotify-lyric-box">
-                  {!controller.lyricLines.length ? (
-                    <p>暂无歌词或纯音乐</p>
-                  ) : (
-                    controller.lyricLines.map((line, index) => (
-                      <p key={`${line.timeMs}-${index}`} className={index === controller.lyricIndex ? "active" : ""}>
-                        {line.text}
-                      </p>
-                    ))
-                  )}
-                </div>
-              </section>
-
-              <section className="spotify-panel">
-                <h2>播放队列</h2>
-                <div className="spotify-queue-list">
-                  {player.queue.map((track, index) => {
-                    const playing = track.id === currentTrackId;
-                    return (
-                      <button
-                        key={`${track.id}-${index}`}
-                        className={`spotify-queue-item ${playing ? "active" : ""}`}
-                        onClick={() => {
-                          player.setQueue(player.queue, index);
-                          player.setPlaying(true);
-                        }}
-                      >
-                        <span className="spotify-queue-item-main">
-                          <span>{track.name}</span>
-                          {playing ? <PlayingIndicator active={player.isPlaying} /> : null}
-                        </span>
-                        <span>{track.artists.map((item) => item.name).join(" / ")}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-            </>
-          </aside>
-        ) : null}
       </section>
 
-      {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
+      {!isDetailMounted ? (dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock) : null}
 
       {playlistPortalTarget && homePlaylistPanel && homePlaylistPhase !== "closed"
         ? createPortal(
@@ -6375,58 +6219,151 @@ export function PlayerApp() {
                   </button>
                 </div>
 
-                <div className="home-playlist-drawer-list" ref={homePlaylistListRef}>
-                  {homePlaylistPanel.loading ? (
-                    <div className="home-playlist-skeleton-list" aria-hidden="true">
-                      {Array.from({ length: 8 }).map((_, index) => (
-                        <div className="home-playlist-skeleton-row" key={`playlist-skeleton-${index}`}>
-                          <div />
-                          <div />
-                          <div />
+                {homePlaylistPanel.loading ? (
+                  <div className="home-playlist-skeleton-shell">
+                    <div className="home-playlist-drawer-list home-playlist-skeleton-list" ref={homePlaylistListRef}>
+                      {Array.from({ length: 8 }, (_, index) => (
+                        <div className="home-playlist-skeleton-item" key={index}>
+                          <div className="home-playlist-skeleton-row" aria-hidden="true">
+                            <div className="cover" />
+                            <div className="main" />
+                            <div className="meta" />
+                          </div>
                         </div>
                       ))}
                     </div>
-                  ) : null}
-                  {homePlaylistPanel.error ? <p className="error error-inline">{homePlaylistPanel.error}</p> : null}
-                  {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
+                  </div>
+                ) : null}
+                {homePlaylistPanel.error ? (
+                  <div className="home-playlist-drawer-list" ref={homePlaylistListRef}>
+                    <p className="error error-inline">{homePlaylistPanel.error}</p>
+                  </div>
+                ) : null}
+                {!homePlaylistPanel.loading && !homePlaylistPanel.error && !homePlaylistPanel.tracks.length ? (
+                  <div className="home-playlist-drawer-list" ref={homePlaylistListRef}>
                     <p className="spotify-empty">{homePlaylistPanel.sourceType === "queue" ? "当前播放队列为空。" : "该歌单暂时没有可播放歌曲。"}</p>
-                  ) : null}
-                  {!homePlaylistPanel.loading && !homePlaylistPanel.error
-                    ? homePlaylistPanel.tracks.map((track, index) => (
+                  </div>
+                ) : null}
+                {!homePlaylistPanel.loading && !homePlaylistPanel.error && homePlaylistPanel.tracks.length ? (
+                  <AnimatedList
+                    items={homePlaylistPanel.tracks}
+                    className="home-playlist-track-shell"
+                    listClassName="home-playlist-drawer-list"
+                    itemClassName="home-playlist-track-motion"
+                    listRef={homePlaylistListRef}
+                    getItemKey={(track, index) => `panel-${track.id}-${index}`}
+                    showGradients
+                    enableArrowNavigation={false}
+                    renderItem={(track, index) => {
+                      const canExpandTrack = homePlaylistPanel.sourceType !== "queue" && Boolean(activePanelTrackSourceId);
+                      const isExpanded =
+                        canExpandTrack &&
+                        expandedPanelTrackId === track.id &&
+                        expandedPanelTrackSourceId === activePanelTrackSourceId;
+                      const artistNames = track.artists.map((item) => item.name).join(" / ") || "未知歌手";
+                      const albumName = track.album?.name?.trim() || "未知专辑";
+                      const rowClassName = `home-playlist-track-row ${track.id === currentTrackId ? "active" : ""} ${
+                        track.id === locatedPanelTrackId ? "located" : ""
+                      } ${isExpanded ? "expanded" : ""}`.trim();
+
+                      if (!canExpandTrack) {
+                        return (
+                          <article className={rowClassName} ref={bindPanelTrackRowRef(index)} data-panel-track-index={index}>
+                            <div
+                              className="home-playlist-track-cover"
+                              style={{ backgroundImage: `url(${resolveTrackCover(track, { width: SMALL_COVER_WIDTHS.playlistRow })})` }}
+                            />
+                            <button type="button" className="home-playlist-track-play" onClick={() => playHomePlaylistTrackAt(index)}>
+                              <span className="home-playlist-track-line">
+                                <span>{`${index + 1}. ${track.name}`}</span>
+                                {track.id === currentTrackId ? <PlayingIndicator active={player.isPlaying} /> : null}
+                              </span>
+                              <small>{artistNames}</small>
+                            </button>
+                            {!isMobileUi ? (
+                              <button type="button" className="home-playlist-track-queue" onClick={() => player.addToQueue(track, true)}>
+                                加入队列
+                              </button>
+                            ) : null}
+                          </article>
+                        );
+                      }
+
+                      return (
                         <article
-                          className={`home-playlist-track-row ${track.id === currentTrackId ? "active" : ""} ${track.id === locatedPanelTrackId ? "located" : ""}`.trim()}
-                          key={`panel-${track.id}-${index}`}
+                          className={rowClassName}
                           ref={bindPanelTrackRowRef(index)}
                           data-panel-track-index={index}
+                          data-panel-expandable-row="true"
+                          data-panel-track-id={track.id}
+                          data-panel-track-source-id={activePanelTrackSourceId ?? undefined}
                         >
-                          <div
-                            className="home-playlist-track-cover"
-                            style={{ backgroundImage: `url(${resolveTrackCover(track, { width: SMALL_COVER_WIDTHS.playlistRow })})` }}
-                          />
-                          <button
-                            type="button"
-                            className="home-playlist-track-play"
-                            onClick={() => playHomePlaylistTrackAt(index)}
-                          >
-                            <span className="home-playlist-track-line">
-                              <span>{`${index + 1}. ${track.name}`}</span>
-                              {track.id === currentTrackId ? <PlayingIndicator active={player.isPlaying} /> : null}
-                            </span>
-                            <small>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</small>
-                          </button>
-                          {!isMobileUi && homePlaylistPanel.sourceType !== "queue" ? (
+                          <div className="home-playlist-track-top">
                             <button
                               type="button"
-                              className="home-playlist-track-queue"
-                              onClick={() => player.addToQueue(track, true)}
+                              className="home-playlist-track-main"
+                              onClick={() => toggleExpandedPanelTrack(track.id)}
+                              aria-expanded={isExpanded}
+                              aria-label={`${isExpanded ? "收起" : "展开"}歌曲 ${track.name}`}
                             >
-                              加入队列
+                              <div
+                                className="home-playlist-track-cover"
+                                style={{ backgroundImage: `url(${resolveTrackCover(track, { width: SMALL_COVER_WIDTHS.playlistRow })})` }}
+                              />
+                              <span className="home-playlist-track-copy">
+                                <span className="home-playlist-track-line">
+                                  <span>{`${index + 1}. ${track.name}`}</span>
+                                  {track.id === currentTrackId ? <PlayingIndicator active={player.isPlaying} /> : null}
+                                </span>
+                                <small>{artistNames}</small>
+                              </span>
+                              <span className="home-playlist-track-expand-indicator" aria-hidden="true">
+                                {isExpanded ? "收起" : "展开"}
+                              </span>
                             </button>
+                            <div className="home-playlist-track-side">
+                              <button type="button" className="home-playlist-track-play" onClick={() => playHomePlaylistTrackAt(index)}>
+                                播放
+                              </button>
+                              {!isMobileUi ? (
+                                <button type="button" className="home-playlist-track-queue" onClick={() => player.addToQueue(track, true)}>
+                                  加入队列
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                          {isExpanded ? (
+                            <div className="home-playlist-track-expanded">
+                              <div
+                                className="home-playlist-track-expanded-cover"
+                                style={{ backgroundImage: `url(${resolveTrackCover(track, { width: 160 })})` }}
+                                aria-hidden="true"
+                              />
+                              <div className="home-playlist-track-expanded-copy">
+                                <span className="home-playlist-track-expanded-kicker">
+                                  {track.id === currentTrackId ? "正在播放" : "歌曲详情"}
+                                </span>
+                                <strong>{track.name}</strong>
+                                <p>{artistNames}</p>
+                                <small>
+                                  {albumName} · {formatMs(track.durationMs)}
+                                </small>
+                              </div>
+                              <div className="home-playlist-track-expanded-actions">
+                                <button type="button" onClick={() => playHomePlaylistTrackAt(index)}>
+                                  立即播放
+                                </button>
+                                <button type="button" className="ghost" onClick={() => player.addToQueue(track, true)}>
+                                  加入队列
+                                </button>
+                              </div>
+                            </div>
                           ) : null}
                         </article>
-                      ))
-                    : null}
-                </div>
+                      );
+                    }}
+                  />
+                ) : null}
               </aside>
             </section>,
             playlistPortalTarget
@@ -6779,15 +6716,31 @@ export function PlayerApp() {
                       ) : (
                         <>
                           <div className="detail-lyric-spacer" aria-hidden="true" />
-                          {activeDetailLyricLines.map((line, index) => (
-                            <p
-                              key={`${line.timeMs}-${index}`}
-                              ref={bindLyricLineRef(index)}
-                              className={`detail-lyric-line ${index === activeDetailLyricIndex ? "active" : ""}`}
-                            >
-                              {line.text}
-                            </p>
-                          ))}
+                          {activeDetailLyricLines.map((line, index) => {
+                            const distance = Math.abs(index - activeDetailLyricIndex);
+                            const secondaryText =
+                              detailLyricMode === "origin"
+                                ? ""
+                                : activeDetailLyricSecondaryByTime.get(line.timeMs) ?? activeDetailLyricSecondaryLines[index]?.text ?? "";
+                            return (
+                              <motion.div
+                                key={`${line.timeMs}-${index}`}
+                                className="detail-lyric-line-wrap"
+                                ref={bindLyricLineRef(index)}
+                                initial={false}
+                                animate={{
+                                  opacity: activeDetailLyricIndex < 0 ? 1 : distance === 0 ? 1 : distance === 1 ? 0.45 : 0.18,
+                                  scale: index === activeDetailLyricIndex ? 1 : 0.94
+                                }}
+                                transition={{ duration: 0.5 }}
+                              >
+                                <p className={`detail-lyric-line ${index === activeDetailLyricIndex ? "active" : ""}`}>
+                                  {line.text}
+                                </p>
+                                {secondaryText ? <p className="detail-lyric-subline">{secondaryText}</p> : null}
+                              </motion.div>
+                            );
+                          })}
                           <div className="detail-lyric-spacer" aria-hidden="true" />
                         </>
                       )}

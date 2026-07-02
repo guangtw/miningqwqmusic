@@ -43,7 +43,7 @@ MUSIC_SOURCE_PLAY_LEVEL=standard
 MUSIC_SOURCE_VIP_PREVIEW_MAX_MS=60000
 MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK=/song/url/match
 MUSIC_SOURCE_UNBLOCK_SOURCE=
-MUSIC_SOURCE_UNBLOCK_SOURCES=kuwo,kugou,migu
+MUSIC_SOURCE_UNBLOCK_SOURCES=unm,msls,qijieya
 MUSIC_SOURCE_MOCK_ENABLED=false
 MUSIC_SOURCE_MOCK_FALLBACK=false
 MUSIC_SOURCE_PATH_SEARCH=/search
@@ -59,7 +59,7 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - `MUSIC_SOURCE_PLAY_LEVEL` 用于透传到 `/song/url/v1` 的 `level` 参数（例如 `standard`、`exhigh`）
 - `MUSIC_SOURCE_VIP_PREVIEW_MAX_MS`：判定试听直链阈值（默认 `60000`）
 - `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
-- `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `kuwo,kugou,migu`）
+- `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `unm,msls,qijieya`）；这是当前用于止血的优先级，优先避开会回落到 30 秒试听链的旧 source 组合
 - `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
 - `ACCOUNT_SERVICE_BASE_URL`：可选，独立登录服务地址。配置后站内 `/api/account/*` 会代理到该服务，前端显示“登录同步”入口；未配置则保持纯游客模式。
 

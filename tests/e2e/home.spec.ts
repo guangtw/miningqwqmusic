@@ -79,12 +79,12 @@ async function openSearchTab(page: Page) {
 
 async function openLibraryTab(page: Page) {
   if (await usesMobileShell(page)) {
-    const mobileTab = page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "我的", exact: true }).first();
+    const mobileTab = page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "音乐库", exact: true }).first();
     await mobileTab.waitFor({ state: "visible" });
     await mobileTab.click();
     return;
   }
-  await page.getByRole("button", { name: "你的音乐库", exact: true }).first().evaluate((button) => {
+  await page.getByRole("button", { name: "音乐库", exact: true }).first().evaluate((button) => {
     if (button instanceof HTMLButtonElement) button.click();
   });
   if (!(await page.locator(".library-segmented-pill").isVisible().catch(() => false))) {
@@ -213,7 +213,8 @@ async function installDesktopHostMock(page: Page) {
 test("home page renders player shell", async ({ page }, testInfo) => {
   await page.goto("/");
   if (!testInfo.project.name.includes("mobile")) {
-    await expect(page.locator(".spotify-logo")).toContainText("MiningQwQ Music");
+    await expect(page.locator(".floating-nav")).toBeVisible();
+    await expect(page.locator(".spotify-logo")).toHaveCount(0);
     await expect(page.locator(".now-playing-merged")).toHaveCount(0);
   } else {
     await expect(page.locator(".spotify-logo")).toHaveCount(0);
@@ -224,20 +225,18 @@ test("home page renders player shell", async ({ page }, testInfo) => {
   await expect(page.locator(".spotify-player-controls .play-main").first()).toBeVisible();
 });
 
-test("desktop right rail omits the now-playing card and only appears for lyrics and queue", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name.includes("mobile"), "仅在桌面项目验证右栏收敛。");
+test("desktop removes the permanent right rail and keeps queue in a drawer", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "仅在桌面项目验证沉浸壳层。");
   await page.setViewportSize({ width: 1440, height: 920 });
   await page.goto("/");
 
   await expect(page.locator(".spotify-now-card")).toHaveCount(0);
   await expect(page.locator(".spotify-right")).toHaveCount(0);
 
-  await seedPlaybackFromPlaylist(page, "100100105", "E2E 桌面右栏歌单");
-
-  await expect(page.locator(".spotify-now-card")).toHaveCount(0);
-  await expect(page.locator(".spotify-right")).toBeVisible();
-  await expect(page.locator(".spotify-right").getByRole("heading", { name: "歌词" })).toBeVisible();
-  await expect(page.locator(".spotify-right").getByRole("heading", { name: "播放队列" })).toBeVisible();
+  await seedPlaybackFromPlaylist(page, "100100105", "E2E 沉浸队列歌单");
+  await expect(page.locator(".spotify-right")).toHaveCount(0);
+  await page.getByRole("button", { name: "打开播放队列" }).click();
+  await expect(page.getByRole("dialog", { name: "播放队列" })).toBeVisible();
 });
 
 test("account entry stays hidden when account proxy is not configured", async ({ page }) => {
@@ -287,8 +286,8 @@ test("guest account UI stays in local mode when account proxy responds", async (
     await expect(page.locator(".mobile-library-account-row")).toContainText("本地模式");
     await expect(page.locator(".mobile-library-account-row")).toContainText("当前仅提供本地保存与播放记录");
   } else {
-    await expect(page.locator(".account-switch-card")).toContainText("本地模式");
-    await expect(page.locator(".account-switch-card")).toContainText("当前仅提供本地保存与播放记录");
+    await expect(page.locator(".account-switch-card")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "个人中心" })).toBeVisible();
   }
 });
 
@@ -416,8 +415,8 @@ test("logged-in account entry opens account management drawer", async ({ page })
   await drawer.getByRole("button", { name: "退出登录" }).click();
   await page.waitForLoadState("networkidle");
   await openLibraryTab(page);
-  await expect(page.getByRole("button", { name: "登录同步" })).toHaveCount(0);
-  await expect(page.locator(".mobile-library-account-row")).toContainText("本地模式");
+  await expect(page.getByRole("button", { name: "登录同步" })).toBeVisible();
+  await expect(page.locator(".mobile-library-account-row")).toContainText("游客");
 });
 
 test("library sync status stays stable during silent background refreshes", async ({ page }) => {
@@ -854,7 +853,7 @@ test("guest preview source is rebuilt after authenticated session restore and de
     await openLibraryTab(page);
     await page.locator(".mobile-library-account-row").first().click();
   } else {
-    await page.getByRole("button", { name: /账户管理/ }).first().click();
+    await page.getByRole("button", { name: "个人中心", exact: true }).click();
   }
   const accountDrawer = page.getByRole("dialog", { name: "账户管理" });
   await expect(accountDrawer).toBeVisible();
@@ -890,8 +889,8 @@ test("search errors stay user-friendly when network requests fail", async ({ pag
   await expect(page.getByText("Failed to fetch")).toHaveCount(0);
 });
 
-test("short desktop sidebar keeps account warning, retry and theme switch visible", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name.includes("mobile"), "桌面短屏侧栏布局仅在桌面项目验证。");
+test("short desktop floating controls stay clear of the player dock", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "桌面短屏悬浮壳层仅在桌面项目验证。");
   await page.route("**/api/account/auth/refresh", async (route) => {
     await route.fulfill({
       status: 401,
@@ -911,46 +910,20 @@ test("short desktop sidebar keeps account warning, retry and theme switch visibl
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    const localModeCard = page.locator(".account-switch-card").first();
-    const retryButton = page.getByRole("button", { name: "重试连接" }).first();
-    const themeSwitch = page.locator(".theme-switch-card .theme-switch").first();
-    await expect(localModeCard).toBeVisible();
-    await expect(localModeCard).toContainText("本地模式");
-    await expect(retryButton).toBeVisible();
-    await expect(themeSwitch).toBeVisible();
+    const nav = page.locator(".floating-nav");
+    const player = page.locator(".immersive-player-dock:visible");
+    await expect(nav).toBeVisible();
+    await expect(player).toBeVisible();
+    await expect(page.locator(".account-switch-card")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "设置", exact: true })).toBeVisible();
 
-    const playerBox = await page.locator(".spotify-player-bar:visible").first().boundingBox();
-    const sidebarBox = await page.locator(".spotify-sidebar:visible").first().boundingBox();
-    const localModeBox = await localModeCard.boundingBox();
-    const retryBox = await retryButton.boundingBox();
-    const themeBox = await themeSwitch.boundingBox();
-    const themePosition = await themeSwitch.evaluate((node) => getComputedStyle(node.closest(".theme-switch-card") ?? node).position);
+    const playerBox = await player.boundingBox();
+    const navBox = await nav.boundingBox();
     expect(playerBox).not.toBeNull();
-    expect(sidebarBox).not.toBeNull();
-    expect(localModeBox).not.toBeNull();
-    expect(retryBox).not.toBeNull();
-    expect(themeBox).not.toBeNull();
-    expect(themePosition).not.toBe("fixed");
-    if (playerBox && sidebarBox && localModeBox && retryBox && themeBox) {
-      expect(themeBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
-      expect(themeBox.x + themeBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 1);
-      expect(retryBox.y + retryBox.height).toBeLessThan(playerBox.y);
-      expect(themeBox.y).toBeGreaterThanOrEqual(retryBox.y + retryBox.height - 1);
-      expect(themeBox.y).toBeGreaterThanOrEqual(localModeBox.y + localModeBox.height - 1);
-      expect(Math.round(retryBox.height)).toBeGreaterThanOrEqual(36);
-    }
-
-    const collections = page.locator(".spotify-collections:visible").first();
-    await collections.evaluate((node) => {
-      node.scrollTop = node.scrollHeight;
-    });
-    await expect(themeSwitch).toBeInViewport();
-    const scrolledThemeBox = await themeSwitch.boundingBox();
-    expect(scrolledThemeBox).not.toBeNull();
-    if (playerBox && sidebarBox && scrolledThemeBox) {
-      expect(scrolledThemeBox.x).toBeGreaterThanOrEqual(sidebarBox.x);
-      expect(scrolledThemeBox.x + scrolledThemeBox.width).toBeLessThanOrEqual(sidebarBox.x + sidebarBox.width + 1);
-      expect(scrolledThemeBox.y + scrolledThemeBox.height).toBeLessThan(playerBox.y);
+    expect(navBox).not.toBeNull();
+    if (playerBox && navBox) {
+      expect(navBox.y + navBox.height).toBeLessThanOrEqual(playerBox.y);
+      expect(playerBox.width).toBeLessThan(viewport.width - 180);
     }
   }
 });
@@ -1011,13 +984,13 @@ test("escape closes detail overlay and returns search tab to home", async ({ pag
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await expect(page.locator(".spotify-search-panel input")).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("heading", { name: "发现音乐" })).toBeVisible();
+  await expect(page.locator(".editorial-home")).toBeVisible();
 });
 
 test("playlist card opens second-level panel without forced autoplay", async ({ page }) => {
   await page.goto("/");
-  const playlistCard = page.locator(".home-playlist-card").first();
-  const cardCount = await page.locator(".home-playlist-card").count();
+  const playlistCard = page.locator(".editorial-cover-card").first();
+  const cardCount = await page.locator(".editorial-cover-card").count();
   test.skip(cardCount === 0, "当前环境无可展示歌单卡片，跳过二级歌单交互用例。");
   await expect(playlistCard).toBeVisible();
   await playlistCard.click();
@@ -1027,54 +1000,17 @@ test("playlist card opens second-level panel without forced autoplay", async ({ 
 });
 
 test("desktop theme switch toggles data-theme", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name.includes("mobile"), "桌面主题开关尺寸断言仅在桌面项目验证。");
+  test.skip(testInfo.project.name.includes("mobile"), "桌面主题入口仅在桌面项目验证。");
   await page.setViewportSize({ width: 1366, height: 900 });
   await page.goto("/");
-  const toggle = page.locator(".theme-switch:visible").first();
-  const thumb = toggle.locator(".theme-switch-thumb");
-  const thumbIcon = toggle.locator(".theme-switch-thumb-icon");
-  const sunRef = toggle.locator(".theme-switch-icon.sun");
-  const moonRef = toggle.locator(".theme-switch-icon.moon");
+  const toggle = page.getByRole("button", { name: "设置", exact: true });
   await expect(toggle).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(toggle).toHaveClass(/is-dark/);
-  await expect(thumbIcon.locator("svg")).toHaveCount(1);
-  await expect(moonRef).toHaveCSS("opacity", "0");
-  const sunOpacityDark = await sunRef.evaluate((node) => Number.parseFloat(getComputedStyle(node).opacity));
-  expect(sunOpacityDark).toBeGreaterThan(0.5);
-
-  const toggleBoxDark = await toggle.boundingBox();
-  const thumbBoxDark = await thumb.first().boundingBox();
-  const moonBoxDark = await moonRef.first().boundingBox();
-  expect(toggleBoxDark).not.toBeNull();
-  expect(thumbBoxDark).not.toBeNull();
-  expect(moonBoxDark).not.toBeNull();
-  if (toggleBoxDark && thumbBoxDark && moonBoxDark) {
-    expect(Math.round(toggleBoxDark.width)).toBe(72);
-    const darkDistance = Math.abs(thumbBoxDark.x + thumbBoxDark.width / 2 - (moonBoxDark.x + moonBoxDark.width / 2));
-    expect(darkDistance).toBeLessThan(14);
-  }
-
   await toggle.click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(toggle).toHaveClass(/is-light/);
-  await expect(sunRef).toHaveCSS("opacity", "0");
-  const moonOpacityLight = await moonRef.evaluate((node) => Number.parseFloat(getComputedStyle(node).opacity));
-  expect(moonOpacityLight).toBeGreaterThan(0.5);
-  await page.waitForTimeout(420);
-
-  const thumbBoxLight = await thumb.first().boundingBox();
-  const sunBox = await sunRef.first().boundingBox();
-  expect(thumbBoxLight).not.toBeNull();
-  expect(sunBox).not.toBeNull();
-  if (thumbBoxLight && thumbBoxDark && sunBox) {
-    expect(thumbBoxLight.x).toBeLessThan(thumbBoxDark.x - 18);
-    const lightDistance = Math.abs(thumbBoxLight.x + thumbBoxLight.width / 2 - (sunBox.x + sunBox.width / 2));
-    expect(lightDistance).toBeLessThan(14);
-  }
 });
 
-test("mobile dock exposes three primary tabs and library tools", async ({ page }) => {
+test("mobile dock exposes four primary tabs and library tools", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.locator(".spotify-logo")).toHaveCount(0);
@@ -1084,19 +1020,20 @@ test("mobile dock exposes three primary tabs and library tools", async ({ page }
   await expect(page.locator(".spotify-nav")).toHaveCount(0);
 
   const dockTabs = page.locator(".mobile-bottom-tabs").getByRole("tab");
-  await expect(dockTabs).toHaveCount(3);
+  await expect(dockTabs).toHaveCount(4);
   await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "首页", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "搜索", exact: true })).toBeVisible();
-  await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "我的", exact: true })).toBeVisible();
+  await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "音乐库", exact: true })).toBeVisible();
+  await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "一起听", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "首页", exact: true })).toHaveAttribute("aria-selected", "true");
 
   await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "搜索", exact: true }).click();
   await expect(page.getByRole("heading", { name: "搜索音乐" })).toBeVisible();
   await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "搜索", exact: true })).toHaveAttribute("aria-selected", "true");
 
-  await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "我的", exact: true }).click();
+  await page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "音乐库", exact: true }).click();
   await expect(page.locator(".library-segmented-pill")).toBeVisible();
-  await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "我的", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".mobile-bottom-tabs").getByRole("tab", { name: "音乐库", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".mobile-library-tools")).toBeVisible();
   await expect(page.locator(".mobile-library-tools").getByRole("button", { name: /一起听/ })).toBeVisible();
   await expect(page.locator(".mobile-library-compact-tools")).toBeVisible();
@@ -1123,8 +1060,8 @@ test("playlist drawer keeps a small top gap", async ({ page }) => {
     await page.locator(".theme-switch:visible").first().click();
   }
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  const playlistCard = page.locator(".home-playlist-card").first();
-  const cardCount = await page.locator(".home-playlist-card").count();
+  const playlistCard = page.locator(".editorial-cover-card").first();
+  const cardCount = await page.locator(".editorial-cover-card").count();
   test.skip(cardCount === 0, "当前环境无可展示歌单卡片，跳过抽屉高度验证。");
   await playlistCard.click();
   const drawer = page.locator(".home-playlist-drawer");
@@ -1144,7 +1081,8 @@ test("mobile detail layout hides lyric mode chips and tab switch remains clickab
   test.skip(!testInfo.project.name.includes("mobile"), "仅在移动端项目验证详情布局。");
   await page.setViewportSize({ width: 390, height: 844 });
   await seedPlaybackFromPlaylist(page, "100100101", "E2E 移动详情歌单");
-  await page.getByRole("button", { name: "展开详情" }).first().click();
+  const playerBar = page.locator(".spotify-player-bar:visible").first();
+  await playerBar.click({ position: { x: 8, y: 8 } });
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
   const detailScreen = page.locator(".player-detail-screen");
   await expect(detailScreen).toHaveClass(/phase-open/);
@@ -1592,7 +1530,7 @@ test("locate playing button works for queue and is disabled when playlist has no
   await expect(locateButtonInPlaylist).toHaveAttribute("title", "当前播放歌曲不在此列表中");
 });
 
-test("player controls stay consistent and centered in dock/detail", async ({ page }) => {
+test("player controls stay consistent and centered in dock/detail", async ({ page }, testInfo) => {
   await seedPlaybackFromPlaylist(page, "100100104", "E2E 控制栏种子歌单");
   const dockControlButtons = page.locator(".spotify-player-bar .spotify-player-controls .icon-btn");
   const dockOrder = await dockControlButtons.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("aria-label")));
@@ -1605,16 +1543,28 @@ test("player controls stay consistent and centered in dock/detail", async ({ pag
   const dockChildOrder = await page.locator(".spotify-player-bar .spotify-player-center").evaluate((node) =>
     Array.from(node.children).map((child) => child.className)
   );
-  expect(dockChildOrder[0]).toContain("spotify-progress-row");
-  expect(dockChildOrder[1]).toContain("spotify-player-controls");
+  expect(dockChildOrder[0]).toContain("spotify-player-inline-meta");
+  expect(dockChildOrder[1]).toContain("spotify-progress-row");
+  expect(dockChildOrder[2]).toContain("spotify-player-controls");
 
-  const dockCenters = await dockControlButtons.evaluateAll((nodes) =>
+  const dockGeometry = await dockControlButtons.evaluateAll((nodes) =>
     nodes.map((node) => {
       const rect = node.getBoundingClientRect();
-      return rect.left + rect.width / 2;
+      return {
+        label: node.getAttribute("aria-label"),
+        center: rect.left + rect.width / 2,
+        visible: rect.width > 0 && rect.height > 0
+      };
     })
   );
-  expect(Math.abs((dockCenters[1] + dockCenters[3]) / 2 - dockCenters[2])).toBeLessThanOrEqual(1.2);
+  if (testInfo.project.name.includes("mobile")) {
+    expect(dockGeometry.filter((item) => item.visible).map((item) => item.label)).toEqual([
+      "打开播放队列",
+      expect.stringMatching(/播放|暂停/)
+    ]);
+  } else {
+    expect(Math.abs((dockGeometry[1].center + dockGeometry[3].center) / 2 - dockGeometry[2].center)).toBeLessThanOrEqual(1.2);
+  }
 
   const playerBar = page.locator(".spotify-player-bar:visible").first();
   const playerBarBox = await playerBar.boundingBox();
@@ -1730,9 +1680,33 @@ test("playlist summary supports expand collapse and shows active playing row ind
   await page.getByRole("button", { name: "收起", exact: true }).click();
   await expect(expandButton).toBeVisible();
 
-  await page.locator(".home-playlist-track-play").first().click();
+  const firstTrackRow = page.locator(".home-playlist-track-row").first();
+  const secondTrackRow = page.locator(".home-playlist-track-row").nth(1);
+
+  await firstTrackRow.locator(".home-playlist-track-main").click();
+  await expect(firstTrackRow).toHaveClass(/expanded/);
+  await expect(page.locator(".home-playlist-track-row.expanded")).toHaveCount(1);
+  await expect(page.locator(".home-playlist-track-row.active")).toHaveCount(0);
+  const drawerListMetrics = await page.locator(".home-playlist-drawer-list").evaluate((node) => ({
+    clientWidth: (node as HTMLElement).clientWidth,
+    scrollWidth: (node as HTMLElement).scrollWidth
+  }));
+  expect(drawerListMetrics.scrollWidth).toBeLessThanOrEqual(drawerListMetrics.clientWidth + 1);
+
+  await secondTrackRow.locator(".home-playlist-track-main").click();
+  await expect(secondTrackRow).toHaveClass(/expanded/);
+  await expect(firstTrackRow).not.toHaveClass(/expanded/);
+  await expect(page.locator(".home-playlist-track-row.expanded")).toHaveCount(1);
+
+  await page.locator(".home-playlist-drawer-meta h3").click();
+  await expect(page.locator(".home-playlist-track-row.expanded")).toHaveCount(0);
+
+  await firstTrackRow.locator(".home-playlist-track-main").click();
+  await expect(firstTrackRow).toHaveClass(/expanded/);
+  await firstTrackRow.locator(".home-playlist-track-side .home-playlist-track-play").click();
   await expect(page.locator(".home-playlist-track-row.active").first()).toBeVisible();
   await expect(page.locator(".home-playlist-track-row.active .playing-indicator")).toBeVisible();
+  await expect(firstTrackRow).toHaveClass(/expanded/);
 
   await page.getByRole("button", { name: "关闭" }).first().click();
   await expect(page.getByRole("dialog", { name: "歌单详情" })).toBeHidden();
@@ -1770,7 +1744,7 @@ test("detail queue button closes detail first then opens queue drawer", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await seedPlaybackFromPlaylist(page, "100100103", "E2E 移动队列歌单");
 
-  await page.getByRole("button", { name: "展开详情" }).first().click();
+  await page.locator(".spotify-player-bar:visible").first().click({ position: { x: 8, y: 8 } });
   await expect(page.getByRole("dialog", { name: "播放详情" })).toBeVisible();
 
   await page.locator(".detail-dock-controls").getByRole("button", { name: "打开播放队列" }).click();

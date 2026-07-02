@@ -337,4 +337,111 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(payload.data.authorizationScope).toBe("guest");
     expect(payload.data.authorizationVersion).toBe(0);
   });
+
+  it("falls back to the dedicated entitlement endpoint when auth/me no longer includes playback authorization", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              id: "u1",
+              email: "vip@example.com"
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              enabled: true,
+              version: 12,
+              source: "manual"
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              id: "u1",
+              email: "vip@example.com"
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              enabled: true,
+              version: 12,
+              source: "manual"
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/music/track/1006/play-url?unblockMode=force_on", {
+        headers: {
+          authorization: "Bearer token"
+        }
+      }),
+      context("1006")
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
+      method: "GET",
+      headers: {
+        authorization: "Bearer token"
+      },
+      cache: "no-store"
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/music/unblock/entitlement", {
+      method: "GET",
+      headers: {
+        authorization: "Bearer token"
+      },
+      cache: "no-store"
+    });
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("1006", {
+      level: undefined,
+      unblockMode: "force_on"
+    });
+    const payload = await response.json();
+    expect(payload.data.authorizationScope).toBe("authorized");
+    expect(payload.data.authorizationVersion).toBe(12);
+  });
 });

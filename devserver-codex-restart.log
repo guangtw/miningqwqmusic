@@ -1,0 +1,53 @@
+
+> miningqwqmusic-player@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.18
+   - Local:        http://localhost:3000
+   - Network:      http://198.18.0.1:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1939ms
+ ○ Compiling / ...
+ ✓ Compiled / in 2.8s (1486 modules)
+ GET / 200 in 3482ms
+ GET / 200 in 116ms
+ GET / 200 in 54ms
+ GET / 200 in 51ms
+ GET / 200 in 64ms
+ ○ Compiling /api/account/[...path] ...
+ ✓ Compiled /api/account/[...path] in 682ms (1500 modules)
+ GET / 200 in 237ms
+ GET /api/music/scene/sport?bpm=130 200 in 1297ms
+ GET /api/music/discover/home 200 in 1494ms
+ GET /api/music/scene/sati 200 in 1537ms
+ POST /api/account/auth/refresh 200 in 8988ms
+ ✓ Compiled in 711ms (1514 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 1173ms (1846 modules)
+ GET / 500 in 1670ms
+ GET / 200 in 251ms
+ GET / 200 in 54ms
+ GET /api/music/scene/sport?bpm=130 200 in 259ms
+ GET /api/music/scene/sati 200 in 278ms
+ POST /api/account/auth/refresh 500 in 1284ms
+ POST /api/account/auth/refresh 500 in 776ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 718ms (1851 modules)
+ POST /api/account/auth/refresh 404 in 973ms
+ POST /api/account/auth/refresh 500 in 52ms
+ ✓ Compiled /api/music/track/[id]/insight in 425ms (1858 modules)
+ GET /api/music/track/track-long-2/play-url 500 in 989ms
+ GET /api/music/track/track-long-1/play-url 500 in 990ms
+ GET /api/music/track/track-long-1/quality-options 500 in 1073ms
+ GET /api/music/track/track-long-1/insight 500 in 1139ms
+ GET /api/music/track/track-long-1/insight 500 in 145ms
+ GET /api/music/discover/home 200 in 6414ms
+ ✓ Compiled /api/music/track/[id]/lyric in 207ms (1860 modules)
+ GET /api/music/track/track-long-1/lyric 500 in 743ms
+ ✓ Compiled in 494ms (1874 modules)
+ GET / 200 in 234ms
+ GET / 200 in 48ms
+ GET / 200 in 52ms
+ GET / 200 in 48ms

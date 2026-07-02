@@ -190,6 +190,8 @@ function parseCsvList(value: string | undefined): string[] {
     .filter((item) => Boolean(item));
 }
 
+const DEFAULT_UNBLOCK_SOURCES = ["unm", "msls", "qijieya"];
+
 function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
@@ -483,6 +485,13 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return options?.unblockMode ?? "auto";
   }
 
+  private shouldRetryPrimaryWithForcedUnblock(unblockMode: PlayUnblockMode, raw: unknown, data: PlayData | null): boolean {
+    if (unblockMode === "force_off" || unblockMode === "force_on") {
+      return false;
+    }
+    return this.shouldAttemptUnblock(raw, data);
+  }
+
   private buildPrimaryPlayQuery(trackId: string, level: string, unblockMode: PlayUnblockMode): Record<string, string | number | boolean> {
     if (unblockMode === "force_on") {
       return {
@@ -675,16 +684,46 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       shouldTryUnblock
     });
 
+    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
+      ? { raw, data, resolvedVia: "primary" }
+      : null;
+
+    if (this.shouldRetryPrimaryWithForcedUnblock(unblockMode, raw, data)) {
+      const forcedPrimaryRaw = await this.requestSafe<AnyRecord>(
+        this.config.pathPlayUrl,
+        this.buildPrimaryPlayQuery(trackId, level, "force_on")
+      );
+      if (forcedPrimaryRaw) {
+        const forcedPrimaryData = this.extractPlayData(forcedPrimaryRaw);
+        const forcedPrimaryRestricted = this.isRestrictedPlaySource(forcedPrimaryRaw, forcedPrimaryData);
+        this.debugUnblockTrace(trackId, "v1-force-on", {
+          level,
+          hasUrl: this.hasPlayableUrl(forcedPrimaryData),
+          preview: Boolean(forcedPrimaryData && this.isVipPreview(forcedPrimaryData)),
+          restricted: forcedPrimaryRestricted
+        });
+        if (this.hasPlayableUrl(forcedPrimaryData)) {
+          bestCandidate = this.pickBetterPlayCandidate(bestCandidate, {
+            raw: forcedPrimaryRaw,
+            data: forcedPrimaryData,
+            resolvedVia: "primary"
+          });
+          if (!forcedPrimaryRestricted) {
+            return this.toPlaySource(trackId, forcedPrimaryRaw, forcedPrimaryData, "primary");
+          }
+        }
+      } else {
+        this.debugUnblockTrace(trackId, "v1-force-on-error");
+      }
+    }
+
     if (!unblockPath || !shouldTryUnblock) {
-      if (this.hasPlayableUrl(data)) {
-        return this.toPlaySource(trackId, raw, data, "primary");
+      if (bestCandidate) {
+        return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
 
-    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
-      ? { raw, data, resolvedVia: "primary" }
-      : null;
     const fallbackSources = this.config.unblockSources?.length
       ? this.config.unblockSources
       : this.config.unblockSource
@@ -1105,6 +1144,11 @@ export function createNeteaseLikeAdapterFromEnv() {
 
   const unblockSources = parseCsvList(process.env.MUSIC_SOURCE_UNBLOCK_SOURCES);
   const unblockSourceLegacy = process.env.MUSIC_SOURCE_UNBLOCK_SOURCE ?? "";
+  const resolvedUnblockSources = unblockSources.length
+    ? unblockSources
+    : parseCsvList(unblockSourceLegacy).length
+      ? parseCsvList(unblockSourceLegacy)
+      : DEFAULT_UNBLOCK_SOURCES;
 
   return new NeteaseLikeAdapter({
     baseUrl,
@@ -1119,7 +1163,7 @@ export function createNeteaseLikeAdapterFromEnv() {
     enableScene: envEnabled("MUSIC_SOURCE_ENABLE_SCENE", true),
     pathPlayUrlUnblock: process.env.MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK ?? "/song/url/match",
     unblockSource: unblockSourceLegacy,
-    unblockSources: unblockSources.length ? unblockSources : parseCsvList(unblockSourceLegacy),
+    unblockSources: resolvedUnblockSources,
     pathSearch: process.env.MUSIC_SOURCE_PATH_SEARCH ?? "/search",
     pathTrackDetail: process.env.MUSIC_SOURCE_PATH_TRACK_DETAIL ?? "/song/detail",
     pathPlayUrl: process.env.MUSIC_SOURCE_PATH_PLAY_URL ?? "/song/url/v1",

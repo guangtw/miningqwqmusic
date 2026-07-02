@@ -135,4 +135,98 @@ describe("GET /api/music/track/:id/quality-options", () => {
     expect(payload.data.authorizationScope).toBe("authorized");
     expect(payload.data.authorizationVersion).toBe(11);
   });
+
+  it("uses session cookie refresh fallback when auth/me only accepts bearer tokens", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 5204,
+            message: "Unauthorized",
+            traceId: "trace",
+            retryable: false
+          }),
+          {
+            status: 401,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              accessToken: "cookie-refresh-token",
+              playbackAuthorization: {
+                enabled: true,
+                version: 13
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 5204,
+            message: "Unauthorized",
+            traceId: "trace",
+            retryable: false
+          }),
+          {
+            status: 401,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            code: 0,
+            data: {
+              accessToken: "cookie-refresh-token",
+              playbackAuthorization: {
+                enabled: true,
+                version: 13
+              }
+            },
+            message: "ok",
+            traceId: "trace"
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        )
+      );
+
+    const response = await GET(
+      new Request("http://localhost:3000/api/music/track/2003/quality-options", {
+        headers: {
+          cookie: "mqm_refresh=refresh-token"
+        }
+      }),
+      context("2003")
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/auth/refresh", {
+      method: "POST",
+      headers: {
+        cookie: "mqm_refresh=refresh-token"
+      },
+      cache: "no-store"
+    });
+    const payload = await response.json();
+    expect(payload.data.authorizationScope).toBe("authorized");
+    expect(payload.data.authorizationVersion).toBe(13);
+  });
 });

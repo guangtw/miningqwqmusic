@@ -15,6 +15,14 @@ type AuthMeResponse = {
   };
 };
 
+type AuthRefreshResponse = {
+  code?: number;
+  data?: {
+    accessToken?: string;
+    playbackAuthorization?: PlaybackAuthorizationPayload;
+  };
+};
+
 type MusicUnblockEntitlementResponse = {
   code?: number;
   data?: PlaybackAuthorizationPayload;
@@ -42,14 +50,17 @@ function isPlaybackAuthorizationPayload(
 }
 
 async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAuthorizationPayload | null> {
-  const headers = buildForwardHeaders(request);
-  if (!headers) return null;
+  const forwardedHeaders = buildForwardHeaders(request);
+  if (!forwardedHeaders) return null;
+
+  const authorization = request.headers.get("authorization");
+  const cookie = request.headers.get("cookie");
 
   try {
     const authUrl = new URL("/api/account/auth/me", request.url);
     const authResponse = await fetch(authUrl.toString(), {
       method: "GET",
-      headers,
+      headers: forwardedHeaders,
       cache: "no-store"
     });
     if (authResponse.ok) {
@@ -60,14 +71,45 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
       }
     }
   } catch {
-    // Fall through to the dedicated entitlement endpoint.
+    // Fall through to cookie refresh and entitlement probing.
+  }
+
+  let refreshedAccessToken: string | null = null;
+  if (cookie) {
+    try {
+      const refreshHeaders: Record<string, string> = { cookie };
+      const refreshUrl = new URL("/api/account/auth/refresh", request.url);
+      const refreshResponse = await fetch(refreshUrl.toString(), {
+        method: "POST",
+        headers: refreshHeaders,
+        cache: "no-store"
+      });
+      if (refreshResponse.ok) {
+        const refreshPayload = (await refreshResponse.json()) as AuthRefreshResponse;
+        const playbackAuthorization = refreshPayload.code === 0 ? refreshPayload.data?.playbackAuthorization : undefined;
+        refreshedAccessToken = refreshPayload.code === 0 ? refreshPayload.data?.accessToken ?? null : null;
+        if (isPlaybackAuthorizationPayload(playbackAuthorization)) {
+          return playbackAuthorization;
+        }
+      }
+    } catch {
+      // Fall through to the dedicated entitlement endpoint.
+    }
   }
 
   try {
     const entitlementUrl = new URL("/api/account/music/unblock/entitlement", request.url);
+    const entitlementHeaders: Record<string, string> = {};
+    if (authorization) {
+      entitlementHeaders.authorization = authorization;
+    } else if (refreshedAccessToken) {
+      entitlementHeaders.authorization = `Bearer ${refreshedAccessToken}`;
+    } else if (cookie) {
+      return null;
+    }
     const entitlementResponse = await fetch(entitlementUrl.toString(), {
       method: "GET",
-      headers,
+      headers: entitlementHeaders,
       cache: "no-store"
     });
     if (!entitlementResponse.ok) return null;

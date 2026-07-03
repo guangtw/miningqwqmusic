@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { createSafeJSONStorage } from "@/src/lib/safe-json-storage";
 import type { AccountUser, AuthStatus, PlaybackAuthorization, SyncState } from "@/src/types/account";
 
 type AuthState = {
@@ -100,7 +101,7 @@ export const useAuthStore = create<AuthStore>()(
     }),
     {
       name: "qwq-auth-store-v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(() => localStorage),
       partialize: (state) => ({
         status: state.status,
         user: state.user,

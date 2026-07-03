@@ -30,6 +30,15 @@ function headResponse(contentLength = 3_000_000, contentType = "audio/mpeg") {
   });
 }
 
+function headResponseWithoutLength(contentType = "audio/mpeg") {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Content-Type": contentType
+    }
+  });
+}
+
 function trackDetailResponse(trackId = "108485", durationMs = 240000) {
   return jsonResponse({
     songs: [
@@ -441,6 +450,67 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
     expect(matchUrl.pathname).toContain("/song/url/match");
     expect(matchUrl.searchParams.get("source")).toBeNull();
+  });
+
+  it("falls back to the original preview source when every unrestricted candidate probes as a short clip", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["unm"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = mockPlaySourceFetch(
+      [
+        jsonResponse({
+          data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
+        }),
+        jsonResponse({
+          code: 200,
+          data: "https://cdn.test/fake-full-from-v1.flac"
+        }),
+        jsonResponse({
+          code: 200,
+          data: "https://cdn.test/fake-full-from-unm.flac"
+        })
+      ],
+      {
+        headResponses: [headResponse(481115), headResponse(481115)]
+      }
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/preview-auto.mp3");
+    expect(result.preview).toBe(true);
+    expect(result.restrictionReason).toBe("vip_preview");
+    expect(result.resolvedVia).toBe("primary");
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
+  it("keeps unrestricted candidates when the probe cannot confirm length", async () => {
+    const adapter = createAdapter({
+      pathPlayUrlUnblock: "/song/url/match",
+      unblockSources: ["unm"],
+      vipPreviewMaxMs: 60000
+    });
+    const fetchMock = mockPlaySourceFetch(
+      [
+        jsonResponse({
+          data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
+        }),
+        jsonResponse({
+          code: 200,
+          data: "https://cdn.test/full-without-length.flac"
+        })
+      ],
+      {
+        headResponses: [headResponseWithoutLength()]
+      }
+    );
+
+    const result = await adapter.getPlaySource("108485");
+    expect(result.url).toBe("https://cdn.test/full-without-length.flac");
+    expect(result.preview).toBe(false);
+    expect(result.resolvedVia).toBe("primary");
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it.each([

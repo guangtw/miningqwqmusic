@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { createPortal } from "react-dom";
 import {
   AccountApiError,
@@ -2249,7 +2249,7 @@ export function PlayerApp() {
 
   const openAccountManager = useCallback(() => {
     openAccountManagerPanel({
-      allowGuest: false,
+      allowGuest: true,
       initialTab: "profile"
     });
   }, [openAccountManagerPanel]);
@@ -3607,6 +3607,10 @@ export function PlayerApp() {
   const hasTrack = Boolean(currentTrack ?? queueTrack);
   const canOpenDetail = canOpenPlayerDetail(hasTrack);
   const controlDisabled = player.queue.length === 0;
+  const mainDockProgressDegrees = `${
+    player.durationMs > 0 ? Math.min(360, Math.max(0, (player.currentTimeMs / player.durationMs) * 360)) : 0
+  }deg`;
+  const hasMainDockProgress = Boolean(currentTrack && player.durationMs > 0);
   const isDetailMounted = detailPhase !== "closed";
 
   useEffect(() => {
@@ -4319,11 +4323,10 @@ export function PlayerApp() {
   }, [authStatus, friendSearchInput, listenPanelOpen, runFriendSearch, setFriendLoading, setFriendSearchResults]);
 
   useEffect(() => {
-    const hasDesktopSettings = desktopHost.isDesktopHost && Boolean(desktopHost.context) && !isMobileUi;
-    if (accountManagerTab === "desktop" && !hasDesktopSettings) {
+    if (accountManagerTab === "desktop" && isMobileUi) {
       setAccountManagerTab(authStatus === "authenticated" ? "profile" : "advanced");
     }
-  }, [accountManagerTab, authStatus, desktopHost.context, desktopHost.isDesktopHost, isMobileUi]);
+  }, [accountManagerTab, authStatus, isMobileUi]);
 
   useEffect(() => {
     if (authStatus === "authenticated") return;
@@ -4677,11 +4680,12 @@ export function PlayerApp() {
   const accountSurfaceTitle = accountDisplayName;
   const accountSurfaceDescription = authStatus === "authenticated" ? accountEntryStatusText : "登录后开启云同步、好友与一起听";
   const desktopContext = desktopHost.context;
-  const showDesktopSettings = !isMobileUi && desktopHost.isDesktopHost && Boolean(desktopContext);
+  const hasDesktopContext = desktopHost.isDesktopHost && Boolean(desktopContext);
+  const showDesktopSettings = !isMobileUi;
   const desktopActionPending = desktopActionState.action;
   const desktopCapabilities = desktopContext?.capabilities;
   const accountManagerTabs = [
-    { id: "profile" as const, label: "资料", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
+    { id: "profile" as const, label: "资料", visible: true, disabled: false },
     { id: "security" as const, label: "安全", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
     { id: "advanced" as const, label: "高级", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
     { id: "desktop" as const, label: "桌面", visible: showDesktopSettings, disabled: !showDesktopSettings }
@@ -4733,19 +4737,33 @@ export function PlayerApp() {
           ? "已启用"
           : "未兑换";
   const accountOverviewUnblockText = authStatus === "authenticated" ? musicUnblockStatusText : "暂未开放";
+  const accountPanelMode = accountManagerTab === "desktop" ? "settings" : "profile";
+  const accountPanelTitle = accountPanelMode === "settings" ? "设置" : "个人中心";
   const listenPanelContent = (
     <>
-      <div className="listen-drawer-head">
-        <div>
-          <span>一起听</span>
-          <small>{listenRoom ? `${listenRoom.members.length} 人房间` : "更轻松地邀请好友一起听歌"}</small>
+      <header className="utility-hero utility-hero-listen listen-drawer-head">
+        <div className="utility-hero-copy">
+          <span>Social Listening</span>
+          <h3>一起听</h3>
+          <p>{listenRoom ? `${listenRoom.members.length} 人房间，最近由 ${listenLastActorName} 更新。` : "把邀请、好友和房间控制整合成一块更清晰的协作面板。"}</p>
+          <div className="account-overview-badges">
+            <span className={`drawer-status-chip ${listenConnectionState}`}>{listenStatusText}</span>
+            <span className="relation-badge muted">{listenRoom ? "多人同步中" : "等待创建房间"}</span>
+          </div>
         </div>
-        <button type="button" className="ghost" onClick={closeListenPanel}>
-          关闭
-        </button>
-      </div>
+        <div className="utility-hero-side">
+          <div className="utility-hero-orb utility-hero-orb-listen" aria-hidden="true" />
+          <div className="utility-hero-mini-card">
+            <strong>{listenRoom?.inviteCode ?? "未创建"}</strong>
+            <small>{listenRoom ? `${listenRoom.members.length} / 8 人` : "邀请码会显示在这里"}</small>
+          </div>
+          <button type="button" className="ghost" onClick={closeListenPanel}>
+            关闭
+          </button>
+        </div>
+      </header>
       <div className="utility-drawer-body">
-        <section className="listen-panel listen-room-summary-card">
+        <section className="listen-panel listen-room-summary-card utility-surface-card">
           <div className="listen-room-summary-head">
             <div>
               <strong>{listenRoom ? "当前房间" : "还没有一起听房间"}</strong>
@@ -5122,20 +5140,12 @@ export function PlayerApp() {
         }
       }}
     >
-      <div className="spotify-player-left">
-        <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
-        <div className="player-dock-copy">
-          <p className="player-title">{currentTrack?.name ?? "还没有播放音乐"}</p>
-          <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}</p>
-        </div>
-      </div>
-
-      <div className="spotify-player-center">
-        <div className="spotify-player-inline-meta">
-          <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
-          <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
-        </div>
-        <div className="spotify-progress-row">
+      {!isMobileUi ? (
+        <div
+          className="player-dock-progress-shell"
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           <span>{formatMs(player.currentTimeMs)}</span>
           <input
             className="range-slider range-progress"
@@ -5144,65 +5154,91 @@ export function PlayerApp() {
             max={Math.max(player.durationMs, 1)}
             value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
             style={{
-              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%, rgba(255,255,255,0.22) 100%)`
+              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255, 255, 255, 0.14) ${progressPercent}%, rgba(255, 255, 255, 0.14) 100%)`
             }}
-            onChange={(event) => handleSeekTo(Number(event.target.value))}
             onClick={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onChange={(event) => handleSeekTo(Number(event.target.value))}
           />
           <span>{formatMs(player.durationMs)}</span>
         </div>
-        <div className="spotify-player-controls">
-          <div className="player-control-side player-control-side-left">
-            <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
-              <QueueIcon />
-            </IconButton>
-          </div>
-          <div className="player-control-transport">
-            <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
-              <PreviousIcon />
-            </IconButton>
-            <IconButton
-              ariaLabel={player.isPlaying ? "暂停" : "播放"}
-              title={player.isPlaying ? "暂停" : "播放"}
-              className="play-main"
-              disabled={controlDisabled}
-              onClick={() => player.togglePlay()}
-            >
-              {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-            </IconButton>
-            <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-              <NextIcon />
-            </IconButton>
-          </div>
-          <div className="player-control-side player-control-side-right">
-            <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
-              {modeMeta.icon}
-            </IconButton>
-          </div>
-        </div>
-      </div>
-
-      {!isMobileUi ? (
-        <div className="spotify-player-right">
-          <IconButton ariaLabel={isMuted ? "取消静音" : "静音"} title={isMuted ? "取消静音" : "静音"} onClick={toggleMute} className={isMuted ? "warn" : "ghost"}>
-            <VolumeIcon muted={isMuted} />
-          </IconButton>
-          <input
-            className="range-slider range-volume"
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={player.volume}
-            style={{
-              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand-strong) ${volumePercent}%, rgba(255,255,255,0.22) ${volumePercent}%, rgba(255,255,255,0.22) 100%)`
-            }}
-            onChange={(event) => player.setVolume(Number(event.target.value))}
-            onClick={(event) => event.stopPropagation()}
-          />
-          <span>{Math.round(player.volume * 100)}%</span>
-        </div>
       ) : null}
+      <div className="player-dock-main-grid">
+        <div className="spotify-player-left">
+          <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
+          <div className="player-dock-copy">
+            <p className="player-title">{currentTrack?.name ?? "还没有播放音乐"}</p>
+            <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}</p>
+          </div>
+        </div>
+
+        <div className="spotify-player-center">
+          <div className="spotify-player-inline-meta">
+            <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
+            <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
+          </div>
+          <div className="spotify-player-controls">
+            <div className="player-control-side player-control-side-left">
+              <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
+                <QueueIcon />
+              </IconButton>
+            </div>
+            <div className="player-control-transport">
+              <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
+                <PreviousIcon />
+              </IconButton>
+              <div
+                className={`player-progress-orbit ${hasMainDockProgress ? "has-progress" : "idle"} ${player.isPlaying ? "is-playing" : ""}`.trim()}
+                style={{ "--play-progress-angle": mainDockProgressDegrees } as CSSProperties}
+              >
+                <IconButton
+                  ariaLabel={player.isPlaying ? "暂停" : "播放"}
+                  title={player.isPlaying ? "暂停" : "播放"}
+                  className="play-main"
+                  disabled={controlDisabled}
+                  onClick={() => player.togglePlay()}
+                >
+                  {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
+                </IconButton>
+              </div>
+              <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
+                <NextIcon />
+              </IconButton>
+            </div>
+            <div className="player-control-side player-control-side-right">
+              <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
+                {modeMeta.icon}
+              </IconButton>
+            </div>
+          </div>
+        </div>
+
+        {!isMobileUi ? (
+          <div className="spotify-player-right player-dock-volume" onClick={(event) => event.stopPropagation()}>
+            <div className="player-volume-stack">
+              <div className="player-volume-popover">
+                <span>{Math.round(player.volume * 100)}%</span>
+                <input
+                  className="range-slider range-volume vertical"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={player.volume}
+                  style={{
+                    background: `linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.22) ${100 - volumePercent}%, var(--brand-strong) ${100 - volumePercent}%, var(--brand) 100%)`
+                  }}
+                  onChange={(event) => player.setVolume(Number(event.target.value))}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              </div>
+              <IconButton ariaLabel={isMuted ? "取消静音" : "静音"} title={isMuted ? "取消静音" : "静音"} onClick={toggleMute} className={isMuted ? "warn" : "ghost"}>
+                <VolumeIcon muted={isMuted} />
+              </IconButton>
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {isMobileUi ? (
         <nav className="mobile-bottom-tabs" role="tablist" aria-label="页面切换">
@@ -5252,16 +5288,21 @@ export function PlayerApp() {
 
   const accountManagerContent = authStatus === "authenticated" || showDesktopSettings ? (
     <>
-      <header className="home-playlist-drawer-head account-manager-head account-manager-overview">
-        <UserAvatar user={authUser} size="lg" />
-        <div className="home-playlist-drawer-meta account-manager-meta">
-          <span>{authStatus === "authenticated" ? "账户管理" : "桌面设置"}</span>
-          <h3>{accountDisplayName}</h3>
-          <p>{authStatus === "authenticated" ? authUser?.email : "Windows 桌面客户端"}</p>
+      <header className="utility-hero utility-hero-account home-playlist-drawer-head account-manager-head account-manager-overview">
+        <div className="utility-hero-copy home-playlist-drawer-meta account-manager-meta">
+          <h3>{accountPanelTitle}</h3>
           <div className="account-overview-badges">
             <span className={`account-tier ${musicUnblockEnabled ? "advanced" : ""}`}>{accountTierText}</span>
             <span className="relation-badge ok">{accountStateText}</span>
-            {showDesktopSettings ? <span className="relation-badge muted">桌面端</span> : null}
+          </div>
+        </div>
+        <div className="utility-hero-side">
+          <div className="utility-hero-orb utility-hero-orb-account" aria-hidden="true" />
+          <div className="utility-hero-mini-card">
+            <UserAvatar user={authUser} size="lg" />
+            <div>
+              <strong>{accountDisplayName}</strong>
+            </div>
           </div>
         </div>
       </header>
@@ -5345,9 +5386,8 @@ export function PlayerApp() {
                 <section className="account-manager-section">
                   <div className="account-manager-section-head">
                     <span>资料</span>
-                    <small>登录后可管理昵称、头像和云端资料。</small>
                   </div>
-                  <p className="account-manager-status">请先登录后再查看和管理账号资料。</p>
+                  <p className="account-manager-status">请先登录。</p>
                 </section>
               )
             ) : null}
@@ -5393,9 +5433,8 @@ export function PlayerApp() {
                 <section className="account-manager-section">
                   <div className="account-manager-section-head">
                     <span>安全</span>
-                    <small>登录后可修改密码并管理账号安全设置。</small>
                   </div>
-                  <p className="account-manager-status">请先登录后再使用安全设置。</p>
+                  <p className="account-manager-status">请先登录。</p>
                 </section>
               )
             ) : null}
@@ -5440,68 +5479,79 @@ export function PlayerApp() {
                     <span>高级</span>
                     <small>登录后可查看并兑换高级资格。</small>
                   </div>
-                  <p className="account-manager-status">请先登录后再管理高级资格。</p>
+                  <p className="account-manager-status">请先登录。</p>
                 </section>
               )
             ) : null}
 
-            {accountManagerTab === "desktop" && showDesktopSettings && desktopContext ? (
+            {accountManagerTab === "desktop" && showDesktopSettings ? (
               <section className="account-manager-section">
                 <div className="account-manager-section-head">
-                  <span>桌面客户端</span>
-                  <small>仅清网页缓存，不会清账号登录状态</small>
+                  <span>{hasDesktopContext ? "桌面客户端" : "界面设置"}</span>
                 </div>
-                <div className="account-manager-desktop-grid">
-                  <p className="account-manager-desktop-meta">
-                    <strong>当前版本</strong>
-                    <span>{desktopContext.appVersion}</span>
-                  </p>
-                  <p className="account-manager-desktop-meta">
-                    <strong>缓存目录</strong>
-                    <code>{desktopContext.profileFolder}</code>
-                  </p>
+                <div className="settings-theme-card">
+                  <div className="settings-theme-copy">
+                    <strong>界面主题</strong>
+                  </div>
+                  <div className="theme-switch-mobile settings-panel-switch">{themeSwitchControl}</div>
                 </div>
-                <div className="account-manager-desktop-actions">
-                  {desktopCapabilities?.openProfileFolder ? (
-                    <button
-                      type="button"
-                      disabled={desktopActionPending !== null}
-                      onClick={() => void handleDesktopHostAction("open-profile-folder")}
-                    >
-                      打开缓存目录
-                    </button>
-                  ) : null}
-                  {desktopCapabilities?.clearWebCache ? (
-                    <button
-                      type="button"
-                      disabled={desktopActionPending !== null}
-                      onClick={() => void handleDesktopHostAction("clear-web-cache")}
-                    >
-                      清理缓存并重载
-                    </button>
-                  ) : null}
-                  {desktopCapabilities?.openDownloadPage ? (
-                    <button
-                      type="button"
-                      disabled={desktopActionPending !== null}
-                      onClick={() => void handleDesktopHostAction("open-download-page")}
-                    >
-                      打开下载页
-                    </button>
-                  ) : null}
-                  {desktopCapabilities?.openHomeInBrowser ? (
-                    <button
-                      type="button"
-                      className="ghost"
-                      disabled={desktopActionPending !== null}
-                      onClick={() => void handleDesktopHostAction("open-home-in-browser")}
-                    >
-                      在浏览器打开网页版
-                    </button>
-                  ) : null}
-                </div>
-                {desktopActionState.message ? <p className="account-manager-status">{desktopActionState.message}</p> : null}
-                {desktopActionState.error ? <p className="account-manager-status error">{desktopActionState.error}</p> : null}
+                {desktopContext ? (
+                  <>
+                    <div className="account-manager-desktop-grid">
+                      <p className="account-manager-desktop-meta">
+                        <strong>当前版本</strong>
+                        <span>{desktopContext.appVersion}</span>
+                      </p>
+                      <p className="account-manager-desktop-meta">
+                        <strong>缓存目录</strong>
+                        <code>{desktopContext.profileFolder}</code>
+                      </p>
+                    </div>
+                    <div className="account-manager-desktop-actions">
+                      {desktopCapabilities?.openProfileFolder ? (
+                        <button
+                          type="button"
+                          disabled={desktopActionPending !== null}
+                          onClick={() => void handleDesktopHostAction("open-profile-folder")}
+                        >
+                          打开缓存目录
+                        </button>
+                      ) : null}
+                      {desktopCapabilities?.clearWebCache ? (
+                        <button
+                          type="button"
+                          disabled={desktopActionPending !== null}
+                          onClick={() => void handleDesktopHostAction("clear-web-cache")}
+                        >
+                          清理缓存并重载
+                        </button>
+                      ) : null}
+                      {desktopCapabilities?.openDownloadPage ? (
+                        <button
+                          type="button"
+                          disabled={desktopActionPending !== null}
+                          onClick={() => void handleDesktopHostAction("open-download-page")}
+                        >
+                          打开下载页
+                        </button>
+                      ) : null}
+                      {desktopCapabilities?.openHomeInBrowser ? (
+                        <button
+                          type="button"
+                          className="ghost"
+                          disabled={desktopActionPending !== null}
+                          onClick={() => void handleDesktopHostAction("open-home-in-browser")}
+                        >
+                          在浏览器打开网页版
+                        </button>
+                      ) : null}
+                    </div>
+                    {desktopActionState.message ? <p className="account-manager-status">{desktopActionState.message}</p> : null}
+                    {desktopActionState.error ? <p className="account-manager-status error">{desktopActionState.error}</p> : null}
+                  </>
+                ) : (
+                  <p className="account-manager-status">当前为网页端。</p>
+                )}
               </section>
             ) : null}
           </div>
@@ -5510,20 +5560,18 @@ export function PlayerApp() {
             <section className="account-manager-section compact">
               <div className="account-manager-section-head">
                 <span>账户总览</span>
-                <small>{authStatus === "authenticated" ? "资料与同步状态" : "当前桌面环境"}</small>
               </div>
               <div className="drawer-info-list">
                 <p>会员层级：{accountOverviewTierText}</p>
                 <p>同步状态：{accountOverviewSyncText}</p>
                 <p>高级资格：{accountOverviewUnblockText}</p>
-                <p>桌面状态：{showDesktopSettings ? "已连接桌面端" : "当前为网页端"}</p>
+                <p>桌面状态：{hasDesktopContext ? "已连接桌面端" : "当前为网页端"}</p>
               </div>
             </section>
-            {showDesktopSettings && desktopContext ? (
+            {hasDesktopContext && desktopContext ? (
               <section className="account-manager-section compact">
                 <div className="account-manager-section-head">
                   <span>桌面信息</span>
-                  <small>Windows WebView2</small>
                 </div>
                 <div className="drawer-info-list">
                   <p>版本：{desktopContext.appVersion}</p>
@@ -5672,7 +5720,7 @@ export function PlayerApp() {
               openAccountManager();
             }
           }}
-          onSettings={toggleTheme}
+          onSettings={openDesktopSettings}
         />
       ) : null}
 
@@ -6317,48 +6365,83 @@ export function PlayerApp() {
                                 </span>
                                 <small>{artistNames}</small>
                               </span>
-                              <span className="home-playlist-track-expand-indicator" aria-hidden="true">
-                                {isExpanded ? "收起" : "展开"}
-                              </span>
                             </button>
                             <div className="home-playlist-track-side">
-                              <button type="button" className="home-playlist-track-play" onClick={() => playHomePlaylistTrackAt(index)}>
-                                播放
+                              <button
+                                type="button"
+                                className="home-playlist-track-icon-action primary"
+                                aria-label={`播放歌曲 ${track.name}`}
+                                title={`播放歌曲 ${track.name}`}
+                                onClick={() => playHomePlaylistTrackAt(index)}
+                              >
+                                <PlayIcon />
                               </button>
                               {!isMobileUi ? (
-                                <button type="button" className="home-playlist-track-queue" onClick={() => player.addToQueue(track, true)}>
-                                  加入队列
+                                <button
+                                  type="button"
+                                  className="home-playlist-track-icon-action"
+                                  aria-label={`加入队列 ${track.name}`}
+                                  title={`加入队列 ${track.name}`}
+                                  onClick={() => player.addToQueue(track, true)}
+                                >
+                                  <QueueIcon />
                                 </button>
                               ) : null}
                             </div>
                           </div>
-                          {isExpanded ? (
-                            <div className="home-playlist-track-expanded">
-                              <div
-                                className="home-playlist-track-expanded-cover"
-                                style={{ backgroundImage: `url(${resolveTrackCover(track, { width: 160 })})` }}
-                                aria-hidden="true"
-                              />
-                              <div className="home-playlist-track-expanded-copy">
-                                <span className="home-playlist-track-expanded-kicker">
-                                  {track.id === currentTrackId ? "正在播放" : "歌曲详情"}
-                                </span>
-                                <strong>{track.name}</strong>
-                                <p>{artistNames}</p>
-                                <small>
-                                  {albumName} · {formatMs(track.durationMs)}
-                                </small>
-                              </div>
-                              <div className="home-playlist-track-expanded-actions">
-                                <button type="button" onClick={() => playHomePlaylistTrackAt(index)}>
-                                  立即播放
-                                </button>
-                                <button type="button" className="ghost" onClick={() => player.addToQueue(track, true)}>
-                                  加入队列
-                                </button>
-                              </div>
-                            </div>
-                          ) : null}
+                          <AnimatePresence initial={false}>
+                            {isExpanded ? (
+                              <motion.div
+                                key={`expanded-${track.id}-${activePanelTrackSourceId ?? "panel"}`}
+                                className="home-playlist-track-expanded"
+                                layout
+                                initial={{ opacity: 0, y: -10, scale: 0.985 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -8, scale: 0.99 }}
+                                transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+                              >
+                                <motion.div
+                                  className="home-playlist-track-expanded-cover"
+                                  style={{ backgroundImage: `url(${resolveTrackCover(track, { width: 160 })})` }}
+                                  aria-hidden="true"
+                                  initial={{ scale: 0.92, rotate: -3 }}
+                                  animate={{ scale: 1, rotate: 0 }}
+                                  exit={{ scale: 0.95, rotate: -1.5 }}
+                                  transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                                />
+                                <motion.div
+                                  className="home-playlist-track-expanded-copy"
+                                  initial={{ opacity: 0, y: 12 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: 8 }}
+                                  transition={{ duration: 0.22, delay: 0.02, ease: [0.22, 1, 0.36, 1] }}
+                                >
+                                  <span className="home-playlist-track-expanded-kicker">
+                                    {track.id === currentTrackId ? "正在播放" : "歌曲详情"}
+                                  </span>
+                                  <strong>{track.name}</strong>
+                                  <p>{artistNames}</p>
+                                  <small>
+                                    {albumName} · {formatMs(track.durationMs)}
+                                  </small>
+                                </motion.div>
+                                <motion.div
+                                  className="home-playlist-track-expanded-actions"
+                                  initial={{ opacity: 0, y: 12 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: 8 }}
+                                  transition={{ duration: 0.22, delay: 0.04, ease: [0.22, 1, 0.36, 1] }}
+                                >
+                                  <button type="button" onClick={() => playHomePlaylistTrackAt(index)}>
+                                    立即播放
+                                  </button>
+                                  <button type="button" className="ghost" onClick={() => player.addToQueue(track, true)}>
+                                    加入队列
+                                  </button>
+                                </motion.div>
+                              </motion.div>
+                            ) : null}
+                          </AnimatePresence>
                         </article>
                       );
                     }}
@@ -6526,11 +6609,11 @@ export function PlayerApp() {
 
             <div className="detail-stage">
               <section className="detail-stage-left">
-                <div className="detail-turntable-wrap">
-                  <div className={`detail-turntable spinning ${player.isPlaying ? "" : "paused"}`.trim()}>
-                    <div className="detail-turntable-cover-mask">
-                      <div className="detail-turntable-cover" style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }} />
-                    </div>
+                <div className={`detail-art-spotlight ${player.isPlaying ? "is-playing" : ""}`.trim()}>
+                  <div className="detail-art-glow" aria-hidden="true" />
+                  <div className="detail-art-ripple" aria-hidden="true" />
+                  <div className="detail-art-frame">
+                    <div className="detail-art-cover" style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }} />
                   </div>
                 </div>
                 <div className="detail-bottom-meta">
@@ -6750,77 +6833,97 @@ export function PlayerApp() {
               </section>
             </div>
 
-            <footer className="detail-dock">
-              <div className="detail-progress-line">
-                <input
-                  className="range-slider range-progress"
-                  type="range"
-                  min={0}
-                  max={Math.max(player.durationMs, 1)}
-                  value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
-                  style={{
-                    background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${progressPercent}%, var(--detail-range-inactive) ${progressPercent}%, var(--detail-range-inactive) 100%)`
-                  }}
-                  onChange={(event) => handleSeekTo(Number(event.target.value))}
-                />
-              </div>
+            <footer className="detail-dock immersive-player-dock player-dock-shell">
+              {!isMobileUi ? (
+                <div className="player-dock-progress-shell detail-player-progress-shell">
+                  <span>{formatMs(player.currentTimeMs)}</span>
+                  <input
+                    className="range-slider range-progress"
+                    type="range"
+                    min={0}
+                    max={Math.max(player.durationMs, 1)}
+                    value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
+                    style={{
+                      background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, var(--detail-range-inactive) ${progressPercent}%, var(--detail-range-inactive) 100%)`
+                    }}
+                    onChange={(event) => handleSeekTo(Number(event.target.value))}
+                  />
+                  <span>{formatMs(player.durationMs)}</span>
+                </div>
+              ) : null}
 
-              <div className="detail-dock-row">
-                {!isMobileUi ? (
-                  <div className="detail-dock-song">
-                    <b>
-                      <MarqueeText text={currentTrack?.name ?? "未播放"} />
-                    </b>
-                    <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
+              <div className="player-dock-main-grid detail-player-main-grid">
+                <div className="spotify-player-left">
+                  <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
+                  <div className="player-dock-copy">
+                    <p className="player-title">{currentTrack?.name ?? "未播放"}</p>
+                    <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</p>
                   </div>
-                ) : null}
+                </div>
 
-                <div className="detail-dock-controls">
-                  <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
-                    <QueueIcon />
-                  </IconButton>
-                  <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
-                    <PreviousIcon />
-                  </IconButton>
-                  <IconButton
-                    ariaLabel={player.isPlaying ? "暂停" : "播放"}
-                    title={player.isPlaying ? "暂停" : "播放"}
-                    className="play-main"
-                    disabled={controlDisabled}
-                    onClick={() => player.togglePlay()}
-                  >
-                    {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-                  </IconButton>
-                  <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-                    <NextIcon />
-                  </IconButton>
-                  <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
-                    {modeMeta.icon}
-                  </IconButton>
+                <div className="spotify-player-center">
+                  <div className="spotify-player-inline-meta">
+                    <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
+                    <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
+                  </div>
+                  <div className="spotify-player-controls detail-dock-controls">
+                    <div className="player-control-side player-control-side-left">
+                      <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
+                        <QueueIcon />
+                      </IconButton>
+                    </div>
+                    <div className="player-control-transport">
+                      <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
+                        <PreviousIcon />
+                      </IconButton>
+                      <IconButton
+                        ariaLabel={player.isPlaying ? "暂停" : "播放"}
+                        title={player.isPlaying ? "暂停" : "播放"}
+                        className="play-main"
+                        disabled={controlDisabled}
+                        onClick={() => player.togglePlay()}
+                      >
+                        {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
+                      </IconButton>
+                      <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
+                        <NextIcon />
+                      </IconButton>
+                    </div>
+                    <div className="player-control-side player-control-side-right">
+                      <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
+                        {modeMeta.icon}
+                      </IconButton>
+                    </div>
+                  </div>
                 </div>
 
                 {!isMobileUi ? (
-                  <div className="detail-dock-volume">
-                    <IconButton
-                      ariaLabel={isMuted ? "取消静音" : "静音"}
-                      title={isMuted ? "取消静音" : "静音"}
-                      onClick={toggleMute}
-                      className={isMuted ? "warn" : "ghost"}
-                    >
-                      <VolumeIcon muted={isMuted} />
-                    </IconButton>
-                    <input
-                      className="range-slider range-volume"
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={player.volume}
-                      style={{
-                        background: `linear-gradient(90deg, var(--detail-glow) 0%, var(--detail-glow) ${volumePercent}%, var(--detail-range-inactive) ${volumePercent}%, var(--detail-range-inactive) 100%)`
-                      }}
-                      onChange={(event) => player.setVolume(Number(event.target.value))}
-                    />
+                  <div className="spotify-player-right player-dock-volume detail-dock-volume">
+                    <div className="player-volume-stack">
+                      <div className="player-volume-popover">
+                        <span>{Math.round(player.volume * 100)}%</span>
+                        <input
+                          className="range-slider range-volume vertical"
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={player.volume}
+                          style={{
+                            background: `linear-gradient(180deg, var(--detail-range-inactive) 0%, var(--detail-range-inactive) ${100 - volumePercent}%, var(--brand) ${100 - volumePercent}%, var(--brand) 100%)`
+                          }}
+                          onChange={(event) => player.setVolume(Number(event.target.value))}
+                        />
+                      </div>
+                      <IconButton
+                        ariaLabel={isMuted ? "取消静音" : "静音"}
+                        title={isMuted ? "取消静音" : "静音"}
+                        onClick={toggleMute}
+                        className={isMuted ? "warn" : "ghost"}
+                      >
+                        <VolumeIcon muted={isMuted} />
+                      </IconButton>
+                    </div>
                   </div>
                 ) : null}
               </div>

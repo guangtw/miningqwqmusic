@@ -1,7 +1,8 @@
 "use client";
 
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist } from "zustand/middleware";
+import { createSafeJSONStorage } from "@/src/lib/safe-json-storage";
 import type { ImportedPlaylist, PlaybackMode, PlayQualityLevel, Track } from "@/src/types/music";
 
 type PersistTrack = Track;
@@ -280,7 +281,7 @@ export const usePlayerStore = create<PlayerStore>()(
     }),
     {
       name: "qwq-music-store-v1",
-      storage: createJSONStorage(() => localStorage),
+      storage: createSafeJSONStorage(() => localStorage),
       partialize: (state) => ({
         queue: state.queue,
         currentIndex: state.currentIndex,

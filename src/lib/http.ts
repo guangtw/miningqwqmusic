@@ -49,7 +49,11 @@ export async function fetchWithRetry<T>(
       if (!contentType.includes("application/json")) {
         throw new AppError("Upstream response is not JSON", { code: 2006, status: 502, retryable: false });
       }
-      return (await response.json()) as T;
+      try {
+        return (await response.json()) as T;
+      } catch {
+        throw new AppError("Upstream returned invalid JSON", { code: 2007, status: 502, retryable: false });
+      }
     } catch (error) {
       latestError = error;
       if (attempt >= retries) {

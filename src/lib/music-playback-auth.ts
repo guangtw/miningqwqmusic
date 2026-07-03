@@ -28,6 +28,11 @@ type MusicUnblockEntitlementResponse = {
   data?: PlaybackAuthorizationPayload;
 };
 
+export type PlaybackAuthorizationState = {
+  enabled: boolean;
+  version: number;
+};
+
 function buildForwardHeaders(request: Request): Record<string, string> | null {
   const authorization = request.headers.get("authorization");
   const cookie = request.headers.get("cookie");
@@ -122,14 +127,20 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
   }
 }
 
-export async function hasMusicUnblockEntitlement(request: Request): Promise<boolean> {
+export async function resolvePlaybackAuthorizationState(request: Request): Promise<PlaybackAuthorizationState> {
   const authorization = await fetchPlaybackAuthorization(request);
-  return authorization?.enabled === true;
+  return {
+    enabled: authorization?.enabled === true,
+    version: Math.max(0, authorization?.version ?? 0)
+  };
+}
+
+export async function hasMusicUnblockEntitlement(request: Request): Promise<boolean> {
+  return (await resolvePlaybackAuthorizationState(request)).enabled;
 }
 
 export async function getAuthorizationVersion(request: Request): Promise<number> {
-  const authorization = await fetchPlaybackAuthorization(request);
-  return Math.max(0, authorization?.version ?? 0);
+  return (await resolvePlaybackAuthorizationState(request)).version;
 }
 
 export function toPlayUnblockMode(input: string | null): PlayUnblockMode | undefined {

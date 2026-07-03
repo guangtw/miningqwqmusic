@@ -1,6 +1,6 @@
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
-import { getAuthorizationVersion, hasMusicUnblockEntitlement } from "@/src/lib/music-playback-auth";
+import { resolvePlaybackAuthorizationState } from "@/src/lib/music-playback-auth";
 import { getTrackQualityAvailability } from "@/src/lib/music/service";
 import { createTraceId } from "@/src/lib/trace";
 import type { TrackQualityAvailability } from "@/src/types/music";
@@ -13,8 +13,9 @@ export async function GET(request: Request, context: Context) {
   const traceId = createTraceId();
   try {
     const { id } = await context.params;
-    const canUseUnblock = await hasMusicUnblockEntitlement(request);
-    const authorizationVersion = canUseUnblock ? await getAuthorizationVersion(request) : 0;
+    const authorizationState = await resolvePlaybackAuthorizationState(request);
+    const canUseUnblock = authorizationState.enabled;
+    const authorizationVersion = canUseUnblock ? authorizationState.version : 0;
     const availability = await getTrackQualityAvailability(id);
 
     const payload: TrackQualityAvailability = {

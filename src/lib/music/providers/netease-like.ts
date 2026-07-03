@@ -145,6 +145,12 @@ type PlayCandidate = {
   resolvedVia: "primary" | "unblock";
 };
 
+type AudioUrlProbe = {
+  contentLength?: number;
+  contentType?: string;
+  ok: boolean;
+};
+
 type AnyRecord = Record<string, unknown>;
 
 function asObject(value: unknown): AnyRecord {
@@ -542,6 +548,80 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
   }
 
+  private async getTrackDurationMs(trackId: string): Promise<number | undefined> {
+    const raw = await this.requestSafe<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
+    return raw?.songs?.[0]?.dt ?? raw?.songs?.[0]?.duration;
+  }
+
+  private async probeAudioUrl(url: string): Promise<AudioUrlProbe | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        redirect: "follow",
+        signal: controller.signal
+      });
+      if (!response.ok) return null;
+      return {
+        ok: true,
+        contentLength: asNumber(response.headers.get("content-length")),
+        contentType: asString(response.headers.get("content-type"))
+      };
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private getMinimumExpectedContentLength(durationMs: number, bitrate?: number): number {
+    const seconds = Math.max(1, Math.floor(durationMs / 1000));
+    const bitrateFloor = bitrate && bitrate > 0
+      ? Math.max(48000, Math.floor(bitrate * 0.4))
+      : 48000;
+    return Math.floor((seconds * bitrateFloor) / 8);
+  }
+
+  private isProbeConsistentWithTrackLength(
+    probe: AudioUrlProbe,
+    trackDurationMs: number | undefined,
+    data: PlayData
+  ): boolean {
+    if (!probe.ok) return false;
+    if (!probe.contentType || !probe.contentType.toLowerCase().startsWith("audio/")) {
+      return false;
+    }
+
+    const expectedDurationMs = trackDurationMs ?? (data.time && data.time > this.config.vipPreviewMaxMs ? data.time : undefined);
+    if (!expectedDurationMs || expectedDurationMs <= this.config.vipPreviewMaxMs) {
+      return true;
+    }
+
+    if (!probe.contentLength) return false;
+    return probe.contentLength >= this.getMinimumExpectedContentLength(expectedDurationMs, data.br);
+  }
+
+  private async verifyCandidateUrl(
+    trackId: string,
+    label: string,
+    trackDurationMs: number | undefined,
+    data: PlayData
+  ): Promise<boolean> {
+    const url = asString(data.url);
+    if (!url) return false;
+
+    const probe = await this.probeAudioUrl(url);
+    const valid = this.isProbeConsistentWithTrackLength(probe ?? { ok: false }, trackDurationMs, data);
+    this.debugUnblockTrace(trackId, `${label}-probe`, {
+      valid,
+      contentLength: probe?.contentLength,
+      contentType: probe?.contentType,
+      trackDurationMs
+    });
+    return valid;
+  }
+
   async searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>> {
     const offset = (input.page - 1) * input.pageSize;
     const raw = await this.request<{ result?: { songs?: NeteaseSong[]; songCount?: number } }>(
@@ -670,6 +750,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const level = this.resolvePlayLevel(options);
     const unblockMode = this.resolvePlayUnblockMode(options);
+    let trackDurationMsPromise: Promise<number | undefined> | null = null;
+    const ensureTrackDurationMs = () => {
+      trackDurationMsPromise ??= this.getTrackDurationMs(trackId);
+      return trackDurationMsPromise;
+    };
     const raw = await this.request<AnyRecord>(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode));
     const data = this.extractPlayData(raw);
     const primaryRestricted = this.isRestrictedPlaySource(raw, data);
@@ -708,7 +793,10 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
             data: forcedPrimaryData,
             resolvedVia: "primary"
           });
-          if (!forcedPrimaryRestricted) {
+          if (
+            !forcedPrimaryRestricted &&
+            (await this.verifyCandidateUrl(trackId, "v1-force-on", await ensureTrackDurationMs(), forcedPrimaryData))
+          ) {
             return this.toPlaySource(trackId, forcedPrimaryRaw, forcedPrimaryData, "primary");
           }
         }
@@ -719,6 +807,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     if (!unblockPath || !shouldTryUnblock) {
       if (bestCandidate) {
+        if (
+          !this.isRestrictedPlaySource(bestCandidate.raw, bestCandidate.data) &&
+          (await this.verifyCandidateUrl(trackId, "primary", await ensureTrackDurationMs(), bestCandidate.data))
+        ) {
+          return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
+        }
         return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
@@ -758,7 +852,15 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           data: unblockData,
           resolvedVia: "unblock"
         });
-        if (!unblockRestricted) {
+        if (
+          !unblockRestricted &&
+          (await this.verifyCandidateUrl(
+            trackId,
+            source ? `match-${source}` : "match-default",
+            await ensureTrackDurationMs(),
+            unblockData
+          ))
+        ) {
           return this.toPlaySource(trackId, unblockRaw, unblockData, "unblock");
         }
       } catch {
@@ -768,6 +870,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     if (bestCandidate) {
+      if (
+        !this.isRestrictedPlaySource(bestCandidate.raw, bestCandidate.data) &&
+        (await this.verifyCandidateUrl(trackId, "best-candidate", await ensureTrackDurationMs(), bestCandidate.data))
+      ) {
+        return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
+      }
       return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
     }
 

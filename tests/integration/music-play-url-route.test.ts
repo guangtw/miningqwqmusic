@@ -108,7 +108,7 @@ describe("GET /api/music/track/:id/play-url", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.getTrackQualityAvailability).toHaveBeenCalledWith("1002");
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
       method: "GET",
@@ -323,7 +323,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
       method: "GET",
       headers: {
@@ -332,20 +332,6 @@ describe("GET /api/music/track/:id/play-url", () => {
       cache: "no-store"
     });
     expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/auth/refresh", {
-      method: "POST",
-      headers: {
-        cookie: "mqm_refresh=refresh-token"
-      },
-      cache: "no-store"
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://localhost:3000/api/account/auth/me", {
-      method: "GET",
-      headers: {
-        cookie: "mqm_refresh=refresh-token"
-      },
-      cache: "no-store"
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(4, "http://localhost:3000/api/account/auth/refresh", {
       method: "POST",
       headers: {
         cookie: "mqm_refresh=refresh-token"

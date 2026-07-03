@@ -1,7 +1,7 @@
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { getPlaySource, getTrackQualityAvailability } from "@/src/lib/music/service";
-import { getAuthorizationVersion, hasMusicUnblockEntitlement, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
+import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
 import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 import { createTraceId } from "@/src/lib/trace";
 import type { PlayQualityLevel } from "@/src/types/music";
@@ -17,8 +17,12 @@ export async function GET(request: Request, context: Context) {
     const { searchParams } = new URL(request.url);
     const requestedLevel = toPlayQualityLevel(searchParams.get("level"));
     const requestedUnblockMode = toPlayUnblockMode(searchParams.get("unblockMode"));
-    const canUseUnblock = requestedUnblockMode === "force_off" ? false : await hasMusicUnblockEntitlement(request);
-    const authorizationVersion = canUseUnblock ? await getAuthorizationVersion(request) : 0;
+    const authorizationState =
+      requestedUnblockMode === "force_off"
+        ? { enabled: false, version: 0 }
+        : await resolvePlaybackAuthorizationState(request);
+    const canUseUnblock = authorizationState.enabled;
+    const authorizationVersion = canUseUnblock ? authorizationState.version : 0;
     const effectiveUnblockMode =
       requestedUnblockMode === "force_off"
         ? "force_off"

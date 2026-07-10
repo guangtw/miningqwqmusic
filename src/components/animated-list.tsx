@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, ReactNode, Ref, UIEvent } from "react";
-import { motion, useInView } from "motion/react";
+import { motion, useInView, useReducedMotion } from "motion/react";
+import { springStagger } from "@/src/lib/motion-presets";
 
 import styles from "./animated-list.module.css";
 
@@ -37,7 +38,8 @@ function joinClasses(...values: Array<string | false | null | undefined>) {
 
 function AnimatedItem({ children, className, delay, index, interactive, onClick, onMouseEnter }: AnimatedItemProps) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const inView = useInView(ref, { amount: 0.35, once: false });
+  const inView = useInView(ref, { amount: 0.25, once: true });
+  const reducedMotion = useReducedMotion();
 
   return (
     <motion.div
@@ -46,10 +48,18 @@ function AnimatedItem({ children, className, delay, index, interactive, onClick,
       className={joinClasses(styles.item, interactive && styles.interactiveItem, className)}
       onClick={onClick}
       onMouseEnter={onMouseEnter}
-      layout
-      initial={{ opacity: 0, scale: 0.9, y: 18 }}
-      animate={inView ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.9, y: 18 }}
-      transition={{ duration: 0.28, delay, layout: { duration: 0.24 } }}
+      layout={!reducedMotion}
+      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 14 }}
+      animate={inView ? { opacity: 1, y: 0 } : reducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+      transition={
+        reducedMotion
+          ? { duration: 0.01 }
+          : {
+              ...springStagger,
+              delay: Math.min(delay, 0.24),
+              layout: { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+            }
+      }
     >
       {children}
     </motion.div>

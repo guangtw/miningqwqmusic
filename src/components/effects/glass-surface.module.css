@@ -20,59 +20,43 @@
   display: contents;
 }
 
-.svg {
-  background: light-dark(hsl(0 0% 100% / var(--glass-frost, 0)), hsl(0 0% 0% / var(--glass-frost, 0)));
-  backdrop-filter: var(--filter-id, url(#glass-filter)) saturate(var(--glass-saturation, 1));
-  -webkit-backdrop-filter: var(--filter-id, url(#glass-filter)) saturate(var(--glass-saturation, 1));
-  box-shadow:
-    0 0 2px 1px light-dark(color-mix(in oklch, black, transparent 85%), color-mix(in oklch, white, transparent 65%)) inset,
-    0 0 10px 4px light-dark(color-mix(in oklch, black, transparent 90%), color-mix(in oklch, white, transparent 85%)) inset,
-    0 4px 16px rgba(17, 17, 26, 0.05),
-    0 8px 24px rgba(17, 17, 26, 0.05),
-    0 16px 56px rgba(17, 17, 26, 0.05),
-    0 4px 16px rgba(17, 17, 26, 0.05) inset,
-    0 8px 24px rgba(17, 17, 26, 0.05) inset,
-    0 16px 56px rgba(17, 17, 26, 0.05) inset;
-}
-
+/*
+ * Frosted glass — liquid-glass-effect / frostpane / css.glass recipe
+ * background: rgba white tint
+ * backdrop-filter: blur + saturate
+ * bright rim border + outer shadow + inset specular
+ */
+.svg,
 .fallback {
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(12px) saturate(1.8) brightness(1.1);
-  -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
   box-shadow:
-    0 8px 32px 0 rgba(31, 38, 135, 0.16),
-    0 2px 16px 0 rgba(31, 38, 135, 0.08),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.28),
-    inset 0 -1px 0 0 rgba(255, 255, 255, 0.12);
+    0 8px 32px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 4px 20px rgba(255, 255, 255, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
+  .svg,
   .fallback {
-    background: rgba(255, 255, 255, 0.08);
-    backdrop-filter: blur(12px) saturate(1.8) brightness(1.16);
-    -webkit-backdrop-filter: blur(12px) saturate(1.8) brightness(1.16);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    background:
+      linear-gradient(155deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.28)),
+      rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.55);
     box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
-      inset 0 -1px 0 0 rgba(255, 255, 255, 0.08);
+      0 8px 32px rgba(24, 48, 34, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 4px 20px rgba(255, 255, 255, 0.3);
   }
 }
 
-@supports not (backdrop-filter: blur(10px)) {
+@supports not ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
+  .svg,
   .fallback {
-    background: rgba(255, 255, 255, 0.18);
-    box-shadow:
-      inset 0 1px 0 0 rgba(255, 255, 255, 0.38),
-      inset 0 -1px 0 0 rgba(255, 255, 255, 0.16);
-  }
-
-  .fallback::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: inherit;
-    z-index: -1;
+    background: rgba(30, 36, 34, 0.88);
   }
 }

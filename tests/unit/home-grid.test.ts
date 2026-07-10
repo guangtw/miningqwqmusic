@@ -19,4 +19,10 @@ describe("computeHomeGridPlan", () => {
     expect(plan.columns).toBe(3);
     expect(plan.count).toBe(3);
   });
+
+  it("caps columns on ultra-wide containers so cards stay large", () => {
+    const plan = computeHomeGridPlan(2400, 40, 196, 20, 6);
+    expect(plan.columns).toBe(6);
+    expect(plan.count).toBe(12);
+  });
 });

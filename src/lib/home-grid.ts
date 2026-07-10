@@ -3,11 +3,26 @@ export type HomeGridPlan = {
   count: number;
 };
 
-export function computeHomeGridPlan(containerWidth: number, itemCount: number, minCardWidth: number, gap: number): HomeGridPlan {
+/**
+ * Plan a home-page grid that stays elegant at large widths:
+ * - columns grow with container, but never past maxColumns
+ * - prefer at most two full rows when there is enough content
+ */
+export function computeHomeGridPlan(
+  containerWidth: number,
+  itemCount: number,
+  minCardWidth: number,
+  gap: number,
+  maxColumns = 8
+): HomeGridPlan {
   const safeWidth = Math.max(0, containerWidth);
   const safeMinWidth = Math.max(1, minCardWidth);
   const safeGap = Math.max(0, gap);
-  const columns = Math.max(1, Math.floor((safeWidth + safeGap) / (safeMinWidth + safeGap)));
+  const safeMaxColumns = Math.max(1, maxColumns);
+  const columns = Math.min(
+    safeMaxColumns,
+    Math.max(1, Math.floor((safeWidth + safeGap) / (safeMinWidth + safeGap)))
+  );
 
   if (itemCount <= 0) {
     return {

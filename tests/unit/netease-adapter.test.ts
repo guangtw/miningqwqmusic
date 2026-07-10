@@ -98,7 +98,7 @@ describe("NeteaseLikeAdapter mapping", () => {
               id: 1001,
               name: "Test Song",
               ar: [{ id: 11, name: "Singer A" }],
-              al: { id: 22, name: "Album X", picUrl: "cover.png" },
+              al: { id: 22, name: "Album X", picUrl: "https://p1.music.126.net/cover.png" },
               dt: 240000
             }
           ]
@@ -110,7 +110,48 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.total).toBe(1);
     expect(result.items[0].id).toBe("1001");
     expect(result.items[0].artists[0].name).toBe("Singer A");
-    expect(result.items[0].album?.coverUrl).toBe("cover.png");
+    expect(result.items[0].album?.coverUrl).toBe("https://p1.music.126.net/cover.png");
+  });
+
+  it("enriches missing search covers via batch song detail", async () => {
+    const adapter = createAdapter();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/search")) {
+        return jsonResponse({
+          result: {
+            songCount: 1,
+            songs: [
+              {
+                id: 2002,
+                name: "No Cover Song",
+                ar: [{ id: 1, name: "Artist" }],
+                al: { id: 9, name: "Album Without Pic" },
+                dt: 180000
+              }
+            ]
+          }
+        });
+      }
+      if (url.includes("/song/detail") || url.includes("ids=")) {
+        return jsonResponse({
+          songs: [
+            {
+              id: 2002,
+              name: "No Cover Song",
+              ar: [{ id: 1, name: "Artist" }],
+              al: { id: 9, name: "Album Without Pic", picUrl: "https://p1.music.126.net/enriched.png" },
+              dt: 180000
+            }
+          ]
+        });
+      }
+      return jsonResponse({});
+    });
+
+    const result = await adapter.searchTracks({ keyword: "x", page: 1, pageSize: 20 });
+    expect(result.items[0].coverUrl).toBe("https://p1.music.126.net/enriched.png");
+    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("maps artist search result to ArtistSearchItem list", async () => {

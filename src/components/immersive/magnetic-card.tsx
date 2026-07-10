@@ -8,12 +8,15 @@ export function MagneticCard({
   className,
   ariaLabel,
   onClick,
-  children
+  children,
+  magnetic = true
 }: {
   className?: string;
   ariaLabel: string;
   onClick: () => void;
   children: ReactNode;
+  /** When false, skip tilt/magnetic tracking (used for hero stage poster). */
+  magnetic?: boolean;
 }) {
   const frameRef = useRef<number | null>(null);
 
@@ -32,6 +35,10 @@ export function MagneticCard({
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!magnetic) {
+      return;
+    }
+
     const enabled = canUseMagneticInteraction({
       hover: window.matchMedia("(hover: hover)").matches,
       finePointer: window.matchMedia("(pointer: fine)").matches,
@@ -53,13 +60,14 @@ export function MagneticCard({
       window.cancelAnimationFrame(frameRef.current);
     }
     frameRef.current = window.requestAnimationFrame(() => {
-      element.style.setProperty("--magnetic-x", `${((xRatio - 0.5) * 2.4).toFixed(2)}px`);
-      element.style.setProperty("--magnetic-y", `${((yRatio - 0.5) * 2.4).toFixed(2)}px`);
+      // Stage language: barely-there lift, no dramatic tilt
+      element.style.setProperty("--magnetic-x", `${((xRatio - 0.5) * 1).toFixed(2)}px`);
+      element.style.setProperty("--magnetic-y", `${((yRatio - 0.5) * 1).toFixed(2)}px`);
       element.style.setProperty("--magnetic-glow-x", `${(xRatio * 100).toFixed(1)}%`);
       element.style.setProperty("--magnetic-glow-y", `${(yRatio * 100).toFixed(1)}%`);
-      element.style.setProperty("--tilt-rotate-y", `${((xRatio - 0.5) * 17.5).toFixed(2)}deg`);
-      element.style.setProperty("--tilt-rotate-x", `${((0.5 - yRatio) * 17.5).toFixed(2)}deg`);
-      element.style.setProperty("--tilt-depth", `${(Math.max(Math.abs(xRatio - 0.5), Math.abs(yRatio - 0.5)) * 20).toFixed(2)}px`);
+      element.style.setProperty("--tilt-rotate-y", `${((xRatio - 0.5) * 2).toFixed(2)}deg`);
+      element.style.setProperty("--tilt-rotate-x", `${((0.5 - yRatio) * 2).toFixed(2)}deg`);
+      element.style.setProperty("--tilt-depth", `${(Math.max(Math.abs(xRatio - 0.5), Math.abs(yRatio - 0.5)) * 6).toFixed(2)}px`);
       frameRef.current = null;
     });
   };

@@ -9,7 +9,7 @@ const items = [
 
 describe("EditorialHome", () => {
   it("uses one editorial hero followed by focused content rails", () => {
-    render(
+    const { container } = render(
       <EditorialHome
         hero={items[0]}
         featured={items}
@@ -19,10 +19,12 @@ describe("EditorialHome", () => {
       />
     );
 
-    expect(screen.getByRole("heading", { name: "午夜之后" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /午夜之后/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "为你精选" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "继续探索" })).toBeInTheDocument();
     expect(screen.queryByText("DISCOVER MIX")).not.toBeInTheDocument();
+    expect(container.querySelector(".editorial-rail--featured .editorial-rail-track--featured")).toBeTruthy();
+    expect(container.querySelector(".editorial-rail--explore .editorial-rail-track--explore")).toBeTruthy();
   });
 
   it("opens the selected editorial item", () => {

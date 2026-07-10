@@ -86,6 +86,7 @@ function FloatingNavButton({
       data-tooltip={label}
       onClick={onClick}
     >
+      <span className="floating-nav-indicator" aria-hidden="true" />
       {children}
     </button>
   );

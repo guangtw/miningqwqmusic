@@ -16,10 +16,11 @@ export const IMMERSIVE_NAV_ITEMS: ReadonlyArray<{
   { id: "listen", label: "一起听" }
 ];
 
+/** Stage-green cool fallback when artwork color is unavailable. */
 export const OBSIDIAN_AMBIENT_FALLBACK: AmbientRgb = {
-  red: 72,
-  green: 84,
-  blue: 122
+  red: 28,
+  green: 72,
+  blue: 48
 };
 
 function clampChannel(value: number): number {

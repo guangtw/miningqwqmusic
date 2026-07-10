@@ -40,8 +40,10 @@ type NeteaseAlbum = {
   name: string;
   picUrl?: string;
   pic?: string;
+  pic_str?: string;
   coverImgUrl?: string;
   blurPicUrl?: string;
+  img1v1Url?: string;
 };
 
 type NeteaseSong = {
@@ -216,14 +218,26 @@ function mapBannerTargetTypeToDiscoverType(targetType: number | undefined): Disc
   return "banner";
 }
 
+/** Only accept non-empty string image URLs (ignore numeric pic / picId). */
+function asCoverUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.trim();
+  if (!text) return undefined;
+  // Classic payloads sometimes put numeric picId in `pic` — not a URL.
+  if (/^\d+$/.test(text)) return undefined;
+  return text;
+}
+
 function resolveCoverUrl(song: NeteaseSong, albumRaw?: NeteaseAlbum): string | undefined {
   return (
-    albumRaw?.picUrl ??
-    albumRaw?.pic ??
-    albumRaw?.coverImgUrl ??
-    albumRaw?.blurPicUrl ??
-    song.picUrl ??
-    song.coverImgUrl
+    asCoverUrl(albumRaw?.picUrl) ??
+    asCoverUrl(albumRaw?.pic_str) ??
+    asCoverUrl(albumRaw?.coverImgUrl) ??
+    asCoverUrl(albumRaw?.blurPicUrl) ??
+    asCoverUrl(albumRaw?.img1v1Url) ??
+    asCoverUrl(albumRaw?.pic) ??
+    asCoverUrl(song.picUrl) ??
+    asCoverUrl(song.coverImgUrl)
   );
 }
 
@@ -231,7 +245,7 @@ function toTrack(song: NeteaseSong): Track {
   const artists = (song.ar ?? song.artists ?? []).map((artist) => ({
     id: String(artist.id),
     name: artist.name,
-    coverUrl: artist.img1v1Url ?? artist.picUrl
+    coverUrl: asCoverUrl(artist.img1v1Url) ?? asCoverUrl(artist.picUrl)
   }));
   const albumRaw = song.al ?? song.album;
   const coverUrl = resolveCoverUrl(song, albumRaw);
@@ -263,12 +277,14 @@ function toTrackFromLoose(rawSong: unknown): Track {
 
   const albumLoose = asObject(song.al ?? song.album);
   const coverUrl =
-    asString(albumLoose.picUrl) ??
-    asString(albumLoose.pic) ??
-    asString(albumLoose.coverImgUrl) ??
-    asString(albumLoose.blurPicUrl) ??
-    asString(song.picUrl) ??
-    asString(song.coverImgUrl);
+    asCoverUrl(albumLoose.picUrl) ??
+    asCoverUrl(albumLoose.pic_str) ??
+    asCoverUrl(albumLoose.coverImgUrl) ??
+    asCoverUrl(albumLoose.blurPicUrl) ??
+    asCoverUrl(albumLoose.img1v1Url) ??
+    asCoverUrl(albumLoose.pic) ??
+    asCoverUrl(song.picUrl) ??
+    asCoverUrl(song.coverImgUrl);
 
   return {
     id: String(song.id ?? ""),
@@ -636,8 +652,41 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     );
 
     const songs = raw.result?.songs ?? [];
+    let items = songs.map(toTrack);
+
+    // Classic /search often omits album.picUrl; one batch song/detail fills covers.
+    const missingCoverIds = items.filter((track) => !track.coverUrl && !track.album?.coverUrl).map((track) => track.id);
+    if (missingCoverIds.length) {
+      try {
+        const detailRaw = await this.request<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, {
+          ids: missingCoverIds.join(",")
+        });
+        const coverById = new Map<string, string>();
+        (detailRaw.songs ?? []).forEach((song) => {
+          const track = toTrack(song);
+          const cover = track.coverUrl ?? track.album?.coverUrl;
+          if (cover) coverById.set(track.id, cover);
+        });
+        if (coverById.size) {
+          items = items.map((track) => {
+            const cover = coverById.get(track.id);
+            if (!cover) return track;
+            return {
+              ...track,
+              coverUrl: track.coverUrl ?? cover,
+              album: track.album
+                ? { ...track.album, coverUrl: track.album.coverUrl ?? cover }
+                : track.album
+            };
+          });
+        }
+      } catch {
+        // Keep search results even if cover enrichment fails.
+      }
+    }
+
     return {
-      items: songs.map(toTrack),
+      items,
       page: input.page,
       pageSize: input.pageSize,
       total: raw.result?.songCount ?? songs.length

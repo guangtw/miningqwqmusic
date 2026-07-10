@@ -1,9 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { AnimatePresence, motion } from "motion/react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, Ref } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { createPortal } from "react-dom";
+import {
+  overlayVariants,
+  sheetMobileVariants,
+  sheetVariants,
+  withReducedMotion
+} from "@/src/lib/motion-presets";
 import {
   AccountApiError,
   acceptFriendRequest,
@@ -51,16 +57,13 @@ import {
   getPlaylistDetail,
   resolvePlaylistInput,
   getSatiScene,
-  searchArtists,
   getSearchAssist,
   getSportScene,
   getTrackDetail,
   getTrackDownloadUrl,
   getTrackInsight,
   getTrackQualityAvailability,
-  getToplistDetail,
-  searchMusic,
-  searchPlaylists
+  getToplistDetail
 } from "@/src/lib/client-api";
 import { computeHomeGridPlan } from "@/src/lib/home-grid";
 import { resolveCloudPullMode, shouldShowCloudSyncing, shouldSkipRecentCloudPull, type CloudPullOptions } from "@/src/lib/cloud-sync";
@@ -74,16 +77,9 @@ import { installShellChromeBridge, postShellChromeTokens } from "@/src/lib/shell
 import { getPlayQualityLabel, PLAY_QUALITY_LABELS } from "@/src/lib/play-quality";
 import {
   canOpenPlayerDetail,
-  countItemsWithinRows,
   nextVolumeAfterMuteToggle,
   shouldTogglePlaybackBySpace
 } from "@/src/lib/player-ui";
-import {
-  appendPagedItems,
-  getSearchLoadingPlaceholderCount,
-  shouldLoadNextSearchPage,
-  shouldLoadNextSearchPageByScroll
-} from "@/src/lib/search-pagination";
 import { nextTheme, readThemePreference, resolveInitialTheme, writeThemePreference } from "@/src/lib/theme-preference";
 import { toUserFacingMessage } from "@/src/lib/user-facing-error";
 import { useAuthStore } from "@/src/store/auth-store";
@@ -91,14 +87,17 @@ import { useFriendStore } from "@/src/store/friend-store";
 import { useListenTogetherStore } from "@/src/store/listen-together-store";
 import { getCurrentTrack, usePlayerStore } from "@/src/store/player-store";
 import { usePlayerController } from "@/src/hooks/use-player-controller";
+import { useSearchPanel } from "@/src/hooks/use-search-panel";
 import AnimatedList from "@/src/components/animated-list";
 import { EditorialHome } from "@/src/components/immersive/editorial-home";
 import { FloatingNav } from "@/src/components/immersive/floating-nav";
+import { PlayerDock } from "@/src/components/immersive/player-dock";
+import { SearchPanel } from "@/src/components/immersive/search-panel";
+import { StageEmpty, StagePanelShell, StageSection } from "@/src/components/immersive/stage-panel";
+import { TrackRow } from "@/src/components/track-row";
 import { UserAvatar } from "@/src/components/user-avatar";
 import type { AuthStatus, FriendRelationStatus, ListenPlaybackState, SyncState } from "@/src/types/account";
 import type {
-  ArtistDetail,
-  ArtistSearchItem,
   DiscoverData,
   DiscoverItem,
   ImportedPlaylist,
@@ -112,8 +111,6 @@ import type {
 } from "@/src/types/music";
 
 type NavTab = "home" | "search" | "library";
-type SearchStatus = "idle" | "loading" | "success" | "empty" | "error";
-type SearchMode = "track" | "artist" | "playlist";
 type LibraryView = "library-favorites" | "library-recent" | "library-playlists";
 type HomePlaylistView = "featured" | "more";
 type DetailViewTab = "lyric" | "meta";
@@ -169,13 +166,13 @@ const ACCOUNT_RECENT_SYNC_SKIP_MS = 4_000;
 const AUTH_RESUME_REFRESH_RETRIES = 2;
 const AUTH_RESUME_REFRESH_BACKOFF_MS = 450;
 const ARTWORK_DETAIL_FETCH_BATCH = 3;
+const ARTWORK_DETAIL_FETCH_BATCH_SEARCH = 8;
+const ARTWORK_SEARCH_TRACK_LIMIT = 40;
 const FRIEND_SEARCH_DEBOUNCE_MS = 280;
-const SEARCH_PAGE_SIZE = 20;
-const SEARCH_ASSIST_MAX_ITEMS = 20;
-const SEARCH_ASSIST_MAX_ROWS = 2;
-const HOME_GRID_GAP = 12;
+const HOME_GRID_GAP = 20;
+const HOME_GRID_MAX_COLUMNS = 6;
 const HOME_CHANNEL_MIN_CARD_WIDTH = 196;
-const HOME_PLAYLIST_MIN_CARD_WIDTH = 152;
+const HOME_PLAYLIST_MIN_CARD_WIDTH = 196;
 const HOME_EVENT_MIN_CARD_WIDTH = 152;
 const THEME_DETAIL_FALLBACK_PALETTE: DetailPalette = {
   bgA: "rgb(26, 33, 42)",
@@ -193,7 +190,6 @@ const DARK_DETAIL_FOREGROUND = deriveDetailForegroundTone({ red: 28, green: 36, 
 
 const DEFAULT_COVER_URL = "/assets/default-cover.svg";
 const SMALL_COVER_WIDTHS = {
-  artistSearch: 96,
   homeCard: 240,
   importedPlaylist: 112,
   playlistRow: 88
@@ -209,12 +205,6 @@ const PLAY_QUALITY_OPTIONS: Array<{ value: PlayQualityLevel; label: string }> = 
   { value: "dolby", label: PLAY_QUALITY_LABELS.dolby },
   { value: "jymaster", label: PLAY_QUALITY_LABELS.jymaster }
 ];
-const SEARCH_MODE_OPTIONS: Array<{ value: SearchMode; label: string }> = [
-  { value: "track", label: "单曲" },
-  { value: "artist", label: "歌手" },
-  { value: "playlist", label: "歌单" }
-];
-
 function desktopActionBusyLabel(action: DesktopHostUserAction | null): string | null {
   if (action === "open-profile-folder") return "正在打开缓存目录...";
   if (action === "clear-web-cache") return "正在清理网页缓存并重载...";
@@ -265,7 +255,13 @@ function pushHistoryGuardState(layer: HistoryGuardLayer, tab: NavTab): void {
 
 function pickTrackCover(track?: Track | null): string | undefined {
   if (!track) return undefined;
-  return track.coverUrl ?? track.album?.coverUrl;
+  const raw = track.coverUrl ?? track.album?.coverUrl;
+  if (!raw || raw === DEFAULT_COVER_URL) return undefined;
+  return raw;
+}
+
+function isRealCoverUrl(url?: string | null): url is string {
+  return Boolean(url && url !== DEFAULT_COVER_URL);
 }
 
 function resolveSizedCover(url: string | undefined, width: number, height = width): string {
@@ -554,7 +550,7 @@ function toTrackFallbackItem(track: Track, prefix: string): DiscoverItem {
 function PlayIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7 5.5v13l10-6.5L7 5.5z" fill="currentColor" />
+      <path d="M8.2 5.8c0-.9.96-1.46 1.74-1.02l9.1 5.2c.8.46.8 1.58 0 2.04l-9.1 5.2c-.78.44-1.74-.12-1.74-1.02V5.8z" fill="currentColor" />
     </svg>
   );
 }
@@ -562,8 +558,8 @@ function PlayIcon() {
 function PauseIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="6" y="5" width="4" height="14" fill="currentColor" />
-      <rect x="14" y="5" width="4" height="14" fill="currentColor" />
+      <rect x="6.2" y="5.2" width="4.2" height="13.6" rx="1.6" fill="currentColor" />
+      <rect x="13.6" y="5.2" width="4.2" height="13.6" rx="1.6" fill="currentColor" />
     </svg>
   );
 }
@@ -571,8 +567,8 @@ function PauseIcon() {
 function PreviousIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="5" y="5" width="2.2" height="14" fill="currentColor" />
-      <path d="M18 5.5v13L8.2 12 18 5.5z" fill="currentColor" />
+      <rect x="4.8" y="5.4" width="2.6" height="13.2" rx="1.2" fill="currentColor" />
+      <path d="M18.4 6.1c0-.72-.78-1.16-1.4-.8L8.6 10.6a.92.92 0 0 0 0 1.6l8.4 5.3c.62.36 1.4-.08 1.4-.8V6.1z" fill="currentColor" />
     </svg>
   );
 }
@@ -580,8 +576,8 @@ function PreviousIcon() {
 function NextIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <rect x="16.8" y="5" width="2.2" height="14" fill="currentColor" />
-      <path d="M6 5.5v13l9.8-6.5L6 5.5z" fill="currentColor" />
+      <rect x="16.6" y="5.4" width="2.6" height="13.2" rx="1.2" fill="currentColor" />
+      <path d="M5.6 6.1c0-.72.78-1.16 1.4-.8l8.4 5.3a.92.92 0 0 1 0 1.6l-8.4 5.3c-.62.36-1.4-.08-1.4-.8V6.1z" fill="currentColor" />
     </svg>
   );
 }
@@ -589,12 +585,12 @@ function NextIcon() {
 function QueueIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="6" cy="6.5" r="1.6" fill="currentColor" />
-      <circle cx="6" cy="12" r="1.6" fill="currentColor" />
-      <circle cx="6" cy="17.5" r="1.6" fill="currentColor" />
-      <rect x="9.2" y="5.5" width="10.8" height="2" rx="1" fill="currentColor" />
-      <rect x="9.2" y="11" width="10.8" height="2" rx="1" fill="currentColor" />
-      <rect x="9.2" y="16.5" width="10.8" height="2" rx="1" fill="currentColor" />
+      <circle cx="5.8" cy="6.5" r="1.85" fill="currentColor" />
+      <circle cx="5.8" cy="12" r="1.85" fill="currentColor" />
+      <circle cx="5.8" cy="17.5" r="1.85" fill="currentColor" />
+      <rect x="9.4" y="5.2" width="10" height="2.6" rx="1.3" fill="currentColor" />
+      <rect x="9.4" y="10.7" width="10" height="2.6" rx="1.3" fill="currentColor" />
+      <rect x="9.4" y="16.2" width="10" height="2.6" rx="1.3" fill="currentColor" />
     </svg>
   );
 }
@@ -642,24 +638,6 @@ function ListenIcon() {
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M8.5 12.5a4 4 0 1 0-3 0A6 6 0 0 0 2 18v1.5h10V18a6 6 0 0 0-3.5-5.5Z" />
       <path d="M15 7.5a3 3 0 1 1 0 5.7M15.5 15.5c3.5.2 5.5 1.6 5.5 4" />
-    </svg>
-  );
-}
-
-function HeartIcon({ filled }: { filled?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      {filled ? (
-        <path
-          d="M12 20.5c-3.9-2.4-8.3-5.6-8.3-10.3C3.7 7 5.9 5 8.6 5c1.8 0 2.9.7 3.4 1.6.5-.9 1.6-1.6 3.4-1.6 2.7 0 4.9 2 4.9 5.2 0 4.7-4.4 7.9-8.3 10.3z"
-          fill="currentColor"
-        />
-      ) : (
-        <path
-          d="M12 20.5l-.6-.4c-3.8-2.3-8-5.5-8-9.9C3.4 6.8 5.8 4.7 8.6 4.7c1.7 0 2.9.6 3.4 1.5.5-.9 1.7-1.5 3.4-1.5 2.8 0 5.2 2.1 5.2 5.5 0 4.4-4.2 7.6-8 9.9l-.6.4zm-3.4-14.1c-2.1 0-3.4 1.6-3.4 3.8 0 3.4 3.5 6 6.8 8.1 3.3-2.1 6.8-4.7 6.8-8.1 0-2.2-1.3-3.8-3.4-3.8-1.4 0-2.1.6-2.6 1.6L12 9.1 11.2 8c-.5-1-1.2-1.6-2.6-1.6z"
-          fill="currentColor"
-        />
-      )}
     </svg>
   );
 }
@@ -841,40 +819,6 @@ function clampColor(value: number): number {
   return Math.min(255, Math.max(0, Math.round(value)));
 }
 
-function IconButton({
-  ariaLabel,
-  title,
-  active,
-  disabled,
-  className,
-  onClick,
-  children
-}: {
-  ariaLabel: string;
-  title?: string;
-  active?: boolean;
-  disabled?: boolean;
-  className?: string;
-  onClick?: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      title={title}
-      className={`icon-btn ${active ? "active" : ""} ${className ?? ""}`.trim()}
-      disabled={disabled}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick?.();
-      }}
-    >
-      {children}
-    </button>
-  );
-}
-
 const MODE_META: Record<PlaybackMode, { label: string; icon: ReactNode }> = {
   // 保持底层状态不变，仅映射为用户可理解的中文和图标
   sequence: { label: "顺序播放", icon: <RepeatIcon /> },
@@ -931,99 +875,6 @@ function trapTabWithin(root: HTMLElement | null, event: ReactKeyboardEvent): voi
     event.preventDefault();
     first.focus();
   }
-}
-
-function TrackRow({
-  track,
-  liked,
-  currentTrackId,
-  isPlaying,
-  onPlay,
-  onToggleFavorite
-}: {
-  track: Track;
-  liked: boolean;
-  currentTrackId: string | null;
-  isPlaying: boolean;
-  onPlay: (track: Track) => void;
-  onToggleFavorite: (track: Track) => void;
-}) {
-  const isCurrent = currentTrackId === track.id;
-  const isPlayingCurrent = isCurrent && isPlaying;
-  return (
-    <article className={`spotify-track-row ${isCurrent ? "current" : ""}`.trim()}>
-      <div className="spotify-track-main">
-        <h3>{track.name}</h3>
-        <p>{track.artists.map((item) => item.name).join(" / ") || "未知歌手"}</p>
-      </div>
-      <p className="spotify-track-album">{track.album?.name ?? "未知专辑"}</p>
-      <p className="spotify-track-duration">{formatMs(track.durationMs)}</p>
-      <div className="spotify-track-actions">
-        {isCurrent ? <PlayingIndicator active={isPlayingCurrent} /> : null}
-        <IconButton ariaLabel="播放歌曲" title="播放歌曲" onClick={() => onPlay(track)}>
-          <PlayIcon />
-        </IconButton>
-        <IconButton
-          ariaLabel={liked ? "取消收藏" : "收藏歌曲"}
-          title={liked ? "取消收藏" : "收藏歌曲"}
-          active={liked}
-          onClick={() => onToggleFavorite(track)}
-        >
-          <HeartIcon filled={liked} />
-        </IconButton>
-      </div>
-    </article>
-  );
-}
-
-function ArtistSearchRow({
-  artist,
-  onOpen
-}: {
-  artist: ArtistSearchItem;
-  onOpen: (artist: ArtistSearchItem) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="artist-search-row"
-      onClick={() => onOpen(artist)}
-    >
-      <div className="artist-search-cover" style={toCoverBackgroundStyle(artist.coverUrl, SMALL_COVER_WIDTHS.artistSearch)} />
-      <div className="artist-search-main">
-        <h3>{artist.name}</h3>
-        <p>
-          {typeof artist.musicSize === "number" ? `${artist.musicSize} 首单曲` : "歌曲数未知"}
-          {" · "}
-          {typeof artist.albumSize === "number" ? `${artist.albumSize} 张专辑` : "专辑数未知"}
-        </p>
-      </div>
-      <span className="artist-search-entry">查看详情</span>
-    </button>
-  );
-}
-
-function PlaylistSearchRow({
-  playlist,
-  onOpen
-}: {
-  playlist: Playlist;
-  onOpen: (playlist: Playlist) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="playlist-search-row"
-      onClick={() => onOpen(playlist)}
-    >
-      <div className="playlist-search-cover" style={toCoverBackgroundStyle(playlist.coverUrl, SMALL_COVER_WIDTHS.playlistRow)} />
-      <div className="playlist-search-main">
-        <h3>{playlist.name}</h3>
-        <p>{playlist.description || "打开查看完整歌单内容"}</p>
-      </div>
-      <span className="artist-search-entry">打开歌单</span>
-    </button>
-  );
 }
 
 function ThemedSelect({
@@ -1158,6 +1009,7 @@ export function PlayerApp() {
   const shellRef = useRef<HTMLElement>(null);
   const playerDockRef = useRef<HTMLElement>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("home");
+  const search = useSearchPanel({ active: activeTab === "search" });
   const [libraryView, setLibraryView] = useState<LibraryView>("library-favorites");
   const [detailPhase, setDetailPhase] = useState<DetailModalPhase>("closed");
   const [detailTab, setDetailTab] = useState<DetailViewTab>("lyric");
@@ -1167,19 +1019,6 @@ export function PlayerApp() {
   const [isPaletteTransitioning, setIsPaletteTransitioning] = useState(false);
   const [detailForeground, setDetailForeground] = useState<DetailForegroundTone>(DARK_DETAIL_FOREGROUND);
   const [theme, setTheme] = useState<AppTheme>("dark");
-  const [keyword, setKeyword] = useState("");
-  const [searchMode, setSearchMode] = useState<SearchMode>("track");
-  const [searchStatus, setSearchStatus] = useState<SearchStatus>("idle");
-  const [trackResult, setTrackResult] = useState<Track[]>([]);
-  const [artistResult, setArtistResult] = useState<ArtistSearchItem[]>([]);
-  const [playlistResult, setPlaylistResult] = useState<Playlist[]>([]);
-  const [searchPage, setSearchPage] = useState(0);
-  const [searchTotal, setSearchTotal] = useState(0);
-  const [searchLoadingMore, setSearchLoadingMore] = useState(false);
-  const [searchArtistDetail, setSearchArtistDetail] = useState<ArtistDetail | null>(null);
-  const [searchArtistDetailLoading, setSearchArtistDetailLoading] = useState(false);
-  const [searchArtistDetailError, setSearchArtistDetailError] = useState<string | null>(null);
-  const [searchError, setSearchError] = useState<string | null>(null);
   const [discoverData, setDiscoverData] = useState<DiscoverData | null>(null);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [homePlaylistPanel, setHomePlaylistPanel] = useState<HomePlaylistPanelState | null>(null);
@@ -1190,9 +1029,6 @@ export function PlayerApp() {
   const [playlistSummaryOverflowing, setPlaylistSummaryOverflowing] = useState(false);
   const [expandedPanelTrackId, setExpandedPanelTrackId] = useState<string | null>(null);
   const [expandedPanelTrackSourceId, setExpandedPanelTrackSourceId] = useState<string | null>(null);
-  const [searchAssist, setSearchAssist] = useState<{ hotKeywords: string[]; suggestions: string[]; defaultKeyword?: string } | null>(null);
-  const [visibleHotAssistCount, setVisibleHotAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
-  const [visibleSuggestAssistCount, setVisibleSuggestAssistCount] = useState(SEARCH_ASSIST_MAX_ITEMS);
   const [trackInsight, setTrackInsight] = useState<SongInsight | null>(null);
   const [insightLoading, setInsightLoading] = useState(false);
   const [importPlaylistInput, setImportPlaylistInput] = useState("");
@@ -1220,6 +1056,7 @@ export function PlayerApp() {
   const [sceneSati, setSceneSati] = useState<SceneData | null>(null);
   const [sceneSport, setSceneSport] = useState<SceneData | null>(null);
   const [isMobileUi, setIsMobileUi] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const [isAccountEnabled, setIsAccountEnabled] = useState(false);
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [accountManagerOpen, setAccountManagerOpen] = useState(false);
@@ -1276,7 +1113,6 @@ export function PlayerApp() {
     width: 0,
     ready: false
   });
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const importPlaylistInputRef = useRef<HTMLInputElement>(null);
   const accountDialogPanelRef = useRef<HTMLFormElement>(null);
   const accountManagerDrawerRef = useRef<HTMLElement>(null);
@@ -1304,6 +1140,7 @@ export function PlayerApp() {
   const listenPanelCloseTimerRef = useRef<number | null>(null);
   const homePlaylistRequestIdRef = useRef(0);
   const pendingArtworkRef = useRef<Set<string>>(new Set());
+  const failedArtworkRef = useRef<Set<string>>(new Set());
   const popstateHandlingRef = useRef(false);
   const activeTabRef = useRef<NavTab>("home");
   const detailPhaseRef = useRef<DetailModalPhase>("closed");
@@ -1313,15 +1150,9 @@ export function PlayerApp() {
   const [dockPortalTarget, setDockPortalTarget] = useState<HTMLElement | null>(null);
   const [playlistPortalTarget, setPlaylistPortalTarget] = useState<HTMLElement | null>(null);
   const homePlaylistGridRef = useRef<HTMLDivElement>(null);
-  const searchResultsBodyRef = useRef<HTMLDivElement>(null);
-  const hotAssistRowRef = useRef<HTMLDivElement>(null);
-  const suggestAssistRowRef = useRef<HTMLDivElement>(null);
   const playlistSummaryRef = useRef<HTMLParagraphElement>(null);
   const homePlaylistListRef = useRef<HTMLDivElement>(null);
   const panelTrackRowRefsRef = useRef<Map<number, HTMLElement>>(new Map());
-  const searchRequestIdRef = useRef(0);
-  const searchLoadingMoreRef = useRef(false);
-  const searchHasUserScrolledRef = useRef(false);
   const [artworkByTrackId, setArtworkByTrackId] = useState<Record<string, string>>({});
   const lyricAutoScrollRafRef = useRef<number | null>(null);
   const lyricAutoScrollTimerRef = useRef<number | null>(null);
@@ -1432,8 +1263,6 @@ export function PlayerApp() {
   }, [currentTrack, effectivePlayQualityLevel, player.playQualityLevel, trackQualityAvailability]);
   const favoriteSet = player.favorites;
   const modeMeta = MODE_META[player.mode];
-  const hotAssistCandidates = useMemo(() => searchAssist?.hotKeywords.slice(0, SEARCH_ASSIST_MAX_ITEMS) ?? [], [searchAssist]);
-  const suggestAssistCandidates = useMemo(() => searchAssist?.suggestions.slice(0, SEARCH_ASSIST_MAX_ITEMS) ?? [], [searchAssist]);
   const homePlaylistSubtitle = useMemo(() => {
     if (!homePlaylistPanel) return "";
     return visibleSubtitle(
@@ -1464,22 +1293,6 @@ export function PlayerApp() {
     () => (currentTrack ? artworkByTrackId[currentTrack.id] ?? pickTrackCover(currentTrack) ?? DEFAULT_COVER_URL : null),
     [artworkByTrackId, currentTrack]
   );
-  const activeSearchResultCount = useMemo(() => {
-    if (searchMode === "artist") return artistResult.length;
-    if (searchMode === "playlist") return playlistResult.length;
-    return trackResult.length;
-  }, [artistResult.length, playlistResult.length, searchMode, trackResult.length]);
-  const canLoadMoreSearchResults = useMemo(() => {
-    if (searchMode === "artist" && searchArtistDetail) return false;
-    return shouldLoadNextSearchPage({
-      status: searchStatus,
-      loadingMore: searchLoadingMore,
-      loadedCount: activeSearchResultCount,
-      total: searchTotal
-    });
-  }, [activeSearchResultCount, searchArtistDetail, searchLoadingMore, searchMode, searchStatus, searchTotal]);
-  const searchLoadingPlaceholderCount = useMemo(() => getSearchLoadingPlaceholderCount(searchMode), [searchMode]);
-
   useEffect(() => {
     if (!currentTrackId) {
       setTrackQualityAvailability(null);
@@ -1928,7 +1741,10 @@ export function PlayerApp() {
     }
   ): string => {
     if (!track) return DEFAULT_COVER_URL;
-    const coverUrl = artworkByTrackId[track.id] ?? pickTrackCover(track) ?? DEFAULT_COVER_URL;
+    // Prefer live track fields over a cached default so sticky vinyl never masks real art.
+    const direct = pickTrackCover(track);
+    const cached = artworkByTrackId[track.id];
+    const coverUrl = direct ?? (isRealCoverUrl(cached) ? cached : undefined) ?? DEFAULT_COVER_URL;
     if (options?.original || !options?.width) {
       return coverUrl;
     }
@@ -2248,11 +2064,18 @@ export function PlayerApp() {
   }, [authStatus, authUser?.nickname, desktopHost.context, desktopHost.isDesktopHost, isMobileUi, openAccountManagerWithAnimation, openLoginDialog]);
 
   const openAccountManager = useCallback(() => {
+    // Guest on desktop: open the login dialog directly (settings still allow guest).
+    if (authStatus !== "authenticated") {
+      if (isAccountEnabled) {
+        openLoginDialog();
+      }
+      return;
+    }
     openAccountManagerPanel({
-      allowGuest: true,
+      allowGuest: false,
       initialTab: "profile"
     });
-  }, [openAccountManagerPanel]);
+  }, [authStatus, isAccountEnabled, openAccountManagerPanel, openLoginDialog]);
 
   const openDesktopSettings = useCallback(() => {
     openAccountManagerPanel({
@@ -2849,7 +2672,7 @@ export function PlayerApp() {
         if (!active) return;
         setDiscoverData(data);
         setDiscoverError(null);
-        setSearchAssist(data.searchAssist);
+        search.seedAssist(data.searchAssist);
       })
       .catch((error) => {
         if (!active) return;
@@ -2857,7 +2680,7 @@ export function PlayerApp() {
         getSearchAssist("")
           .then((assist) => {
             if (!active) return;
-            setSearchAssist(assist);
+            search.seedAssist(assist);
           })
           .catch(() => undefined);
       });
@@ -2885,70 +2708,9 @@ export function PlayerApp() {
     return () => {
       active = false;
     };
+    // seedAssist is stable; only run once on mount for discover bootstrap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const q = keyword.trim();
-    if (!q) return;
-    let active = true;
-    const timer = window.setTimeout(() => {
-      getSearchAssist(q)
-        .then((assist) => {
-          if (!active) return;
-          setSearchAssist(assist);
-        })
-        .catch(() => undefined);
-    }, 220);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [keyword]);
-
-  useLayoutEffect(() => {
-    setVisibleHotAssistCount(hotAssistCandidates.length);
-  }, [hotAssistCandidates.length]);
-
-  useLayoutEffect(() => {
-    setVisibleSuggestAssistCount(suggestAssistCandidates.length);
-  }, [suggestAssistCandidates.length]);
-
-  useEffect(() => {
-    const resetVisibleCounts = () => {
-      setVisibleHotAssistCount(hotAssistCandidates.length);
-      setVisibleSuggestAssistCount(suggestAssistCandidates.length);
-    };
-    window.addEventListener("resize", resetVisibleCounts);
-    return () => {
-      window.removeEventListener("resize", resetVisibleCounts);
-    };
-  }, [hotAssistCandidates.length, suggestAssistCandidates.length]);
-
-  useLayoutEffect(() => {
-    const measureVisibleCount = (container: HTMLDivElement | null) => {
-      if (!container) return 0;
-      const buttons = Array.from(container.querySelectorAll("button"));
-      if (!buttons.length) return 0;
-      const offsetTops = buttons.map((button) => button.offsetTop);
-      return countItemsWithinRows(offsetTops, SEARCH_ASSIST_MAX_ROWS);
-    };
-
-    const rafId = window.requestAnimationFrame(() => {
-      const nextHotVisibleCount = measureVisibleCount(hotAssistRowRef.current);
-      if (nextHotVisibleCount > 0 && nextHotVisibleCount < visibleHotAssistCount) {
-        setVisibleHotAssistCount(nextHotVisibleCount);
-      }
-
-      const nextSuggestVisibleCount = measureVisibleCount(suggestAssistRowRef.current);
-      if (nextSuggestVisibleCount > 0 && nextSuggestVisibleCount < visibleSuggestAssistCount) {
-        setVisibleSuggestAssistCount(nextSuggestVisibleCount);
-      }
-    });
-
-    return () => {
-      window.cancelAnimationFrame(rafId);
-    };
-  }, [hotAssistCandidates.length, suggestAssistCandidates.length, visibleHotAssistCount, visibleSuggestAssistCount]);
 
   useEffect(() => {
     setDetailLyricMode("origin");
@@ -3066,17 +2828,12 @@ export function PlayerApp() {
     if (tab === "library" && nextLibraryView) {
       setLibraryView(nextLibraryView);
     }
-    if (tab === "search") {
-      window.setTimeout(() => {
-        searchInputRef.current?.focus();
-      }, 0);
-    }
   };
 
   const openPlaylistPanel = async (item: DiscoverItem, sourceType: "playlist" | "toplist") => {
     const targetId = item.targetId;
     if (!targetId) {
-      setSearchError("该推荐项暂时不可用，请稍后重试。");
+      setDiscoverError("该推荐项暂时不可用，请稍后重试。");
       return;
     }
     const requestId = ++homePlaylistRequestIdRef.current;
@@ -3226,221 +2983,15 @@ export function PlayerApp() {
     );
   };
 
-  const fetchSearchPage = useCallback(async (q: string, mode: SearchMode, page: number) => {
-    if (mode === "artist") {
-      return {
-        mode,
-        data: await searchArtists(q, page, SEARCH_PAGE_SIZE)
-      };
-    }
-    if (mode === "playlist") {
-      return {
-        mode,
-        data: await searchPlaylists(q, page, SEARCH_PAGE_SIZE)
-      };
-    }
-    return {
-      mode,
-      data: await searchMusic(q, page, SEARCH_PAGE_SIZE)
-    };
-  }, []);
-
-  const runSearch = async (nextKeyword: string, mode: SearchMode) => {
-    const q = nextKeyword.trim();
-    if (!q) {
-      searchLoadingMoreRef.current = false;
-      searchHasUserScrolledRef.current = false;
-      setSearchStatus("error");
-      setTrackResult([]);
-      setArtistResult([]);
-      setPlaylistResult([]);
-      setSearchPage(0);
-      setSearchTotal(0);
-      setSearchLoadingMore(false);
-      setSearchArtistDetail(null);
-      setSearchArtistDetailError(null);
-      setSearchError("请输入关键词后再搜索。");
-      return;
-    }
-
-    const requestId = ++searchRequestIdRef.current;
-    searchLoadingMoreRef.current = false;
-    searchHasUserScrolledRef.current = false;
-    setSearchStatus("loading");
-    setSearchLoadingMore(false);
-    setSearchPage(0);
-    setSearchTotal(0);
-    setSearchArtistDetail(null);
-    setSearchArtistDetailError(null);
-    setSearchError(null);
-    try {
-      const response = await fetchSearchPage(q, mode, 1);
-      if (requestId !== searchRequestIdRef.current) return;
-      if (response.mode === "artist") {
-        const data = response.data;
-        setArtistResult(data.items);
-        setTrackResult([]);
-        setPlaylistResult([]);
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-        setSearchStatus(data.items.length === 0 ? "empty" : "success");
-      } else if (response.mode === "playlist") {
-        const data = response.data;
-        setPlaylistResult(data.items);
-        setTrackResult([]);
-        setArtistResult([]);
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-        setSearchStatus(data.items.length === 0 ? "empty" : "success");
-      } else {
-        const data = response.data;
-        setTrackResult(data.items);
-        setArtistResult([]);
-        setPlaylistResult([]);
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-        setSearchStatus(data.items.length === 0 ? "empty" : "success");
-      }
-    } catch (error) {
-      if (requestId !== searchRequestIdRef.current) return;
-      setTrackResult([]);
-      setArtistResult([]);
-      setPlaylistResult([]);
-      setSearchPage(0);
-      setSearchTotal(0);
-      setSearchLoadingMore(false);
-      setSearchStatus("error");
-      setSearchError(toUserFacingMessage(error, "搜索失败，请稍后重试"));
-    }
-  };
-
-  const loadMoreSearchResults = useCallback(async () => {
-    const q = keyword.trim();
-    if (!q) return;
-    if (!canLoadMoreSearchResults) return;
-    if (searchLoadingMoreRef.current) return;
-
-    const nextPage = searchPage + 1;
-    const requestId = searchRequestIdRef.current;
-    searchLoadingMoreRef.current = true;
-    setSearchLoadingMore(true);
-    setSearchError(null);
-    try {
-      const response = await fetchSearchPage(q, searchMode, nextPage);
-      if (requestId !== searchRequestIdRef.current) return;
-
-      if (response.mode === "artist") {
-        const data = response.data;
-        setArtistResult((previous) => appendPagedItems(previous, data.items));
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-      } else if (response.mode === "playlist") {
-        const data = response.data;
-        setPlaylistResult((previous) => appendPagedItems(previous, data.items));
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-      } else {
-        const data = response.data;
-        setTrackResult((previous) => appendPagedItems(previous, data.items));
-        setSearchPage(data.page);
-        setSearchTotal(data.total);
-      }
-    } catch (error) {
-      if (requestId !== searchRequestIdRef.current) return;
-      setSearchError(toUserFacingMessage(error, "更多搜索结果加载失败，请稍后重试"));
-    } finally {
-      searchLoadingMoreRef.current = false;
-      if (requestId !== searchRequestIdRef.current) return;
-      setSearchLoadingMore(false);
-    }
-  }, [canLoadMoreSearchResults, fetchSearchPage, keyword, searchMode, searchPage]);
-
-  const doSearch = async () => {
-    await runSearch(keyword, searchMode);
-  };
-
-  const applyKeywordAndSearch = (nextKeyword: string) => {
-    const normalized = nextKeyword.trim();
-    if (!normalized) return;
-    setKeyword(normalized);
-    window.setTimeout(() => {
-      void runSearch(normalized, searchMode);
-    }, 0);
-  };
-
-  const openSearchArtistDetail = async (artist: ArtistSearchItem) => {
-    setSearchArtistDetail(null);
-    setSearchArtistDetailLoading(true);
-    setSearchArtistDetailError(null);
-    try {
-      const detail = await getArtistDetail(artist.id);
-      setSearchArtistDetail(detail);
-    } catch (error) {
-      setSearchArtistDetailError(toUserFacingMessage(error, "歌手详情加载失败，请稍后重试"));
-    } finally {
-      setSearchArtistDetailLoading(false);
-    }
-  };
-
-  const playArtistTopTracks = (artistDetail: ArtistDetail) => {
+  const playArtistTopTracks = (artistDetail: { topTracks: Track[] }) => {
     if (!artistDetail.topTracks.length) return;
     player.setQueue(artistDetail.topTracks, 0);
     player.setPlaying(true);
   };
 
-  const addArtistTopTracksToQueue = (artistDetail: ArtistDetail) => {
+  const addArtistTopTracksToQueue = (artistDetail: { topTracks: Track[] }) => {
     artistDetail.topTracks.forEach((track) => player.addToQueue(track));
   };
-
-  const switchSearchMode = (nextMode: SearchMode) => {
-    if (nextMode === searchMode) return;
-    setSearchMode(nextMode);
-    searchLoadingMoreRef.current = false;
-    searchHasUserScrolledRef.current = false;
-    setSearchArtistDetail(null);
-    setSearchArtistDetailError(null);
-    setSearchArtistDetailLoading(false);
-    if (!keyword.trim()) {
-      setSearchStatus("idle");
-      setTrackResult([]);
-      setArtistResult([]);
-      setPlaylistResult([]);
-      setSearchPage(0);
-      setSearchTotal(0);
-      setSearchLoadingMore(false);
-      setSearchError(null);
-      return;
-    }
-    void runSearch(keyword, nextMode);
-  };
-
-  useEffect(() => {
-    if (activeTab !== "search") return;
-    const root = searchResultsBodyRef.current;
-    if (!root) return;
-
-    const handleScroll = () => {
-      if (root.scrollTop > 12) {
-        searchHasUserScrolledRef.current = true;
-      }
-      if (
-        shouldLoadNextSearchPageByScroll({
-          canLoadMore: canLoadMoreSearchResults,
-          hasUserScrolled: searchHasUserScrolledRef.current,
-          scrollTop: root.scrollTop,
-          clientHeight: root.clientHeight,
-          scrollHeight: root.scrollHeight
-        })
-      ) {
-        void loadMoreSearchResults();
-      }
-    };
-
-    root.addEventListener("scroll", handleScroll, { passive: true });
-    return () => {
-      root.removeEventListener("scroll", handleScroll);
-    };
-  }, [activeTab, canLoadMoreSearchResults, loadMoreSearchResults]);
 
   const tryPlaySceneTrack = async (trackId?: string) => {
     if (!trackId) return;
@@ -3606,7 +3157,8 @@ export function PlayerApp() {
   const isMuted = player.volume <= 0;
   const hasTrack = Boolean(currentTrack ?? queueTrack);
   const canOpenDetail = canOpenPlayerDetail(hasTrack);
-  const controlDisabled = player.queue.length === 0;
+  // Never hard-disable transport when a track is already loaded/playing.
+  const controlDisabled = player.queue.length === 0 && !currentTrack;
   const mainDockProgressDegrees = `${
     player.durationMs > 0 ? Math.min(360, Math.max(0, (player.currentTimeMs / player.durationMs) * 360)) : 0
   }deg`;
@@ -3722,18 +3274,29 @@ export function PlayerApp() {
   }, [discoverBlocks, sceneSati, sceneSport]);
 
   const homePlaylistPlan = useMemo(
-    () => computeHomeGridPlan(playlistGridWidth, homePlaylistItems.length, HOME_PLAYLIST_MIN_CARD_WIDTH, HOME_GRID_GAP),
+    () =>
+      computeHomeGridPlan(
+        playlistGridWidth,
+        homePlaylistItems.length,
+        HOME_PLAYLIST_MIN_CARD_WIDTH,
+        HOME_GRID_GAP,
+        HOME_GRID_MAX_COLUMNS
+      ),
     [playlistGridWidth, homePlaylistItems.length]
   );
   const editorialHero = homePlaylistItems[0] ?? homeChannelItems[0] ?? homeEventItems[0];
   const editorialFeaturedItems = [...homePlaylistItems, ...homeChannelItems]
     .filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index)
-    .slice(0, 10);
-  const editorialExploreItems = homeEventItems.slice(0, 10);
+    .slice(0, 12);
+  const editorialExploreItems = homeEventItems.slice(0, 12);
   const artworkSourceTracks = useMemo(() => {
     const sourceTracks = [
       ...(activeTab === "home" ? homeSeedTracks.slice(0, 16) : []),
       ...(homePlaylistPanel?.tracks.slice(0, 24) ?? []),
+      ...(activeTab === "search" ? search.trackResult.slice(0, ARTWORK_SEARCH_TRACK_LIMIT) : []),
+      ...(activeTab === "search" && search.artistDetail?.topTracks
+        ? search.artistDetail.topTracks.slice(0, ARTWORK_SEARCH_TRACK_LIMIT)
+        : []),
       ...(currentTrack ? [currentTrack] : [])
     ];
     const unique = new Map<string, Track>();
@@ -3742,42 +3305,66 @@ export function PlayerApp() {
       unique.set(track.id, track);
     });
     return Array.from(unique.values());
-  }, [activeTab, currentTrack, homePlaylistPanel?.tracks, homeSeedTracks]);
+  }, [
+    activeTab,
+    currentTrack,
+    homePlaylistPanel?.tracks,
+    homeSeedTracks,
+    search.artistDetail?.topTracks,
+    search.trackResult
+  ]);
 
   useEffect(() => {
     const missingArtworkTracks: Track[] = [];
+    const directUpdates: Record<string, string> = {};
+    const batchSize =
+      activeTab === "search" ? ARTWORK_DETAIL_FETCH_BATCH_SEARCH : ARTWORK_DETAIL_FETCH_BATCH;
 
     artworkSourceTracks.forEach((track) => {
       const directCover = pickTrackCover(track);
       if (directCover) {
-        setArtworkByTrackId((previous) => {
-          if (previous[track.id] === directCover) return previous;
-          return { ...previous, [track.id]: directCover };
-        });
+        if (artworkByTrackId[track.id] !== directCover) {
+          directUpdates[track.id] = directCover;
+        }
         return;
       }
 
-      if (pendingArtworkRef.current.has(track.id) || artworkByTrackId[track.id]) {
+      const cached = artworkByTrackId[track.id];
+      // Skip when real art exists, fetch in flight, or detail already failed this session.
+      if (
+        pendingArtworkRef.current.has(track.id) ||
+        failedArtworkRef.current.has(track.id) ||
+        isRealCoverUrl(cached)
+      ) {
         return;
       }
       missingArtworkTracks.push(track);
     });
 
-    missingArtworkTracks.slice(0, ARTWORK_DETAIL_FETCH_BATCH).forEach((track) => {
+    if (Object.keys(directUpdates).length) {
+      setArtworkByTrackId((previous) => ({ ...previous, ...directUpdates }));
+    }
+
+    missingArtworkTracks.slice(0, batchSize).forEach((track) => {
       pendingArtworkRef.current.add(track.id);
       getTrackDetail(track.id)
         .then((detailTrack) => {
-          const detailCover = pickTrackCover(detailTrack) ?? DEFAULT_COVER_URL;
+          const detailCover = pickTrackCover(detailTrack);
+          if (!detailCover) {
+            failedArtworkRef.current.add(track.id);
+            return;
+          }
+          failedArtworkRef.current.delete(track.id);
           setArtworkByTrackId((previous) => ({ ...previous, [track.id]: detailCover }));
         })
         .catch(() => {
-          setArtworkByTrackId((previous) => ({ ...previous, [track.id]: DEFAULT_COVER_URL }));
+          failedArtworkRef.current.add(track.id);
         })
         .finally(() => {
           pendingArtworkRef.current.delete(track.id);
         });
     });
-  }, [artworkByTrackId, artworkSourceTracks]);
+  }, [activeTab, artworkByTrackId, artworkSourceTracks]);
 
   const finishDetailClose = useCallback(() => {
     if (detailCloseTimerRef.current) {
@@ -4690,11 +4277,6 @@ export function PlayerApp() {
     { id: "advanced" as const, label: "高级", visible: authStatus === "authenticated", disabled: authStatus !== "authenticated" },
     { id: "desktop" as const, label: "桌面", visible: showDesktopSettings, disabled: !showDesktopSettings }
   ].filter((tab) => tab.visible);
-  const listenDrawerTabs = [
-    { id: "room" as const, label: "房间" },
-    { id: "friends" as const, label: "好友" },
-    { id: "activity" as const, label: "动态" }
-  ];
   const listenActivityTabs = [
     { id: "listen-invites" as const, label: "一起听邀请", count: listenInvites.length },
     {
@@ -4739,361 +4321,329 @@ export function PlayerApp() {
   const accountOverviewUnblockText = authStatus === "authenticated" ? musicUnblockStatusText : "暂未开放";
   const accountPanelMode = accountManagerTab === "desktop" ? "settings" : "profile";
   const accountPanelTitle = accountPanelMode === "settings" ? "设置" : "个人中心";
+  const listenActivityBadgeCount = listenInvites.length + friendRequests.incoming.length + friendRequests.outgoing.length;
+  const listenPanelDescription = listenRoom
+    ? `${listenRoom.members.length} 人同步中 · 最近由 ${listenLastActorName} 更新`
+    : authStatus === "authenticated"
+      ? "创建房间，或输入邀请码加入好友"
+      : "登录后可创建房间、邀请好友同步播放";
+
   const listenPanelContent = (
-    <>
-      <header className="utility-hero utility-hero-listen listen-drawer-head">
-        <div className="utility-hero-copy">
-          <span>Social Listening</span>
-          <h3>一起听</h3>
-          <p>{listenRoom ? `${listenRoom.members.length} 人房间，最近由 ${listenLastActorName} 更新。` : "把邀请、好友和房间控制整合成一块更清晰的协作面板。"}</p>
-          <div className="account-overview-badges">
-            <span className={`drawer-status-chip ${listenConnectionState}`}>{listenStatusText}</span>
-            <span className="relation-badge muted">{listenRoom ? "多人同步中" : "等待创建房间"}</span>
-          </div>
-        </div>
-        <div className="utility-hero-side">
-          <div className="utility-hero-orb utility-hero-orb-listen" aria-hidden="true" />
-          <div className="utility-hero-mini-card">
-            <strong>{listenRoom?.inviteCode ?? "未创建"}</strong>
-            <small>{listenRoom ? `${listenRoom.members.length} / 8 人` : "邀请码会显示在这里"}</small>
-          </div>
-          <button type="button" className="ghost" onClick={closeListenPanel}>
-            关闭
-          </button>
-        </div>
-      </header>
-      <div className="utility-drawer-body">
-        <section className="listen-panel listen-room-summary-card utility-surface-card">
-          <div className="listen-room-summary-head">
-            <div>
-              <strong>{listenRoom ? "当前房间" : "还没有一起听房间"}</strong>
-              <p className="listen-status">
-                {listenRoom
-                  ? `${listenStatusText} · 最近由 ${listenLastActorName} 更新`
-                  : authStatus === "authenticated"
-                    ? "创建房间后即可邀请好友实时同步播放"
-                    : "登录后可创建房间、加入房间并接收邀请"}
-              </p>
-            </div>
-            <span className={`drawer-status-chip ${listenConnectionState}`}>{listenStatusText}</span>
-          </div>
-          <div className="listen-room-summary-grid">
-            <p className="drawer-meta-stat">
-              <span>邀请码</span>
-              <strong>{listenRoom?.inviteCode ?? "未创建"}</strong>
-            </p>
-            <p className="drawer-meta-stat">
-              <span>成员数</span>
-              <strong>{listenRoom ? `${listenRoom.members.length} / 8` : "0 / 8"}</strong>
-            </p>
-            <p className="drawer-meta-stat">
-              <span>房间状态</span>
-              <strong>{listenRoom ? "进行中" : "待加入"}</strong>
-            </p>
-            <p className="drawer-meta-stat">
-              <span>最近更新</span>
-              <strong>{listenRoom ? listenLastActorName : "暂无"}</strong>
-            </p>
-          </div>
-          {listenRoom ? (
-            <>
-              <div className="listen-room-code">
-                <strong>{listenRoom.inviteCode}</strong>
+    <StagePanelShell
+      className="stage-panel-listen"
+      kicker="Social Listening"
+      title="一起听"
+      description={listenPanelDescription}
+      status={
+        <>
+          <span className={`drawer-status-chip ${listenConnectionState}`}>{listenStatusText}</span>
+          {listenRoom ? <span className="relation-badge ok">进行中</span> : null}
+        </>
+      }
+      onClose={closeListenPanel}
+      nav={[
+        { id: "room", label: "房间" },
+        { id: "friends", label: "好友", count: friendList.length || undefined },
+        { id: "activity", label: "动态", count: listenActivityBadgeCount || undefined }
+      ]}
+      activeNav={listenDrawerTab}
+      onNav={(id) => setListenDrawerTab(id as ListenDrawerTab)}
+      navAriaLabel="一起听功能标签"
+      stageKey={`listen-${listenDrawerTab}-${listenRoom ? "in" : "out"}-${listenActivityTab}`}
+    >
+      {listenDrawerTab === "room" ? (
+        listenRoom ? (
+          <div className="stage-flow">
+            <StageSection
+              index={0}
+              title="邀请码"
+              hint="分享给好友即可加入 · 最多 8 人"
+              action={
                 <button type="button" onClick={() => void handleCopyListenInvite()}>
-                  复制邀请码
+                  复制
                 </button>
+              }
+            >
+              <div className="stage-invite-card">
+                <strong className="stage-invite-code">{listenRoom.inviteCode}</strong>
+                <div className="stage-invite-meta">
+                  <span>{listenRoom.members.length} / 8 人</span>
+                  <span>{listenStatusText}</span>
+                </div>
               </div>
-              <div className="listen-summary-actions">
-                <button type="button" className="listen-wide-btn" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
+              {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
+              <div className="stage-primary-actions">
+                <button type="button" className="stage-btn-danger" onClick={() => void handleLeaveListenRoom()} disabled={listenBusy}>
                   离开房间
                 </button>
               </div>
-            </>
-          ) : (
-            <div className="listen-summary-actions">
-              <button type="button" className="listen-wide-btn" onClick={() => void handleCreateListenRoom()} disabled={listenBusy || authStatus !== "authenticated"}>
-                创建一起听
-              </button>
-              <form
-                className="listen-join-row"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleJoinListenRoom();
-                }}
-              >
-                <input
-                  value={listenInviteInput}
-                  placeholder="输入邀请码加入房间"
-                  onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
-                />
-                <button type="submit" disabled={listenBusy || authStatus !== "authenticated"}>
-                  加入
-                </button>
-              </form>
-            </div>
-          )}
-          {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
-        </section>
+            </StageSection>
 
-        <div className="drawer-tabbar" role="tablist" aria-label="一起听功能标签">
-          {listenDrawerTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={listenDrawerTab === tab.id}
-              className={listenDrawerTab === tab.id ? "active" : ""}
-              onClick={() => setListenDrawerTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {listenDrawerTab === "room" ? (
-          <div className="utility-panel-grid">
-            <section className="listen-drawer-section">
-              <div className="listen-section-head">
-                <span>房间成员</span>
-                <small>{listenRoom ? `${listenRoom.members.length} 人在线房间` : "创建房间后显示成员"}</small>
-              </div>
-              {listenRoom ? (
-                <div className="listen-list">
-                  {listenRoom.members.map((member) => (
-                    <div className="listen-list-row detail" key={member.user.id}>
-                      <UserAvatar user={member.user} size="sm" className={member.online ? "online" : ""} />
-                      <div>
-                        <strong>{member.user.nickname || member.user.email}</strong>
-                        <small>{member.role === "host" ? "房主" : "成员"} · {member.online ? "在线" : "离线"}</small>
-                      </div>
-                      <span className={`relation-badge ${member.online ? "ok" : "muted"}`}>{member.online ? "在线" : "离线"}</span>
+            <StageSection index={1} title="房间成员" hint={`${listenRoom.members.length} 人在线同步`}>
+              <div className="listen-list stage-list">
+                {listenRoom.members.map((member) => (
+                  <div className="listen-list-row detail" key={member.user.id}>
+                    <UserAvatar user={member.user} size="sm" className={member.online ? "online" : ""} />
+                    <div>
+                      <strong>{member.user.nickname || member.user.email}</strong>
+                      <small>
+                        {member.role === "host" ? "房主" : "成员"} · {member.online ? "在线" : "离线"}
+                      </small>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="listen-status">先创建或加入一个房间，成员列表会显示在这里。</p>
-              )}
-            </section>
-            <section className="listen-drawer-section">
-              <div className="listen-section-head">
-                <span>房间说明</span>
-                <small>单房最多 8 人</small>
+                    <span className={`relation-badge ${member.online ? "ok" : "muted"}`}>{member.online ? "在线" : "离线"}</span>
+                  </div>
+                ))}
               </div>
-              <div className="drawer-info-list">
-                <p>房主会持续同步播放进度，成员仍可主动发送播放、切歌和拖动进度等操作。</p>
-                <p>如果房间连接短暂波动，客户端会自动重连，不需要手动反复刷新。</p>
-                <p>邀请码适合即时分享，复制后直接发给好友即可加入当前房间。</p>
-              </div>
-            </section>
+            </StageSection>
           </div>
-        ) : null}
-
-        {listenDrawerTab === "friends" ? (
-          <div className="utility-panel-grid">
-            <section className="listen-drawer-section">
-              <div className="listen-section-head">
-                <span>搜索加好友</span>
-                <small>支持昵称片段或邮箱片段</small>
-              </div>
-              <form
-                className="listen-search-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void handleFriendSearch();
-                }}
-              >
-                <div className="listen-join-row">
-                  <input
-                    value={friendSearchInput}
-                    placeholder="例如：昵称片段 / 邮箱片段"
-                    onChange={(event) => setFriendSearchInput(event.target.value)}
-                  />
-                  <button type="submit" disabled={friendLoading || authStatus !== "authenticated"}>
-                    搜索
-                  </button>
+        ) : (
+          <div className="stage-flow">
+            <StageSection index={0} title="开始一起听" hint="一次只做一件事：创建，或加入">
+              <div className="stage-cta-stack">
+                <button
+                  type="button"
+                  className="stage-btn-primary listen-wide-btn"
+                  onClick={() => void handleCreateListenRoom()}
+                  disabled={listenBusy || authStatus !== "authenticated"}
+                >
+                  创建一起听
+                </button>
+                <div className="stage-divider">
+                  <span>或加入已有房间</span>
                 </div>
-                {friendSearchHint ? <p className="listen-status">{friendSearchHint}</p> : null}
-              </form>
-              <div className="listen-list">
-                {friendSearchResults.length ? (
-                  friendSearchResults.map((result) => {
-                    const incomingRequest = incomingFriendRequestByUserId.get(result.user.id);
-                    const primaryLabel = friendRelationActionLabel(result.relationStatus);
-                    const disabled =
-                      result.relationStatus === "friend" ||
-                      result.relationStatus === "outgoing_pending" ||
-                      result.relationStatus === "self" ||
-                      friendActionBusyId === result.user.id ||
-                      (result.relationStatus === "incoming_pending" && !incomingRequest);
-                    return (
-                      <div className="listen-list-row detail friend-search-result-row" key={result.user.id}>
-                        <UserAvatar user={result.user} size="sm" />
-                        <div>
-                          <strong>{result.user.nickname || result.user.email}</strong>
-                          <small>{result.user.email}</small>
-                        </div>
-                        <span className={`relation-badge relation-${result.relationStatus}`}>{friendRelationLabel(result.relationStatus)}</span>
-                        <button
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => {
-                            if (result.relationStatus === "incoming_pending" && incomingRequest) {
-                              void handleRespondFriendRequest(incomingRequest.id, "accept");
-                              return;
-                            }
-                            if (result.relationStatus === "none") {
-                              void handleSendFriendRequest(result.user.id);
-                            }
-                          }}
-                        >
-                          {primaryLabel}
-                        </button>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <p className="listen-status">{friendSearchQuery ? "暂时没有匹配结果。" : "输入后会自动搜索，找到后可直接一键处理。"}</p>
-                )}
+                <form
+                  className="listen-join-row stage-join-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleJoinListenRoom();
+                  }}
+                >
+                  <input
+                    value={listenInviteInput}
+                    placeholder="输入邀请码"
+                    onChange={(event) => setListenInviteInput(event.target.value.toUpperCase())}
+                  />
+                  <button type="submit" disabled={listenBusy || authStatus !== "authenticated"}>
+                    加入
+                  </button>
+                </form>
+                {authStatus !== "authenticated" ? (
+                  <div className="stage-guest-login-hint">
+                    <p className="listen-status">请先登录后再创建或加入房间。</p>
+                    {isAccountEnabled ? (
+                      <button type="button" className="stage-btn-primary" onClick={openLoginDialog}>
+                        去登录
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {listenMessage ? <p className="listen-status warning">{listenMessage}</p> : null}
               </div>
-            </section>
+            </StageSection>
+            <StageEmpty title="还没有房间" description="创建后邀请码会出现在这里，好友列表可在「好友」页签管理。" />
+          </div>
+        )
+      ) : null}
 
-            <section className="listen-drawer-section">
-              <div className="listen-section-head">
-                <span>好友列表</span>
-                <small>{friendList.length} 位好友</small>
+      {listenDrawerTab === "friends" ? (
+        <div className="stage-flow">
+          <StageSection index={0} title="添加好友" hint="昵称或邮箱片段，至少 2 个字符">
+            <form
+              className="listen-search-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleFriendSearch();
+              }}
+            >
+              <div className="listen-join-row stage-join-form">
+                <input
+                  value={friendSearchInput}
+                  placeholder="搜索用户"
+                  onChange={(event) => setFriendSearchInput(event.target.value)}
+                />
+                <button type="submit" disabled={friendLoading || authStatus !== "authenticated"}>
+                  搜索
+                </button>
               </div>
-              {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
-              <div className="listen-list">
-                {friendList.length ? (
-                  friendList.map((friend) => (
-                    <div className="listen-list-row detail" key={friend.user.id}>
-                      <UserAvatar user={friend.user} size="sm" />
+              {friendSearchHint ? <p className="listen-status">{friendSearchHint}</p> : null}
+            </form>
+            <div className="listen-list stage-list">
+              {friendSearchResults.length ? (
+                friendSearchResults.map((result) => {
+                  const incomingRequest = incomingFriendRequestByUserId.get(result.user.id);
+                  const primaryLabel = friendRelationActionLabel(result.relationStatus);
+                  const disabled =
+                    result.relationStatus === "friend" ||
+                    result.relationStatus === "outgoing_pending" ||
+                    result.relationStatus === "self" ||
+                    friendActionBusyId === result.user.id ||
+                    (result.relationStatus === "incoming_pending" && !incomingRequest);
+                  return (
+                    <div className="listen-list-row detail friend-search-result-row" key={result.user.id}>
+                      <UserAvatar user={result.user} size="sm" />
                       <div>
-                        <strong>{friend.user.nickname || friend.user.email}</strong>
-                        <small>{friend.user.email}</small>
+                        <strong>{result.user.nickname || result.user.email}</strong>
+                        <small>{result.user.email}</small>
                       </div>
-                      <span className="relation-badge muted">{new Date(friend.since).toLocaleDateString()}</span>
+                      <span className={`relation-badge relation-${result.relationStatus}`}>{friendRelationLabel(result.relationStatus)}</span>
+                      <button
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => {
+                          if (result.relationStatus === "incoming_pending" && incomingRequest) {
+                            void handleRespondFriendRequest(incomingRequest.id, "accept");
+                            return;
+                          }
+                          if (result.relationStatus === "none") {
+                            void handleSendFriendRequest(result.user.id);
+                          }
+                        }}
+                      >
+                        {primaryLabel}
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="listen-status">{friendSearchQuery ? "暂时没有匹配结果。" : "输入关键词后显示结果。"}</p>
+              )}
+            </div>
+          </StageSection>
+
+          <StageSection index={1} title="我的好友" hint={friendList.length ? `${friendList.length} 位好友` : "还没有好友"}>
+            {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
+            <div className="listen-list stage-list">
+              {friendList.length ? (
+                friendList.map((friend) => (
+                  <div className="listen-list-row detail" key={friend.user.id}>
+                    <UserAvatar user={friend.user} size="sm" />
+                    <div>
+                      <strong>{friend.user.nickname || friend.user.email}</strong>
+                      <small>{friend.user.email}</small>
+                    </div>
+                    <div className="listen-row-actions">
+                      <button
+                        type="button"
+                        onClick={() => void handleInviteFriendToListen(friend.user.id)}
+                        disabled={!listenRoom || friendActionBusyId === friend.user.id}
+                      >
+                        邀请
+                      </button>
+                      <button type="button" className="ghost" onClick={() => void handleDeleteFriend(friend.user.id)} disabled={friendActionBusyId === friend.user.id}>
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <StageEmpty title="好友列表为空" description="先在上方搜索并添加好友，再邀请进房间。" />
+              )}
+            </div>
+          </StageSection>
+        </div>
+      ) : null}
+
+      {listenDrawerTab === "activity" ? (
+        <div className="stage-flow">
+          {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
+          <div className="stage-segmented drawer-subtabbar" role="tablist" aria-label="一起听动态分类">
+            {listenActivityTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={listenActivityTab === tab.id}
+                className={listenActivityTab === tab.id ? "active" : ""}
+                onClick={() => setListenActivityTab(tab.id)}
+              >
+                {tab.label}
+                <span>{tab.count}</span>
+              </button>
+            ))}
+          </div>
+
+          {listenActivityTab === "listen-invites" ? (
+            <StageSection
+              index={0}
+              title="一起听邀请"
+              hint="接受后会进入对方房间"
+              action={
+                <button type="button" className="ghost" onClick={() => void refreshFriendPanelData()} disabled={friendLoading}>
+                  刷新
+                </button>
+              }
+            >
+              <div className="listen-list stage-list">
+                {listenInvites.length ? (
+                  listenInvites.map((invite) => (
+                    <div className="listen-list-row detail" key={invite.id}>
+                      <UserAvatar user={invite.inviter} size="sm" />
+                      <div>
+                        <strong>{invite.inviter.nickname || invite.inviter.email}</strong>
+                        <small>
+                          {invite.memberCount} 人房间 · 邀请码 {invite.inviteCode}
+                        </small>
+                      </div>
                       <div className="listen-row-actions">
-                        <button
-                          type="button"
-                          onClick={() => void handleInviteFriendToListen(friend.user.id)}
-                          disabled={!listenRoom || friendActionBusyId === friend.user.id}
-                        >
-                          邀请
+                        <button type="button" onClick={() => void handleRespondListenInvite(invite.id, "accept")} disabled={friendActionBusyId === invite.id}>
+                          加入
                         </button>
-                        <button type="button" className="ghost" onClick={() => void handleDeleteFriend(friend.user.id)} disabled={friendActionBusyId === friend.user.id}>
-                          删除
+                        <button type="button" className="ghost" onClick={() => void handleRespondListenInvite(invite.id, "reject")} disabled={friendActionBusyId === invite.id}>
+                          拒绝
                         </button>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="listen-status">还没有好友，先在左侧搜索一个吧。</p>
+                  <StageEmpty title="暂无邀请" description="好友邀请你一起听时会显示在这里。" />
                 )}
               </div>
-            </section>
-          </div>
-        ) : null}
+            </StageSection>
+          ) : null}
 
-        {listenDrawerTab === "activity" ? (
-          <div className="utility-panel-stack">
-            {friendMessage ? <p className="listen-status warning">{friendMessage}</p> : null}
-            <div className="drawer-subtabbar" role="tablist" aria-label="一起听动态分类">
-              {listenActivityTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={listenActivityTab === tab.id}
-                  className={listenActivityTab === tab.id ? "active" : ""}
-                  onClick={() => setListenActivityTab(tab.id)}
-                >
-                  {tab.label}
-                  <span>{tab.count}</span>
-                </button>
-              ))}
-            </div>
-
-            {listenActivityTab === "listen-invites" ? (
-              <section className="listen-drawer-section">
-                <div className="listen-section-head">
-                  <span>一起听邀请</span>
-                  <button type="button" className="ghost" onClick={() => void refreshFriendPanelData()} disabled={friendLoading}>
-                    刷新
-                  </button>
-                </div>
-                <div className="listen-list">
-                  {listenInvites.length ? (
-                    listenInvites.map((invite) => (
-                      <div className="listen-list-row detail" key={invite.id}>
-                        <UserAvatar user={invite.inviter} size="sm" />
-                        <div>
-                          <strong>{invite.inviter.nickname || invite.inviter.email}</strong>
-                          <small>{invite.memberCount} 人房间 · 邀请码 {invite.inviteCode}</small>
-                        </div>
-                        <div className="listen-row-actions">
-                          <button type="button" onClick={() => void handleRespondListenInvite(invite.id, "accept")} disabled={friendActionBusyId === invite.id}>
-                            加入
-                          </button>
-                          <button type="button" className="ghost" onClick={() => void handleRespondListenInvite(invite.id, "reject")} disabled={friendActionBusyId === invite.id}>
-                            拒绝
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="listen-status">暂无待处理的一起听邀请。</p>
-                  )}
-                </div>
-              </section>
-            ) : null}
-
-            {listenActivityTab === "friend-requests" ? (
-              <section className="listen-drawer-section">
-                <div className="listen-section-head">
-                  <span>好友请求</span>
-                  <small>{friendRequests.incoming.length + friendRequests.outgoing.length} 条待处理</small>
-                </div>
-                <div className="listen-list">
-                  {friendRequests.incoming.map((request) => (
-                    <div className="listen-list-row detail" key={request.id}>
-                      <UserAvatar user={request.requester} size="sm" />
-                      <div>
-                        <strong>{request.requester.nickname || request.requester.email}</strong>
-                        <small>{request.requester.email}</small>
-                      </div>
-                      <div className="listen-row-actions">
-                        <button type="button" onClick={() => void handleRespondFriendRequest(request.id, "accept")} disabled={friendActionBusyId === request.id}>
-                          同意
-                        </button>
-                        <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "reject")} disabled={friendActionBusyId === request.id}>
-                          拒绝
-                        </button>
-                      </div>
+          {listenActivityTab === "friend-requests" ? (
+            <StageSection index={0} title="好友请求" hint={`${friendRequests.incoming.length + friendRequests.outgoing.length} 条待处理`}>
+              <div className="listen-list stage-list">
+                {friendRequests.incoming.map((request) => (
+                  <div className="listen-list-row detail" key={request.id}>
+                    <UserAvatar user={request.requester} size="sm" />
+                    <div>
+                      <strong>{request.requester.nickname || request.requester.email}</strong>
+                      <small>{request.requester.email}</small>
                     </div>
-                  ))}
-                  {friendRequests.outgoing.map((request) => (
-                    <div className="listen-list-row detail" key={request.id}>
-                      <UserAvatar user={request.addressee} size="sm" />
-                      <div>
-                        <strong>{request.addressee.nickname || request.addressee.email}</strong>
-                        <small>{request.addressee.email}</small>
-                      </div>
-                      <div className="listen-row-actions">
-                        <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "cancel")} disabled={friendActionBusyId === request.id}>
-                          取消
-                        </button>
-                      </div>
+                    <div className="listen-row-actions">
+                      <button type="button" onClick={() => void handleRespondFriendRequest(request.id, "accept")} disabled={friendActionBusyId === request.id}>
+                        同意
+                      </button>
+                      <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "reject")} disabled={friendActionBusyId === request.id}>
+                        拒绝
+                      </button>
                     </div>
-                  ))}
-                  {!friendRequests.incoming.length && !friendRequests.outgoing.length ? <p className="listen-status">暂无待处理好友请求。</p> : null}
-                </div>
-              </section>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    </>
+                  </div>
+                ))}
+                {friendRequests.outgoing.map((request) => (
+                  <div className="listen-list-row detail" key={request.id}>
+                    <UserAvatar user={request.addressee} size="sm" />
+                    <div>
+                      <strong>{request.addressee.nickname || request.addressee.email}</strong>
+                      <small>等待对方确认</small>
+                    </div>
+                    <div className="listen-row-actions">
+                      <button type="button" className="ghost" onClick={() => void handleRespondFriendRequest(request.id, "cancel")} disabled={friendActionBusyId === request.id}>
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {!friendRequests.incoming.length && !friendRequests.outgoing.length ? (
+                  <StageEmpty title="没有待处理请求" description="发出或收到的好友申请会出现在这里。" />
+                ) : null}
+              </div>
+            </StageSection>
+          ) : null}
+        </div>
+      ) : null}
+    </StagePanelShell>
   );
 
   const mobilePrimaryTabs: Array<{ id: string; tab?: NavTab; label: string; icon: ReactNode; onSelect: () => void }> = [
@@ -5130,140 +4680,54 @@ export function PlayerApp() {
   ];
 
   const playerDock = (
-    <footer
-      ref={playerDockRef}
-      className={`spotify-player-bar immersive-player-dock player-dock-shell ${canOpenDetail ? "clickable" : "empty"}`.trim()}
-      data-disabled={!canOpenDetail}
-      onClick={(event) => {
-        if (canOpenDetail) {
-          openDetail(event.currentTarget, event.detail === 0 ? "keyboard" : "pointer");
+    <PlayerDock
+      variant="global"
+      dockRef={playerDockRef}
+      isMobile={isMobileUi}
+      canOpenDetail={canOpenDetail}
+      title={currentTrack?.name ?? "还没有播放音乐"}
+      subtitle={currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}
+      coverUrl={currentCoverUrl || DEFAULT_COVER_URL}
+      progressDegrees={mainDockProgressDegrees}
+      hasProgress={hasMainDockProgress}
+      isPlaying={player.isPlaying}
+      loading={controller.loadingSource}
+      controlDisabled={controlDisabled}
+      modeLabel={modeMeta.label}
+      modeIcon={modeMeta.icon}
+      volume={player.volume}
+      volumePercent={volumePercent}
+      isMuted={isMuted}
+      playIcon={<PlayIcon />}
+      pauseIcon={<PauseIcon />}
+      previousIcon={<PreviousIcon />}
+      nextIcon={<NextIcon />}
+      queueIcon={<QueueIcon />}
+      volumeIcon={<VolumeIcon muted={isMuted} />}
+      spinner={<Spinner />}
+      mobileTabs={mobilePrimaryTabs.map((item) => ({
+        id: item.id,
+        label: item.label,
+        icon: item.icon,
+        active: item.tab ? activeTab === item.tab : false,
+        onSelect: item.onSelect
+      }))}
+      onOpenDetail={(interaction) => {
+        if (isDetailMounted) {
+          return;
+        }
+        if (playerDockRef.current) {
+          openDetail(playerDockRef.current, interaction);
         }
       }}
-    >
-      {!isMobileUi ? (
-        <div
-          className="player-dock-progress-shell"
-          onClick={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          <span>{formatMs(player.currentTimeMs)}</span>
-          <input
-            className="range-slider range-progress"
-            type="range"
-            min={0}
-            max={Math.max(player.durationMs, 1)}
-            value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
-            style={{
-              background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, rgba(255, 255, 255, 0.14) ${progressPercent}%, rgba(255, 255, 255, 0.14) 100%)`
-            }}
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
-            onChange={(event) => handleSeekTo(Number(event.target.value))}
-          />
-          <span>{formatMs(player.durationMs)}</span>
-        </div>
-      ) : null}
-      <div className="player-dock-main-grid">
-        <div className="spotify-player-left">
-          <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
-          <div className="player-dock-copy">
-            <p className="player-title">{currentTrack?.name ?? "还没有播放音乐"}</p>
-            <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}</p>
-          </div>
-        </div>
-
-        <div className="spotify-player-center">
-          <div className="spotify-player-inline-meta">
-            <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
-            <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
-          </div>
-          <div className="spotify-player-controls">
-            <div className="player-control-side player-control-side-left">
-              <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanel} className="ghost">
-                <QueueIcon />
-              </IconButton>
-            </div>
-            <div className="player-control-transport">
-              <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
-                <PreviousIcon />
-              </IconButton>
-              <div
-                className={`player-progress-orbit ${hasMainDockProgress ? "has-progress" : "idle"} ${player.isPlaying ? "is-playing" : ""}`.trim()}
-                style={{ "--play-progress-angle": mainDockProgressDegrees } as CSSProperties}
-              >
-                <IconButton
-                  ariaLabel={player.isPlaying ? "暂停" : "播放"}
-                  title={player.isPlaying ? "暂停" : "播放"}
-                  className="play-main"
-                  disabled={controlDisabled}
-                  onClick={() => player.togglePlay()}
-                >
-                  {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-                </IconButton>
-              </div>
-              <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-                <NextIcon />
-              </IconButton>
-            </div>
-            <div className="player-control-side player-control-side-right">
-              <IconButton ariaLabel={modeMeta.label} title={modeMeta.label} disabled={controlDisabled} onClick={() => player.nextMode()} className="ghost">
-                {modeMeta.icon}
-              </IconButton>
-            </div>
-          </div>
-        </div>
-
-        {!isMobileUi ? (
-          <div className="spotify-player-right player-dock-volume" onClick={(event) => event.stopPropagation()}>
-            <div className="player-volume-stack">
-              <div className="player-volume-popover">
-                <span>{Math.round(player.volume * 100)}%</span>
-                <input
-                  className="range-slider range-volume vertical"
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={player.volume}
-                  style={{
-                    background: `linear-gradient(180deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.22) ${100 - volumePercent}%, var(--brand-strong) ${100 - volumePercent}%, var(--brand) 100%)`
-                  }}
-                  onChange={(event) => player.setVolume(Number(event.target.value))}
-                  onClick={(event) => event.stopPropagation()}
-                />
-              </div>
-              <IconButton ariaLabel={isMuted ? "取消静音" : "静音"} title={isMuted ? "取消静音" : "静音"} onClick={toggleMute} className={isMuted ? "warn" : "ghost"}>
-                <VolumeIcon muted={isMuted} />
-              </IconButton>
-            </div>
-          </div>
-        ) : null}
-      </div>
-
-      {isMobileUi ? (
-        <nav className="mobile-bottom-tabs" role="tablist" aria-label="页面切换">
-          {mobilePrimaryTabs.map((item) => {
-            const active = item.tab ? activeTab === item.tab : false;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                className={active ? "active" : ""}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  item.onSelect();
-                }}
-              >
-                <span className="mobile-bottom-tab-icon">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
-      ) : null}
-    </footer>
+      onOpenQueue={isDetailMounted ? openQueuePanelFromDetail : openQueuePanel}
+      onPrevious={() => player.previousTrackByUser()}
+      onNext={() => player.nextTrackByUser()}
+      onTogglePlay={() => player.togglePlay()}
+      onNextMode={() => player.nextMode()}
+      onVolume={(volume) => player.setVolume(volume)}
+      onToggleMute={toggleMute}
+    />
   );
 
   const themeSwitchControl = (
@@ -5287,303 +4751,273 @@ export function PlayerApp() {
   );
 
   const accountManagerContent = authStatus === "authenticated" || showDesktopSettings ? (
-    <>
-      <header className="utility-hero utility-hero-account home-playlist-drawer-head account-manager-head account-manager-overview">
-        <div className="utility-hero-copy home-playlist-drawer-meta account-manager-meta">
-          <h3>{accountPanelTitle}</h3>
-          <div className="account-overview-badges">
+    <StagePanelShell
+      className="stage-panel-account"
+      kicker={accountPanelMode === "settings" ? "Preferences" : "Account"}
+      title={accountPanelTitle}
+      description={
+        authStatus === "authenticated"
+          ? `${accountDisplayName} · ${accountOverviewSyncText}`
+          : "调整主题与桌面偏好，登录后可管理资料"
+      }
+      status={
+        authStatus === "authenticated" ? (
+          <>
             <span className={`account-tier ${musicUnblockEnabled ? "advanced" : ""}`}>{accountTierText}</span>
             <span className="relation-badge ok">{accountStateText}</span>
-          </div>
-        </div>
-        <div className="utility-hero-side">
-          <div className="utility-hero-orb utility-hero-orb-account" aria-hidden="true" />
-          <div className="utility-hero-mini-card">
-            <UserAvatar user={authUser} size="lg" />
-            <div>
-              <strong>{accountDisplayName}</strong>
-            </div>
-          </div>
-        </div>
-      </header>
-      <div className="home-playlist-drawer-actions account-manager-actions">
-        {authStatus === "authenticated" ? (
-          <>
-            <input
-              ref={avatarInputRef}
-              className="account-avatar-input"
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
-            />
-            <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
-              {avatarUploading ? "上传中" : "更改头像"}
-            </button>
-            {authUser?.avatarUrl ? (
-              <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
-                移除头像
-              </button>
-            ) : null}
-            <button type="button" className="ghost" onClick={() => void handleLogout()}>
-              退出登录
-            </button>
           </>
-        ) : null}
-        <button type="button" className="ghost" onClick={closeAccountManager}>
-          关闭
-        </button>
-      </div>
-      <div className="utility-drawer-body account-manager-body">
-        <div className="drawer-tabbar" role="tablist" aria-label="账户管理标签">
-          {accountManagerTabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={accountManagerTab === tab.id}
-              className={accountManagerTab === tab.id ? "active" : ""}
-              onClick={() => setAccountManagerTab(tab.id)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-        {accountFeedbackMessage ? (
-          <p className={`account-manager-status ${accountFeedbackTone === "error" ? "error" : ""}`}>{accountFeedbackMessage}</p>
-        ) : null}
-        <div className="account-manager-layout">
-          <div className="utility-panel-stack">
-            {accountManagerTab === "profile" ? (
-              authStatus === "authenticated" ? (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>资料</span>
-                    <small>昵称会展示给好友和一起听成员</small>
-                  </div>
-                  <form
-                    className="account-manager-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void handleUpdateProfile();
-                    }}
-                  >
-                    <label className="account-form-label">
-                      昵称
-                      <input
-                        type="text"
-                        value={profileNicknameInput}
-                        maxLength={64}
-                        disabled={profileSaving}
-                        onChange={(event) => setProfileNicknameInput(event.target.value)}
-                      />
-                    </label>
-                    <button type="submit" className="account-form-submit" disabled={profileSaving || !profileNicknameInput.trim()}>
-                      {profileSaving ? "保存中..." : "保存昵称"}
-                    </button>
-                  </form>
-                </section>
-              ) : (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>资料</span>
-                  </div>
-                  <p className="account-manager-status">请先登录。</p>
-                </section>
-              )
-            ) : null}
+        ) : (
+          <span className="relation-badge muted">访客</span>
+        )
+      }
+      onClose={closeAccountManager}
+      nav={accountManagerTabs.map((tab) => ({
+        id: tab.id,
+        label: tab.id === "desktop" ? (hasDesktopContext ? "桌面" : "外观") : tab.label,
+        disabled: tab.disabled
+      }))}
+      activeNav={accountManagerTab}
+      onNav={(id) => setAccountManagerTab(id as AccountManagerTab)}
+      navAriaLabel="账户管理标签"
+      stageKey={`account-${accountManagerTab}`}
+      footer={
+        authStatus === "authenticated" ? (
+          <button type="button" className="ghost stage-footer-logout" onClick={() => void handleLogout()}>
+            退出登录
+          </button>
+        ) : null
+      }
+    >
+      {accountFeedbackMessage ? (
+        <p className={`account-manager-status stage-feedback ${accountFeedbackTone === "error" ? "error" : ""}`}>
+          {accountFeedbackMessage}
+        </p>
+      ) : null}
 
-            {accountManagerTab === "security" ? (
-              authStatus === "authenticated" ? (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>安全</span>
-                    <small>新密码至少 10 位，且包含大小写字母、数字和符号</small>
-                  </div>
-                  <form
-                    className="account-manager-form two"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      void handleChangePassword();
-                    }}
-                  >
-                    <label className="account-form-label">
-                      当前密码
-                      <input
-                        type="password"
-                        value={passwordFormState.oldPassword}
-                        disabled={passwordSaving}
-                        onChange={(event) => setPasswordFormState((previous) => ({ ...previous, oldPassword: event.target.value }))}
-                      />
-                    </label>
-                    <label className="account-form-label">
-                      新密码
-                      <input
-                        type="password"
-                        value={passwordFormState.newPassword}
-                        disabled={passwordSaving}
-                        onChange={(event) => setPasswordFormState((previous) => ({ ...previous, newPassword: event.target.value }))}
-                      />
-                    </label>
-                    <button type="submit" className="account-form-submit" disabled={passwordSaving}>
-                      {passwordSaving ? "修改中..." : "修改密码"}
-                    </button>
-                  </form>
-                </section>
-              ) : (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>安全</span>
-                  </div>
-                  <p className="account-manager-status">请先登录。</p>
-                </section>
-              )
-            ) : null}
-
-            {accountManagerTab === "advanced" ? (
-              authStatus === "authenticated" ? (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>高级</span>
-                    <small>{musicUnblockStatusText}</small>
-                  </div>
-                  {musicUnblockEnabled ? (
-                    <p className="music-unblock-status enabled">
-                      已启用{authPlaybackAuthorization?.inviteLabel ? ` · ${authPlaybackAuthorization.inviteLabel}` : ""}
-                    </p>
-                  ) : (
-                    <form
-                      className="music-unblock-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        void handleRedeemMusicUnblockInvite();
-                      }}
-                    >
-                      <input
-                        value={musicUnblockInviteInput}
-                        onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
-                        placeholder="输入兑换码"
-                        disabled={musicUnblockLoading}
-                        autoComplete="off"
-                      />
-                      <button type="submit" disabled={musicUnblockLoading || !musicUnblockInviteInput.trim()}>
-                        {musicUnblockLoading ? "兑换中" : "兑换"}
-                      </button>
-                    </form>
-                  )}
-                  {musicUnblockMessage ? <p className="music-unblock-status">{musicUnblockMessage}</p> : null}
-                  {musicUnblockError ? <p className="music-unblock-status error">{musicUnblockError}</p> : null}
-                </section>
-              ) : (
-                <section className="account-manager-section">
-                  <div className="account-manager-section-head">
-                    <span>高级</span>
-                    <small>登录后可查看并兑换高级资格。</small>
-                  </div>
-                  <p className="account-manager-status">请先登录。</p>
-                </section>
-              )
-            ) : null}
-
-            {accountManagerTab === "desktop" && showDesktopSettings ? (
-              <section className="account-manager-section">
-                <div className="account-manager-section-head">
-                  <span>{hasDesktopContext ? "桌面客户端" : "界面设置"}</span>
+      {accountManagerTab === "profile" ? (
+        authStatus === "authenticated" ? (
+          <div className="stage-flow">
+            <StageSection index={0} title="头像" hint="展示给好友与一起听成员">
+              <div className="stage-profile-hero">
+                <UserAvatar user={authUser} size="lg" />
+                <div className="stage-profile-hero-copy">
+                  <strong>{accountDisplayName}</strong>
+                  <small>{accountOverviewTierText}</small>
                 </div>
-                <div className="settings-theme-card">
-                  <div className="settings-theme-copy">
-                    <strong>界面主题</strong>
-                  </div>
-                  <div className="theme-switch-mobile settings-panel-switch">{themeSwitchControl}</div>
+                <div className="stage-profile-hero-actions">
+                  <input
+                    ref={avatarInputRef}
+                    className="account-avatar-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    onChange={(event) => void handleAvatarFileChange(event.target.files?.[0])}
+                  />
+                  <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={avatarUploading}>
+                    {avatarUploading ? "上传中" : "更改头像"}
+                  </button>
+                  {authUser?.avatarUrl ? (
+                    <button type="button" className="ghost" onClick={() => void handleDeleteAvatar()} disabled={avatarUploading}>
+                      移除
+                    </button>
+                  ) : null}
                 </div>
-                {desktopContext ? (
-                  <>
-                    <div className="account-manager-desktop-grid">
-                      <p className="account-manager-desktop-meta">
-                        <strong>当前版本</strong>
-                        <span>{desktopContext.appVersion}</span>
-                      </p>
-                      <p className="account-manager-desktop-meta">
-                        <strong>缓存目录</strong>
-                        <code>{desktopContext.profileFolder}</code>
-                      </p>
-                    </div>
-                    <div className="account-manager-desktop-actions">
-                      {desktopCapabilities?.openProfileFolder ? (
-                        <button
-                          type="button"
-                          disabled={desktopActionPending !== null}
-                          onClick={() => void handleDesktopHostAction("open-profile-folder")}
-                        >
-                          打开缓存目录
-                        </button>
-                      ) : null}
-                      {desktopCapabilities?.clearWebCache ? (
-                        <button
-                          type="button"
-                          disabled={desktopActionPending !== null}
-                          onClick={() => void handleDesktopHostAction("clear-web-cache")}
-                        >
-                          清理缓存并重载
-                        </button>
-                      ) : null}
-                      {desktopCapabilities?.openDownloadPage ? (
-                        <button
-                          type="button"
-                          disabled={desktopActionPending !== null}
-                          onClick={() => void handleDesktopHostAction("open-download-page")}
-                        >
-                          打开下载页
-                        </button>
-                      ) : null}
-                      {desktopCapabilities?.openHomeInBrowser ? (
-                        <button
-                          type="button"
-                          className="ghost"
-                          disabled={desktopActionPending !== null}
-                          onClick={() => void handleDesktopHostAction("open-home-in-browser")}
-                        >
-                          在浏览器打开网页版
-                        </button>
-                      ) : null}
-                    </div>
-                    {desktopActionState.message ? <p className="account-manager-status">{desktopActionState.message}</p> : null}
-                    {desktopActionState.error ? <p className="account-manager-status error">{desktopActionState.error}</p> : null}
-                  </>
-                ) : (
-                  <p className="account-manager-status">当前为网页端。</p>
-                )}
-              </section>
-            ) : null}
+              </div>
+            </StageSection>
+            <StageSection index={1} title="昵称" hint="保存后即时同步到云端">
+              <form
+                className="account-manager-form stage-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleUpdateProfile();
+                }}
+              >
+                <label className="account-form-label">
+                  昵称
+                  <input
+                    type="text"
+                    value={profileNicknameInput}
+                    maxLength={64}
+                    disabled={profileSaving}
+                    onChange={(event) => setProfileNicknameInput(event.target.value)}
+                  />
+                </label>
+                <button type="submit" className="account-form-submit stage-btn-primary" disabled={profileSaving || !profileNicknameInput.trim()}>
+                  {profileSaving ? "保存中..." : "保存昵称"}
+                </button>
+              </form>
+            </StageSection>
           </div>
+        ) : (
+          <StageEmpty
+            title="请先登录"
+            description="登录后可同步音乐库、管理好友并使用一起听。"
+            action={
+              isAccountEnabled ? (
+                <div className="stage-primary-actions">
+                  <button type="button" className="stage-btn-primary" onClick={openLoginDialog}>
+                    登录
+                  </button>
+                  <button type="button" className="ghost" onClick={openRegisterDialog}>
+                    注册
+                  </button>
+                </div>
+              ) : null
+            }
+          />
+        )
+      ) : null}
 
-          <aside className="account-manager-side-column">
-            <section className="account-manager-section compact">
-              <div className="account-manager-section-head">
-                <span>账户总览</span>
+      {accountManagerTab === "security" ? (
+        authStatus === "authenticated" ? (
+          <StageSection index={0} title="修改密码" hint="新密码至少 10 位，含大小写字母、数字和符号">
+            <form
+              className="account-manager-form two stage-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleChangePassword();
+              }}
+            >
+              <label className="account-form-label">
+                当前密码
+                <input
+                  type="password"
+                  value={passwordFormState.oldPassword}
+                  disabled={passwordSaving}
+                  onChange={(event) => setPasswordFormState((previous) => ({ ...previous, oldPassword: event.target.value }))}
+                />
+              </label>
+              <label className="account-form-label">
+                新密码
+                <input
+                  type="password"
+                  value={passwordFormState.newPassword}
+                  disabled={passwordSaving}
+                  onChange={(event) => setPasswordFormState((previous) => ({ ...previous, newPassword: event.target.value }))}
+                />
+              </label>
+              <button type="submit" className="account-form-submit stage-btn-primary" disabled={passwordSaving}>
+                {passwordSaving ? "修改中..." : "修改密码"}
+              </button>
+            </form>
+          </StageSection>
+        ) : (
+          <StageEmpty
+            title="请先登录"
+            description="登录后可管理账户安全。"
+            action={
+              isAccountEnabled ? (
+                <button type="button" className="stage-btn-primary" onClick={openLoginDialog}>
+                  登录
+                </button>
+              ) : null
+            }
+          />
+        )
+      ) : null}
+
+      {accountManagerTab === "advanced" ? (
+        authStatus === "authenticated" ? (
+          <StageSection index={0} title="高级播放" hint={musicUnblockStatusText}>
+            {musicUnblockEnabled ? (
+              <div className="stage-status-card ok">
+                <strong>已启用高级资格</strong>
+                <p>{authPlaybackAuthorization?.inviteLabel ? `兑换码：${authPlaybackAuthorization.inviteLabel}` : "可使用完整播放能力"}</p>
               </div>
-              <div className="drawer-info-list">
-                <p>会员层级：{accountOverviewTierText}</p>
-                <p>同步状态：{accountOverviewSyncText}</p>
-                <p>高级资格：{accountOverviewUnblockText}</p>
-                <p>桌面状态：{hasDesktopContext ? "已连接桌面端" : "当前为网页端"}</p>
+            ) : (
+              <form
+                className="music-unblock-form stage-join-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleRedeemMusicUnblockInvite();
+                }}
+              >
+                <input
+                  value={musicUnblockInviteInput}
+                  onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
+                  placeholder="输入兑换码"
+                  disabled={musicUnblockLoading}
+                  autoComplete="off"
+                />
+                <button type="submit" className="stage-btn-primary" disabled={musicUnblockLoading || !musicUnblockInviteInput.trim()}>
+                  {musicUnblockLoading ? "兑换中" : "兑换"}
+                </button>
+              </form>
+            )}
+            {musicUnblockMessage ? <p className="music-unblock-status">{musicUnblockMessage}</p> : null}
+            {musicUnblockError ? <p className="music-unblock-status error">{musicUnblockError}</p> : null}
+          </StageSection>
+        ) : (
+          <StageEmpty
+            title="请先登录"
+            description="登录后可查看并兑换高级资格。"
+            action={
+              isAccountEnabled ? (
+                <button type="button" className="stage-btn-primary" onClick={openLoginDialog}>
+                  登录
+                </button>
+              ) : null
+            }
+          />
+        )
+      ) : null}
+
+      {accountManagerTab === "desktop" && showDesktopSettings ? (
+        <div className="stage-flow">
+          <StageSection index={0} title="界面主题" hint="深色舞台或浅色界面">
+            <div className="settings-theme-card stage-theme-card">
+              <div className="settings-theme-copy">
+                <strong>主题切换</strong>
+                <p>立即作用于当前窗口</p>
               </div>
-            </section>
-            {hasDesktopContext && desktopContext ? (
-              <section className="account-manager-section compact">
-                <div className="account-manager-section-head">
-                  <span>桌面信息</span>
-                </div>
-                <div className="drawer-info-list">
-                  <p>版本：{desktopContext.appVersion}</p>
-                  <p>下载页：{desktopContext.downloadUrl}</p>
-                  <p>主页：{desktopContext.homeUrl}</p>
-                </div>
-              </section>
-            ) : null}
-          </aside>
+              <div className="theme-switch-mobile settings-panel-switch">{themeSwitchControl}</div>
+            </div>
+          </StageSection>
+
+          {desktopContext ? (
+            <StageSection index={1} title="桌面客户端" hint={`版本 ${desktopContext.appVersion}`}>
+              <div className="stage-meta-grid">
+                <p className="drawer-meta-stat">
+                  <span>缓存目录</span>
+                  <strong className="stage-meta-code">{desktopContext.profileFolder}</strong>
+                </p>
+                <p className="drawer-meta-stat">
+                  <span>主页</span>
+                  <strong className="stage-meta-code">{desktopContext.homeUrl}</strong>
+                </p>
+              </div>
+              <div className="account-manager-desktop-actions stage-action-row">
+                {desktopCapabilities?.openProfileFolder ? (
+                  <button type="button" disabled={desktopActionPending !== null} onClick={() => void handleDesktopHostAction("open-profile-folder")}>
+                    打开缓存目录
+                  </button>
+                ) : null}
+                {desktopCapabilities?.clearWebCache ? (
+                  <button type="button" disabled={desktopActionPending !== null} onClick={() => void handleDesktopHostAction("clear-web-cache")}>
+                    清理缓存并重载
+                  </button>
+                ) : null}
+                {desktopCapabilities?.openDownloadPage ? (
+                  <button type="button" disabled={desktopActionPending !== null} onClick={() => void handleDesktopHostAction("open-download-page")}>
+                    打开下载页
+                  </button>
+                ) : null}
+                {desktopCapabilities?.openHomeInBrowser ? (
+                  <button type="button" className="ghost" disabled={desktopActionPending !== null} onClick={() => void handleDesktopHostAction("open-home-in-browser")}>
+                    在浏览器打开网页版
+                  </button>
+                ) : null}
+              </div>
+              {desktopActionState.message ? <p className="account-manager-status">{desktopActionState.message}</p> : null}
+              {desktopActionState.error ? <p className="account-manager-status error">{desktopActionState.error}</p> : null}
+            </StageSection>
+          ) : (
+            <StageSection index={1} title="运行环境" hint="当前为网页端">
+              <StageEmpty title="网页端" description="桌面专属操作在客户端内可用。" />
+            </StageSection>
+          )}
         </div>
-      </div>
-    </>
+      ) : null}
+    </StagePanelShell>
   ) : null;
 
   const mobileLibraryTools = isMobileUi ? (
@@ -5653,7 +5087,13 @@ export function PlayerApp() {
   return (
     <main
       ref={shellRef}
-      className={desktopHost.isDesktopHost ? "spotify-shell immersive-shell desktop-host-shell" : "spotify-shell immersive-shell"}
+      className={[
+        "spotify-shell immersive-shell stage-shell",
+        desktopHost.isDesktopHost ? "desktop-host-shell" : "",
+        isDetailMounted ? "detail-open" : ""
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={
         {
           "--ambient-bg-a": currentPalette.bgA,
@@ -5772,266 +5212,53 @@ export function PlayerApp() {
           ) : null}
 
           {activeTab === "search" ? (
-            <section className="spotify-results glass-surface search-results-shell">
-              <div className="search-sticky-head">
-                <div className="spotify-section-title">
-                  <h2>搜索音乐</h2>
-                  <span>支持单曲、歌手、歌单与专辑关键词</span>
-                </div>
-
-                <form
-                  className="spotify-search-panel"
-                  role="search"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void doSearch();
-                  }}
-                >
-                  <input
-                    ref={searchInputRef}
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder={
-                      searchAssist?.defaultKeyword ? `试试：${searchAssist.defaultKeyword}` : "例如：林俊杰、修炼爱情"
-                    }
-                  />
-                  <button type="submit" disabled={searchStatus === "loading"}>
-                    {searchStatus === "loading" ? (
-                      <>
-                        <Spinner />
-                        搜索中
-                      </>
-                    ) : (
-                      "搜索"
-                    )}
-                  </button>
-                </form>
-                <div className={`search-mode-switch mode-${searchMode}`} role="tablist" aria-label="搜索类型切换">
-                  <span className="search-mode-switch-thumb" aria-hidden="true" />
-                  {SEARCH_MODE_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      role="tab"
-                      aria-selected={searchMode === option.value}
-                      className={searchMode === option.value ? "active" : ""}
-                      onClick={() => switchSearchMode(option.value)}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-                {searchAssist ? (
-                  <div className="search-assist-block">
-                    {searchAssist.hotKeywords.length ? (
-                      <div className="search-assist-row">
-                        <span>热搜</span>
-                        <div ref={hotAssistRowRef}>
-                          {hotAssistCandidates.slice(0, visibleHotAssistCount).map((hot) => (
-                            <button
-                              key={`hot-${hot}`}
-                              type="button"
-                              onClick={() => applyKeywordAndSearch(hot)}
-                            >
-                              {hot}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {searchAssist.suggestions.length ? (
-                      <div className="search-assist-row">
-                        <span>联想</span>
-                        <div ref={suggestAssistRowRef}>
-                          {suggestAssistCandidates.slice(0, visibleSuggestAssistCount).map((suggestion) => (
-                            <button
-                              key={`suggest-${suggestion}`}
-                              type="button"
-                              onClick={() => applyKeywordAndSearch(suggestion)}
-                            >
-                              {suggestion}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-
-              <div ref={searchResultsBodyRef} className="search-results-body">
-                {searchMode === "track" ? (
-                  <>
-                    <div className="spotify-track-table-head">
-                      <span>歌曲</span>
-                      <span>专辑</span>
-                      <span className="align-right">时长</span>
-                      <span className="align-center">操作</span>
-                    </div>
-                    <div className="spotify-track-list">
-                      {searchStatus === "loading"
-                        ? Array.from({ length: 5 }).map((_, index) => (
-                            <div key={`skeleton-track-${index}`} className="track-skeleton-row" aria-hidden="true">
-                              <div />
-                              <div />
-                              <div />
-                              <div />
-                            </div>
-                          ))
-                        : null}
-
-                      {trackResult.map((track) => (
-                        <TrackRow
-                          key={track.id}
-                          track={track}
-                          liked={Boolean(favoriteSet[track.id])}
-                          currentTrackId={currentTrackId}
-                          isPlaying={player.isPlaying}
-                          onPlay={(item) => {
-                            player.playTrackNow(item);
-                            player.setPlaying(true);
-                          }}
-                          onToggleFavorite={(item) => player.toggleFavorite(item)}
-                        />
-                      ))}
-
-                      {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索，例如“林俊杰”或“修炼爱情”。</p> : null}
-                      {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配结果，换个关键词试试。</p> : null}
-                      {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
-                      {searchLoadingMore
-                        ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
-                            <div key={`loading-track-${index}`} className="track-skeleton-row" aria-hidden="true">
-                              <div />
-                              <div />
-                              <div />
-                              <div />
-                            </div>
-                          ))
-                        : null}
-                    </div>
-                  </>
-                ) : searchMode === "artist" ? (
-                  <div className="spotify-track-list">
-                    {searchArtistDetail ? (
-                      <section className="artist-detail-panel">
-                      <header className="artist-detail-head">
-                        <button
-                          type="button"
-                          className="meta-action-btn"
-                          onClick={() => {
-                            setSearchArtistDetail(null);
-                            setSearchArtistDetailError(null);
-                            setSearchArtistDetailLoading(false);
-                          }}
-                        >
-                          返回歌手列表
-                        </button>
-                        <div className="artist-detail-profile">
-                          <div
-                            className="artist-detail-cover"
-                            style={{ backgroundImage: `url(${searchArtistDetail.coverUrl ?? DEFAULT_COVER_URL})` }}
-                          />
-                          <div>
-                            <h3>{searchArtistDetail.name}</h3>
-                            <p>{searchArtistDetail.briefDesc ? searchArtistDetail.briefDesc.slice(0, 120) : "暂无歌手简介"}</p>
-                          </div>
-                        </div>
-                        <div className="artist-detail-actions">
-                          <button type="button" className="meta-action-btn" onClick={() => playArtistTopTracks(searchArtistDetail)}>
-                            播放热门单曲
-                          </button>
-                          <button type="button" className="meta-action-btn" onClick={() => addArtistTopTracksToQueue(searchArtistDetail)}>
-                            加入队列
-                          </button>
-                        </div>
-                      </header>
-                      <div className="spotify-track-table-head">
-                        <span>歌曲</span>
-                        <span>专辑</span>
-                        <span className="align-right">时长</span>
-                        <span className="align-center">操作</span>
-                      </div>
-                      <div className="spotify-track-list">
-                        {searchArtistDetail.topTracks.map((track) => (
-                          <TrackRow
-                            key={`artist-track-${track.id}`}
-                            track={track}
-                            liked={Boolean(favoriteSet[track.id])}
-                            currentTrackId={currentTrackId}
-                            isPlaying={player.isPlaying}
-                            onPlay={(item) => {
-                              player.playTrackNow(item);
-                              player.setPlaying(true);
-                            }}
-                            onToggleFavorite={(item) => player.toggleFavorite(item)}
-                          />
-                        ))}
-                        {!searchArtistDetail.topTracks.length ? <p className="spotify-empty">该歌手暂无可播放热门单曲。</p> : null}
-                      </div>
-                    </section>
-                  ) : (
-                    <>
-                      {searchStatus === "loading"
-                        ? Array.from({ length: 5 }).map((_, index) => (
-                            <div key={`skeleton-artist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
-                              <div />
-                              <div />
-                              <div />
-                            </div>
-                          ))
-                        : null}
-                      {artistResult.map((artist) => (
-                        <ArtistSearchRow key={artist.id} artist={artist} onOpen={(item) => void openSearchArtistDetail(item)} />
-                      ))}
-                      {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索歌手，例如“邓紫棋”。</p> : null}
-                      {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配歌手，换个关键词试试。</p> : null}
-                      {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
-                      {searchArtistDetailLoading ? <p className="spotify-empty">歌手详情加载中...</p> : null}
-                      {searchArtistDetailError ? <p className="error error-inline">{searchArtistDetailError}</p> : null}
-                      {searchLoadingMore
-                        ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
-                            <div key={`loading-artist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
-                              <div />
-                              <div />
-                              <div />
-                            </div>
-                          ))
-                        : null}
-                    </>
-                    )}
-                  </div>
-                ) : (
-                  <div className="spotify-track-list">
-                    {searchStatus === "loading"
-                      ? Array.from({ length: 5 }).map((_, index) => (
-                          <div key={`skeleton-playlist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
-                            <div />
-                            <div />
-                            <div />
-                          </div>
-                        ))
-                      : null}
-                    {playlistResult.map((playlist) => (
-                      <PlaylistSearchRow key={playlist.id} playlist={playlist} onOpen={openSearchPlaylist} />
-                    ))}
-                    {searchStatus === "idle" ? <p className="spotify-empty">输入关键词开始搜索歌单，例如“周杰伦”或“深夜循环”。</p> : null}
-                    {searchStatus === "empty" ? <p className="spotify-empty">没有找到匹配歌单，换个关键词试试。</p> : null}
-                    {searchStatus === "error" ? <p className="error error-inline">{searchError}</p> : null}
-                    {searchLoadingMore
-                      ? Array.from({ length: searchLoadingPlaceholderCount }).map((_, index) => (
-                          <div key={`loading-playlist-${index}`} className="artist-search-skeleton-row" aria-hidden="true">
-                            <div />
-                            <div />
-                            <div />
-                          </div>
-                        ))
-                      : null}
-                  </div>
-                )}
-                {searchStatus === "success" && searchError ? <p className="error error-inline">{searchError}</p> : null}
-                {searchStatus === "success" && !canLoadMoreSearchResults && activeSearchResultCount > 0 ? <p className="spotify-empty">已展示全部搜索结果。</p> : null}
-              </div>
-            </section>
+            <SearchPanel
+              keyword={search.keyword}
+              onKeywordChange={search.setKeyword}
+              searchMode={search.searchMode}
+              onSwitchMode={search.switchSearchMode}
+              status={search.status}
+              error={search.error}
+              trackResult={search.trackResult}
+              artistResult={search.artistResult}
+              playlistResult={search.playlistResult}
+              searchAssist={search.searchAssist}
+              hotAssistCandidates={search.hotAssistCandidates}
+              suggestAssistCandidates={search.suggestAssistCandidates}
+              visibleHotAssistCount={search.visibleHotAssistCount}
+              visibleSuggestAssistCount={search.visibleSuggestAssistCount}
+              searchLoadingMore={search.searchLoadingMore}
+              canLoadMore={search.canLoadMore}
+              loadingPlaceholderCount={search.loadingPlaceholderCount}
+              activeResultCount={search.activeResultCount}
+              artistDetail={search.artistDetail}
+              artistDetailLoading={search.artistDetailLoading}
+              artistDetailError={search.artistDetailError}
+              inputRef={search.inputRef as Ref<HTMLInputElement>}
+              resultsBodyRef={search.resultsBodyRef as Ref<HTMLDivElement>}
+              hotAssistRowRef={search.hotAssistRowRef as Ref<HTMLDivElement>}
+              suggestAssistRowRef={search.suggestAssistRowRef as Ref<HTMLDivElement>}
+              favoriteSet={favoriteSet}
+              currentTrackId={currentTrackId}
+              isPlaying={player.isPlaying}
+              getTrackCover={(track) => resolveTrackCover(track, { width: 88 })}
+              onSubmit={() => {
+                void search.doSearch();
+              }}
+              onApplyAssistKeyword={search.applyKeywordAndSearch}
+              onOpenArtist={(artist) => {
+                void search.openArtistDetail(artist);
+              }}
+              onCloseArtistDetail={search.closeArtistDetail}
+              onOpenPlaylist={openSearchPlaylist}
+              onPlayTrack={(item) => {
+                player.playTrackNow(item);
+                player.setPlaying(true);
+              }}
+              onToggleFavorite={(item) => player.toggleFavorite(item)}
+              onPlayArtistTopTracks={playArtistTopTracks}
+              onAddArtistTopTracksToQueue={addArtistTopTracksToQueue}
+            />
           ) : null}
 
           {activeTab === "library" ? (
@@ -6084,6 +5311,7 @@ export function PlayerApp() {
                           liked={Boolean(favoriteSet[track.id])}
                           currentTrackId={currentTrackId}
                           isPlaying={player.isPlaying}
+                          coverUrl={resolveTrackCover(track, { width: 88 })}
                           onPlay={(item) => {
                             player.playTrackNow(item);
                             player.setPlaying(true);
@@ -6110,6 +5338,7 @@ export function PlayerApp() {
                           liked={Boolean(favoriteSet[track.id])}
                           currentTrackId={currentTrackId}
                           isPlaying={player.isPlaying}
+                          coverUrl={resolveTrackCover(track, { width: 88 })}
                           onPlay={(item) => {
                             player.playTrackNow(item);
                             player.setPlaying(true);
@@ -6193,7 +5422,8 @@ export function PlayerApp() {
 
       </section>
 
-      {!isDetailMounted ? (dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock) : null}
+      {/* Keep one shared dock for home + detail so the control bar never “changes skin”. */}
+      {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
 
       {playlistPortalTarget && homePlaylistPanel && homePlaylistPhase !== "closed"
         ? createPortal(
@@ -6453,15 +5683,40 @@ export function PlayerApp() {
           )
         : null}
 
-      {accountDialogOpen
+      {typeof document !== "undefined"
         ? createPortal(
-            <section className="account-dialog-overlay" role="dialog" aria-modal="true" aria-label="账号登录">
-              <button type="button" className="account-dialog-backdrop" aria-label="关闭登录窗口" onClick={closeAccountDialog} />
-              <form
+            <AnimatePresence>
+              {accountDialogOpen ? (
+                <motion.section
+                  key="account-auth-dialog"
+                  className="account-dialog-overlay stage-auth-overlay"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="账号登录"
+                  variants={withReducedMotion(overlayVariants, prefersReducedMotion)}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                >
+              <motion.button
+                type="button"
+                className="account-dialog-backdrop stage-auth-backdrop"
+                aria-label="关闭登录窗口"
+                onClick={closeAccountDialog}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: prefersReducedMotion ? 0.01 : 0.28 }}
+              />
+              <motion.form
                 ref={accountDialogPanelRef}
-                className={`account-dialog-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}
+                className={`account-dialog-panel stage-auth-panel ${isMobileUi ? "mobile" : "desktop"}`.trim()}
                 tabIndex={-1}
                 autoComplete="off"
+                variants={withReducedMotion(isMobileUi ? sheetMobileVariants : sheetVariants, prefersReducedMotion)}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
                 onKeyDown={(event) => trapTabWithin(accountDialogPanelRef.current, event)}
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -6470,15 +5725,27 @@ export function PlayerApp() {
                   }
                 }}
               >
-                <header className="account-dialog-head">
-                  <h3>{authFormMode === "login" ? "登录后可同步音乐库" : "创建账号并开启云同步"}</h3>
-                  <button type="button" className="ghost" onClick={closeAccountDialog}>
+                <div className="stage-auth-glow" aria-hidden="true" />
+                <header className="account-dialog-head stage-auth-head">
+                  <div className="stage-auth-head-copy">
+                    <span className="stage-auth-kicker">Echo Stage · Account</span>
+                    <h3>{authFormMode === "login" ? "欢迎回来" : "创建你的舞台账号"}</h3>
+                    <p className="stage-auth-desc">
+                      {authFormMode === "login"
+                        ? "登录后同步音乐库、好友与一起听进度。"
+                        : "注册后自动开启云同步，数据跟着你走。"}
+                    </p>
+                  </div>
+                  <button type="button" className="stage-auth-close ghost" onClick={closeAccountDialog}>
                     关闭
                   </button>
                 </header>
-                <div className="account-dialog-tabs">
+
+                <div className="account-dialog-tabs stage-auth-tabs" role="tablist" aria-label="登录或注册">
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={authFormMode === "login"}
                     className={authFormMode === "login" ? "active" : ""}
                     disabled={authFormSubmitting}
                     onClick={() => {
@@ -6490,6 +5757,8 @@ export function PlayerApp() {
                   </button>
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={authFormMode === "register"}
                     className={authFormMode === "register" ? "active" : ""}
                     disabled={authFormSubmitting}
                     onClick={() => {
@@ -6500,53 +5769,76 @@ export function PlayerApp() {
                     注册
                   </button>
                 </div>
-                <label className="account-form-label">
-                  邮箱
-                  <input
-                    type="email"
-                    placeholder="you@example.com"
-                    value={authFormState.email}
-                    disabled={authFormSubmitting}
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    onChange={(event) => setAuthFormState((previous) => ({ ...previous, email: event.target.value }))}
-                  />
-                </label>
-                <label className="account-form-label">
-                  密码
-                  <input
-                    type="password"
-                    placeholder="至少 8 位"
-                    value={authFormState.password}
-                    disabled={authFormSubmitting}
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(event) => setAuthFormState((previous) => ({ ...previous, password: event.target.value }))}
-                  />
-                </label>
-                {authFormMode === "register" ? (
-                  <label className="account-form-label">
-                    昵称（可选）
+
+                {/*
+                  Keep shared fields mounted so the panel height can layout-animate.
+                  Only the extra nickname field expands/collapses.
+                */}
+                <div className="stage-auth-fields">
+                  <label className="account-form-label stage-auth-field">
+                    邮箱
                     <input
-                      type="text"
-                      placeholder="例如：MiningQwQ"
-                      value={authFormState.nickname}
+                      type="email"
+                      placeholder="you@example.com"
+                      value={authFormState.email}
                       disabled={authFormSubmitting}
                       autoComplete="off"
                       autoCapitalize="off"
                       spellCheck={false}
-                      onChange={(event) => setAuthFormState((previous) => ({ ...previous, nickname: event.target.value }))}
+                      onChange={(event) => setAuthFormState((previous) => ({ ...previous, email: event.target.value }))}
                     />
                   </label>
-                ) : null}
-                {authFormError ? <p className="account-form-error">{authFormError}</p> : null}
-                <button type="submit" className="account-form-submit" disabled={authFormSubmitting}>
+                  <label className="account-form-label stage-auth-field">
+                    密码
+                    <input
+                      type="password"
+                      placeholder={authFormMode === "register" ? "至少 10 位，含大小写、数字与符号" : "输入密码"}
+                      value={authFormState.password}
+                      disabled={authFormSubmitting}
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(event) => setAuthFormState((previous) => ({ ...previous, password: event.target.value }))}
+                    />
+                  </label>
+                  {/*
+                    CSS grid 0fr→1fr expand (smoother than Motion height:auto).
+                    Field stays mounted so panel height interpolates without measure jank.
+                  */}
+                  <div
+                    className={`stage-auth-extra ${authFormMode === "register" ? "is-open" : ""}`.trim()}
+                    aria-hidden={authFormMode !== "register"}
+                  >
+                    <div className="stage-auth-extra-inner">
+                      <label className="account-form-label stage-auth-field">
+                        昵称（可选）
+                        <input
+                          type="text"
+                          placeholder="例如：MiningQwQ"
+                          value={authFormState.nickname}
+                          disabled={authFormSubmitting || authFormMode !== "register"}
+                          tabIndex={authFormMode === "register" ? 0 : -1}
+                          autoComplete="off"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          onChange={(event) => setAuthFormState((previous) => ({ ...previous, nickname: event.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {authFormError ? <p className="account-form-error stage-auth-error">{authFormError}</p> : null}
+
+                <button type="submit" className="account-form-submit stage-auth-submit" disabled={authFormSubmitting}>
                   {authFormSubmitting ? "处理中..." : authFormMode === "login" ? "登录并同步" : "注册并同步"}
                 </button>
-                <p className="account-form-note">未登录时继续本地保存；登录后自动开启云同步。</p>
-              </form>
-            </section>,
+                <p className="account-form-note stage-auth-note">
+                  未登录时仍可本地收听；登录后自动开启云同步。
+                </p>
+              </motion.form>
+                </motion.section>
+              ) : null}
+            </AnimatePresence>,
             document.body
           )
         : null}
@@ -6556,7 +5848,7 @@ export function PlayerApp() {
           <div className={`player-detail-backdrop phase-${detailPhase}`.trim()} onClick={closeDetail} />
           <article
             ref={detailScreenRef}
-            className={`player-detail-screen phase-${detailPhase}`.trim()}
+            className={`player-detail-screen stage-detail phase-${detailPhase}`.trim()}
             tabIndex={-1}
             onKeyDown={(event) => trapTabWithin(detailScreenRef.current, event)}
             style={
@@ -6601,13 +5893,28 @@ export function PlayerApp() {
                 }
               />
             ) : null}
-            <header className="detail-topbar">
+
+            <header className="detail-topbar stage-detail-topbar">
               <button className="detail-collapse-btn" onClick={closeDetail} aria-label="收起播放器">
                 <CollapseIcon />
               </button>
+              <div className="stage-detail-top-meta" aria-hidden={!isMobileUi}>
+                <strong>
+                  <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
+                </strong>
+                <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请选择歌曲开始播放"}</span>
+              </div>
+              <div className="detail-tab-row stage-detail-tabs">
+                <button type="button" className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
+                  歌词
+                </button>
+                <button type="button" className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
+                  歌曲信息
+                </button>
+              </div>
             </header>
 
-            <div className="detail-stage">
+            <div className="detail-stage stage-detail-stage">
               <section className="detail-stage-left">
                 <div className={`detail-art-spotlight ${player.isPlaying ? "is-playing" : ""}`.trim()}>
                   <div className="detail-art-glow" aria-hidden="true" />
@@ -6616,84 +5923,89 @@ export function PlayerApp() {
                     <div className="detail-art-cover" style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }} />
                   </div>
                 </div>
-                <div className="detail-bottom-meta">
+                <div className="detail-bottom-meta stage-detail-mobile-meta">
                   <h3>
                     <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
                   </h3>
                   <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
                 </div>
-                {!isMobileUi ? (
-                  <div className="detail-tab-row">
-                    <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
-                      歌词
-                    </button>
-                    <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")}>
-                      歌曲信息
-                    </button>
-                  </div>
-                ) : null}
               </section>
 
               <section className="detail-stage-right">
-                <div className="detail-title-block">
+                <div className="detail-title-block stage-detail-title">
+                  <p className="stage-detail-kicker">NOW PLAYING</p>
                   <h2>
                     <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
                   </h2>
-                  <p>
-                    专辑：{currentTrack?.album?.name ?? "未知专辑"}　歌手：{currentTrack?.artists.map((item) => item.name).join(" / ") || "未知歌手"}
+                  <p className="stage-detail-artists">
+                    {currentTrack?.artists.map((item) => item.name).join(" / ") || "未知歌手"}
                   </p>
+                  <p className="stage-detail-album">专辑 · {currentTrack?.album?.name ?? "未知专辑"}</p>
                 </div>
-                {isMobileUi ? (
-                  <div className="detail-tab-row detail-tab-row-mobile">
-                    <button className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")} type="button">
-                      歌词
-                    </button>
-                    <button className={detailTab === "meta" ? "active" : ""} onClick={() => setDetailTab("meta")} type="button">
-                      歌曲信息
-                    </button>
-                  </div>
-                ) : null}
 
                 {detailTab === "meta" ? (
-                  <div className="detail-meta-list">
+                  <div className="detail-meta-list stage-detail-meta">
                     <div className="detail-meta-copy">
-                      <p>时长：{formatMs(currentTrack?.durationMs ?? 0)}</p>
-                      {insightLoading ? <p>正在加载歌曲洞察...</p> : null}
+                      <p>
+                        <span>时长</span>
+                        <strong>{formatMs(currentTrack?.durationMs ?? 0)}</strong>
+                      </p>
+                      {insightLoading ? <p className="stage-detail-hint">正在加载歌曲洞察...</p> : null}
                       {trackInsight?.creators.length ? (
                         <p>
-                          创作者：
-                          {isMobileUi
-                            ? trackInsight.creators
-                                .slice(0, 2)
-                                .map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`)
-                                .join(" / ")
-                            : trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
+                          <span>创作者</span>
+                          <strong>
+                            {isMobileUi
+                              ? trackInsight.creators
+                                  .slice(0, 2)
+                                  .map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`)
+                                  .join(" / ")
+                              : trackInsight.creators.map((creator) => `${creator.name}${creator.role ? `（${creator.role}）` : ""}`).join(" / ")}
+                          </strong>
                         </p>
                       ) : null}
                       {trackInsight?.wikiSummary ? (
-                        <p>百科：{isMobileUi ? `${trackInsight.wikiSummary.slice(0, 56)}...` : trackInsight.wikiSummary}</p>
+                        <p className="stage-detail-wiki">
+                          <span>百科</span>
+                          <strong>{isMobileUi ? `${trackInsight.wikiSummary.slice(0, 72)}...` : trackInsight.wikiSummary}</strong>
+                        </p>
                       ) : null}
                     </div>
-                    {!isMobileUi ? (
-                      <section className="detail-control-card" aria-label="播放与下载控制">
-                        <div className="detail-control-card-head">
-                          <div>
-                            <span>播放与下载</span>
-                            <small>桌面端控制区会固定保留在可视范围内。</small>
-                          </div>
-                          {trackInsight?.chorusStartMs ? (
-                            <button
-                              type="button"
-                              className="meta-action-btn meta-action-btn-compact"
-                              onClick={() => handleSeekTo(trackInsight.chorusStartMs ?? 0)}
-                            >
-                              跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
-                            </button>
-                          ) : null}
+
+                    <section className="detail-control-card stage-detail-controls" aria-label="播放与下载控制">
+                      <div className="detail-control-card-head">
+                        <div>
+                          <span>播放与下载</span>
+                          <small>音质与下载链接</small>
                         </div>
-                        <div className="detail-control-card-body">
-                          <div className="download-row detail-control-row">
-                            <span id="playback-level-label" className="download-row-label">播放音质</span>
+                        {trackInsight?.chorusStartMs ? (
+                          <button
+                            type="button"
+                            className="meta-action-btn meta-action-btn-compact"
+                            onClick={() => handleSeekTo(trackInsight.chorusStartMs ?? 0)}
+                          >
+                            跳转副歌（{formatMs(trackInsight.chorusStartMs)}）
+                          </button>
+                        ) : null}
+                      </div>
+                      <div className="detail-control-card-body">
+                        <div className="download-row detail-control-row">
+                          <span id="playback-level-label" className="download-row-label">
+                            播放音质
+                          </span>
+                          {isMobileUi ? (
+                            <select
+                              id="playback-level-mobile"
+                              value={effectivePlayQualityLevel}
+                              onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
+                            >
+                              {currentTrackAvailablePlayQualityOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
                             <ThemedSelect
                               buttonId="playback-level"
                               labelId="playback-level-label"
@@ -6702,13 +6014,17 @@ export function PlayerApp() {
                               onChange={(nextValue) => player.setPlayQualityLevel(nextValue as PlayQualityLevel)}
                               className="menu-upward detail-control-select"
                             />
-                          </div>
-                          {trackQualityLoading ? <p className="detail-control-hint">正在侦测当前歌曲可用音质...</p> : null}
-                          {!trackQualityLoading && playQualityFallbackNotice ? (
-                            <p className="detail-control-hint">{playQualityFallbackNotice}</p>
-                          ) : null}
+                          )}
+                        </div>
+                        {trackQualityLoading ? <p className="detail-control-hint">正在侦测当前歌曲可用音质...</p> : null}
+                        {!trackQualityLoading && playQualityFallbackNotice ? (
+                          <p className="detail-control-hint">{playQualityFallbackNotice}</p>
+                        ) : null}
+                        {!isMobileUi ? (
                           <div className="download-row detail-control-row detail-control-row-download">
-                            <span id="download-level-label" className="download-row-label">下载音质</span>
+                            <span id="download-level-label" className="download-row-label">
+                              下载音质
+                            </span>
                             <ThemedSelect
                               buttonId="download-level"
                               labelId="download-level-label"
@@ -6737,63 +6053,39 @@ export function PlayerApp() {
                               {downloadState.loading ? "获取中..." : "获取下载链接"}
                             </button>
                           </div>
-                          {downloadState.message ? <p className="detail-control-hint">{downloadState.message}</p> : null}
-                        </div>
-                      </section>
-                    ) : null}
-                    {isMobileUi ? (
-                      <div className="download-row">
-                        <label htmlFor="playback-level-mobile">播放音质</label>
-                        <select
-                          id="playback-level-mobile"
-                          value={effectivePlayQualityLevel}
-                          onChange={(event) => player.setPlayQualityLevel(event.target.value as PlayQualityLevel)}
-                        >
-                          {currentTrackAvailablePlayQualityOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        {trackQualityLoading ? <p>正在侦测当前歌曲可用音质...</p> : null}
-                        {!trackQualityLoading && playQualityFallbackNotice ? <p>{playQualityFallbackNotice}</p> : null}
+                        ) : null}
+                        {downloadState.message ? <p className="detail-control-hint">{downloadState.message}</p> : null}
                       </div>
-                    ) : null}
-                    {downloadState.message ? <p>{downloadState.message}</p> : null}
+                    </section>
                   </div>
                 ) : (
-                  <div className="detail-lyric-shell">
-                    {!isMobileUi ? (
-                      <div className="detail-lyric-mode-row">
-                        <button
-                          className={detailLyricMode === "origin" ? "active" : ""}
-                          onClick={() => setDetailLyricMode("origin")}
-                          type="button"
-                        >
-                          原文
-                        </button>
-                        <button
-                          className={detailLyricMode === "translated" ? "active" : ""}
-                          onClick={() => setDetailLyricMode("translated")}
-                          disabled={!controller.lyricTranslatedLines.length}
-                          type="button"
-                        >
-                          翻译
-                        </button>
-                        <button
-                          className={detailLyricMode === "karaoke" ? "active" : ""}
-                          onClick={() => setDetailLyricMode("karaoke")}
-                          disabled={!controller.lyricKaraokeLines.length}
-                          type="button"
-                        >
-                          逐字
-                        </button>
-                      </div>
-                    ) : null}
-                    <div
-                      className="detail-lyric-scroll polished"
-                      ref={detailLyricRef}
-                    >
+                  <div className="detail-lyric-shell stage-detail-lyric">
+                    <div className="detail-lyric-mode-row">
+                      <button
+                        className={detailLyricMode === "origin" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("origin")}
+                        type="button"
+                      >
+                        原文
+                      </button>
+                      <button
+                        className={detailLyricMode === "translated" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("translated")}
+                        disabled={!controller.lyricTranslatedLines.length}
+                        type="button"
+                      >
+                        翻译
+                      </button>
+                      <button
+                        className={detailLyricMode === "karaoke" ? "active" : ""}
+                        onClick={() => setDetailLyricMode("karaoke")}
+                        disabled={!controller.lyricKaraokeLines.length}
+                        type="button"
+                      >
+                        逐字
+                      </button>
+                    </div>
+                    <div className="detail-lyric-scroll polished" ref={detailLyricRef}>
                       {!activeDetailLyricLines.length ? (
                         <p className="detail-empty">暂无该版本歌词</p>
                       ) : (
@@ -6812,14 +6104,13 @@ export function PlayerApp() {
                                 ref={bindLyricLineRef(index)}
                                 initial={false}
                                 animate={{
-                                  opacity: activeDetailLyricIndex < 0 ? 1 : distance === 0 ? 1 : distance === 1 ? 0.45 : 0.18,
-                                  scale: index === activeDetailLyricIndex ? 1 : 0.94
+                                  opacity: activeDetailLyricIndex < 0 ? 1 : distance === 0 ? 1 : distance === 1 ? 0.48 : 0.2,
+                                  scale: index === activeDetailLyricIndex ? 1 : 0.96,
+                                  y: index === activeDetailLyricIndex ? 0 : 2
                                 }}
-                                transition={{ duration: 0.5 }}
+                                transition={{ duration: 0.42 }}
                               >
-                                <p className={`detail-lyric-line ${index === activeDetailLyricIndex ? "active" : ""}`}>
-                                  {line.text}
-                                </p>
+                                <p className={`detail-lyric-line ${index === activeDetailLyricIndex ? "active" : ""}`}>{line.text}</p>
                                 {secondaryText ? <p className="detail-lyric-subline">{secondaryText}</p> : null}
                               </motion.div>
                             );
@@ -6833,101 +6124,28 @@ export function PlayerApp() {
               </section>
             </div>
 
-            <footer className="detail-dock immersive-player-dock player-dock-shell">
-              {!isMobileUi ? (
-                <div className="player-dock-progress-shell detail-player-progress-shell">
-                  <span>{formatMs(player.currentTimeMs)}</span>
-                  <input
-                    className="range-slider range-progress"
-                    type="range"
-                    min={0}
-                    max={Math.max(player.durationMs, 1)}
-                    value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
-                    style={{
-                      background: `linear-gradient(90deg, var(--brand) 0%, var(--brand) ${progressPercent}%, var(--detail-range-inactive) ${progressPercent}%, var(--detail-range-inactive) 100%)`
-                    }}
-                    onChange={(event) => handleSeekTo(Number(event.target.value))}
-                  />
-                  <span>{formatMs(player.durationMs)}</span>
-                </div>
-              ) : null}
-
-              <div className="player-dock-main-grid detail-player-main-grid">
-                <div className="spotify-player-left">
-                  <div className="player-dock-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} aria-hidden="true" />
-                  <div className="player-dock-copy">
-                    <p className="player-title">{currentTrack?.name ?? "未播放"}</p>
-                    <p className="player-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</p>
-                  </div>
-                </div>
-
-                <div className="spotify-player-center">
-                  <div className="spotify-player-inline-meta">
-                    <span className="player-inline-title">{currentTrack?.name ?? ""}</span>
-                    <span className="player-inline-subtitle">{currentTrack?.artists.map((item) => item.name).join(" / ") ?? ""}</span>
-                  </div>
-                  <div className="spotify-player-controls detail-dock-controls">
-                    <div className="player-control-side player-control-side-left">
-                      <IconButton ariaLabel="打开播放队列" title="打开播放队列" onClick={openQueuePanelFromDetail} className="ghost">
-                        <QueueIcon />
-                      </IconButton>
-                    </div>
-                    <div className="player-control-transport">
-                      <IconButton ariaLabel="上一首" title="上一首" disabled={controlDisabled} onClick={() => player.previousTrackByUser()} className="ghost">
-                        <PreviousIcon />
-                      </IconButton>
-                      <IconButton
-                        ariaLabel={player.isPlaying ? "暂停" : "播放"}
-                        title={player.isPlaying ? "暂停" : "播放"}
-                        className="play-main"
-                        disabled={controlDisabled}
-                        onClick={() => player.togglePlay()}
-                      >
-                        {controller.loadingSource ? <Spinner /> : player.isPlaying ? <PauseIcon /> : <PlayIcon />}
-                      </IconButton>
-                      <IconButton ariaLabel="下一首" title="下一首" disabled={controlDisabled} onClick={() => player.nextTrackByUser()} className="ghost">
-                        <NextIcon />
-                      </IconButton>
-                    </div>
-                    <div className="player-control-side player-control-side-right">
-                      <IconButton ariaLabel="循环" title="循环" onClick={() => player.nextMode()} className="ghost">
-                        {modeMeta.icon}
-                      </IconButton>
-                    </div>
-                  </div>
-                </div>
-
-                {!isMobileUi ? (
-                  <div className="spotify-player-right player-dock-volume detail-dock-volume">
-                    <div className="player-volume-stack">
-                      <div className="player-volume-popover">
-                        <span>{Math.round(player.volume * 100)}%</span>
-                        <input
-                          className="range-slider range-volume vertical"
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={player.volume}
-                          style={{
-                            background: `linear-gradient(180deg, var(--detail-range-inactive) 0%, var(--detail-range-inactive) ${100 - volumePercent}%, var(--brand) ${100 - volumePercent}%, var(--brand) 100%)`
-                          }}
-                          onChange={(event) => player.setVolume(Number(event.target.value))}
-                        />
-                      </div>
-                      <IconButton
-                        ariaLabel={isMuted ? "取消静音" : "静音"}
-                        title={isMuted ? "取消静音" : "静音"}
-                        onClick={toggleMute}
-                        className={isMuted ? "warn" : "ghost"}
-                      >
-                        <VolumeIcon muted={isMuted} />
-                      </IconButton>
-                    </div>
-                  </div>
-                ) : null}
+            <div className="stage-detail-progress" onClick={(event) => event.stopPropagation()}>
+              <div className="stage-detail-progress-times">
+                <span>{formatMs(player.currentTimeMs)}</span>
+                <span>{formatMs(player.durationMs)}</span>
               </div>
-            </footer>
+              <div className="stage-detail-progress-rail">
+                <input
+                  className="stage-detail-progress-input"
+                  type="range"
+                  min={0}
+                  max={Math.max(player.durationMs, 1)}
+                  value={Math.min(player.currentTimeMs, Math.max(player.durationMs, 1))}
+                  aria-label="播放进度"
+                  style={
+                    {
+                      "--progress": `${progressPercent}%`
+                    } as CSSProperties
+                  }
+                  onChange={(event) => handleSeekTo(Number(event.target.value))}
+                />
+              </div>
+            </div>
           </article>
         </section>
       ) : null}

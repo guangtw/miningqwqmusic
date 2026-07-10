@@ -12,8 +12,9 @@ describe("immersive UI rules", () => {
     expect(IMMERSIVE_NAV_ITEMS.every((item) => item.label.length > 0)).toBe(true);
   });
 
-  it("uses a cool obsidian fallback when artwork color is unavailable", () => {
+  it("uses a stage-green fallback when artwork color is unavailable", () => {
     expect(normalizeAmbientRgb(null)).toEqual(OBSIDIAN_AMBIENT_FALLBACK);
+    expect(OBSIDIAN_AMBIENT_FALLBACK).toEqual({ red: 28, green: 72, blue: 48 });
     expect(normalizeAmbientRgb({ red: Number.NaN, green: 90, blue: 120 })).toEqual(OBSIDIAN_AMBIENT_FALLBACK);
   });
 

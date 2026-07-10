@@ -1,47 +1,44 @@
-# 沉浸式界面重构进度
+# Echo Stage 界面重构进度
 
-最后更新：2026-06-30
+最后更新：2026-07-10
 
-| 阶段 | 状态 | 已完成 | 待完成 | 验证证据 |
-| --- | --- | --- | --- | --- |
-| 视觉基准与设计文档 | 已完成 | 桌面/移动概念图、设计说明 | 无 | 概念图路径记录于设计说明 |
-| 设计系统与壳层 | 已完成 | 黑曜石 token、动态环境光、悬浮图标导航、完整主画布、删除常驻右栏与 Logo | 无 | `floating-nav.test.tsx`；桌面 E2E |
-| 编辑型首页 | 已完成 | 主专题、两条横向轨道、空状态、有限磁吸与低动态降级 | 无 | `editorial-home.test.tsx`；桌面/移动截图 |
-| 搜索与音乐库 | 已完成 | 编辑标题、固定搜索命令区、轻量列表、分段音乐库、移动双列收敛 | 无 | 搜索错误 E2E；浏览器移动搜索复核 |
-| 播放坞与详情 | 已完成 | 桌面悬浮坞、移动迷你播放器、队列入口、动态色谱、歌词字号/景深/双语色彩改进 | 无 | 队列、详情、歌词、控件顺序 E2E |
-| 移动端 | 已完成 | 四项底部胶囊、迷你播放器、横向推荐轨道和移动搜索/音乐库布局 | 无 | 390×844 浏览器截图；移动 E2E |
-| 清理与总体验收 | 已完成 | 删除 MagicBento/Lightfall，移除 `gsap`/`ogl`，生产构建和关键 E2E | 两项既有播放音质刷新单测仍失败 | `npm run build`；关键 E2E 通过 |
+## 方向
 
-## 已知约束
+将现状「黑曜石 + 紫灰玻璃编辑风」重设计为 **Echo Stage**：
 
-- 工作区进入重构前已有未提交的 Bento、Lightfall、AnimatedList 和歌词改动。
-- 保留并改进歌词与通用列表动效；MagicBento、Lightfall、粒子和全局追光不进入最终设计。
-- 不修改 `/api/music/*`、`/api/account/*`、Zustand 持久化结构或后端服务。
+- 深色舞台底 + 品牌绿 `#22d35e` 强调
+- 克制玻璃（仅导航 / 播放坞 / 抽屉）
+- 封面驱动环境光（绿灰 fallback）
+- 清晰中文标题，信息密度适中
 
-## 视觉对照记录
+## 阶段
 
-| 对照点 | 概念要求 | 实渲染结果 |
+| 阶段 | 状态 | 说明 |
 | --- | --- | --- |
-| 壳层 | 单一画布、无固定三栏 | 主内容完整展开，右栏与品牌侧栏均已移除 |
-| 导航 | 左侧纯图标悬浮胶囊 | 六个清晰图标入口，短屏不与播放坞重叠 |
-| 首页 | 一张主专题加横向内容轨道 | 真实推荐数据驱动主专题与两条轨道 |
-| 材质与颜色 | 黑曜石底色、有限玻璃、封面冷色环境光 | 玻璃仅用于导航、播放坞和抽屉；背景随封面色谱变化 |
-| 播放区域 | 桌面悬浮坞、移动迷你播放器与四项底栏 | 两端均保持内容可见，移动端保留播放和队列入口 |
-| 动效 | 空间转场与有限磁吸 | 精选卡片小幅磁吸；触屏和低动态模式自动禁用 |
+| 设计系统 token | 已完成 | `--stage-*` + brand 绿系覆盖 immersive 区 |
+| 壳层与导航 | 已完成 | 哑光侧轨 + 绿指示条 active |
+| 编辑首页 | 已完成 | 舞台海报 Hero、实心绿 CTA、单封面、双轨文案卡 |
+| 搜索 / 音乐库 | 已完成 | 搜索：舞台融底无套盒、表头无黑条、服务端批量补封面 + 客户端兜底；库：中等页眉与分段 thumb |
+| 播放坞与详情 | 已完成 | 独立 `PlayerDock` 组件；进度内嵌；实心绿播放键；详情共用 |
+| 移动端 | 已完成 | Hero 收敛、底栏绿 active |
+| 验证 | 已完成 | 相关单测 25/25；`npm run build` 通过；紫灰残留已清扫；详情/坞/抽屉/浅色对齐 |
 
-## 2026-06-30 继续完善记录
 
-- 二级界面：更多推荐、歌手详情、歌单/工具抽屉补齐黑曜石玻璃材质与编辑型标题尺度，不再直接露出上一版工具卡风格。
-- 播放详情：详情页打开时卸载全局 `immersive-player-dock`，只保留详情页自己的 `detail-dock`，避免双控制栏。
-- 首页空间：桌面壳层底部预留从全局大 padding 改为主滚动区内部滚动余量，底部播放坞改为浮动玻璃，不再用不透明遮罩压缩首页。
-- Aceternity 组件：桌面/移动播放坞接入项目内 `GlassSurface`，保留低饱和液态玻璃质感。
-- 磁吸交互：精选卡片 pointer move 改为 `requestAnimationFrame` 节流，位移幅度降低到 2.4px，主要保留边缘光斑，减少悬停颤动。
-- 移动端修正：`GlassSurface` 默认宽度导致移动播放坞右侧溢出，已在移动断点强制收敛到 `calc(100vw - 32px)`。
+## 约束（保持）
 
-## 验证状态
+- 不修改 `/api/music/*`、`/api/account/*`
+- 不改 Zustand 持久化结构
+- 不重写 `use-player-controller` 播放源逻辑
+- 不接入 mineradio iframe
 
-- `npm run build`：通过。
-- 新增/相关单元测试：通过。
-- 桌面/移动关键 E2E：导航、右栏删除、主题、账户、搜索、队列、播放详情和歌词路径通过。
-- 全量 Vitest：145/147 通过；`player-controller-regression.test.tsx` 中两项播放音质切换测试持续失败，失败点为控制器没有发起预期的新播放源请求。本次重构未修改 `use-player-controller.ts` 或播放质量逻辑，作为既有问题保留记录。
-- 本轮补丁追加验证：`npm run test:run -- tests/unit/immersive-ui.test.ts tests/unit/floating-nav.test.tsx tests/unit/editorial-home.test.tsx` 9/9 通过；`npm run build` 通过；Playwright 兜底验证 1366×700 详情页 `globalDockCount=0`、`detailDockCount=1`，390×844 移动端 `overflowX=0`、四项底部导航存在。
+## 关键文件
+
+- `app/globals.css` — Echo Stage tokens 与全端壳层样式
+- `src/components/immersive/editorial-home.tsx`
+- `src/components/immersive/floating-nav.tsx`
+- `src/components/immersive/magnetic-card.tsx`
+- `src/components/immersive/search-panel.tsx` — 搜索页展示
+- `src/hooks/use-search-panel.ts` — 搜索状态与分页
+- `src/components/track-row.tsx` — 共用曲目行
+- `src/components/player-app.tsx` — `stage-shell` class
+- `src/lib/immersive-ui.ts` — ambient fallback

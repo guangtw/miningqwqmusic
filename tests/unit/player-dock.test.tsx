@@ -54,6 +54,19 @@ describe("PlayerDock", () => {
     expect(onOpenDetail).toHaveBeenCalledWith("pointer");
   });
 
+  it("removes dock metadata from the control layout while the shared detail layer is in flight", () => {
+    render(<PlayerDock {...baseProps} hideTrackMeta />);
+
+    expect(document.querySelector(".stage-player-dock.detail-meta-in-flight")).toBeTruthy();
+    expect(document.querySelector(".stage-player-dock .player-dock-meta")).not.toBeInTheDocument();
+  });
+
+  it("reserves the original metadata slot before receiving the returning shared layer", () => {
+    render(<PlayerDock {...baseProps} returningTrackMeta />);
+
+    expect(document.querySelector(".stage-player-dock.detail-meta-returning .player-dock-meta")).toBeTruthy();
+  });
+
   it("does not open detail for empty dock meta", () => {
     const onOpenDetail = vi.fn();
     render(

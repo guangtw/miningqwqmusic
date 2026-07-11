@@ -34,10 +34,10 @@
   --detail-dock-bg: linear-gradient(180deg, rgba(10, 16, 24, 0.22), rgba(6, 10, 15, 0.78));
   --detail-range-inactive: rgba(255, 255, 255, 0.26);
   --detail-palette-transition-ms: 960ms;
-  --detail-open-duration: 0.62s;
-  --detail-open-ease: cubic-bezier(0.2, 0.86, 0.16, 1);
-  --detail-close-duration: 0.36s;
-  --detail-close-ease: cubic-bezier(0.32, 0, 0.67, 0);
+  --detail-open-duration: 0.704s;
+  --detail-open-ease: cubic-bezier(0.16, 0.72, 0.22, 1);
+  --detail-close-duration: 0.624s;
+  --detail-close-ease: cubic-bezier(0.32, 0, 0.22, 1);
   --danger: #ff7c95;
   --warning: #ffc0cd;
   --glow-brand: rgba(34, 211, 94, 0.3);
@@ -10325,6 +10325,10 @@ body {
   animation: dock-enter 0.5s var(--ease) both;
   overflow: visible;
   pointer-events: auto;
+  transition:
+    width var(--detail-dock-motion-duration, var(--detail-open-duration)) var(--detail-open-ease),
+    min-height var(--detail-dock-motion-duration, var(--detail-open-duration)) var(--detail-open-ease),
+    padding var(--detail-dock-motion-duration, var(--detail-open-duration)) var(--detail-open-ease);
 }
 
 :root[data-theme="light"] .immersive-player-dock,
@@ -10468,6 +10472,210 @@ body {
 .immersive-player-dock .player-inline-subtitle {
   color: var(--stage-muted);
   font-size: 0.86rem;
+}
+
+/* The dock keeps only transport controls while a viewport-level shared layer
+   carries its artwork and copy into the detail scene. */
+.stage-player-dock.detail-meta-in-flight {
+  width: min(560px, calc(100vw - 32px)) !important;
+  min-height: 78px;
+  padding-inline: 18px !important;
+}
+
+.stage-player-dock.detail-meta-in-flight .player-dock-main-grid {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
+}
+
+.stage-player-dock.detail-meta-in-flight .player-dock-center {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-self: stretch;
+}
+
+.stage-player-dock.detail-meta-in-flight .player-dock-volume {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 4;
+}
+
+.stage-player-dock.detail-meta-returning {
+  --detail-dock-motion-duration: var(--detail-close-duration);
+}
+
+.stage-player-dock.detail-meta-returning .player-dock-meta {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.detail-shared-track-meta {
+  --detail-art-size: min(31vw, 336px);
+  position: fixed;
+  z-index: 130;
+  left: var(--detail-origin-left);
+  top: var(--detail-origin-top);
+  width: var(--detail-origin-width);
+  height: var(--detail-origin-height);
+  display: block;
+  pointer-events: none;
+  transition:
+    left var(--detail-open-duration) var(--detail-open-ease),
+    top var(--detail-open-duration) var(--detail-open-ease),
+    width var(--detail-open-duration) var(--detail-open-ease),
+    height var(--detail-open-duration) var(--detail-open-ease),
+    gap var(--detail-open-duration) var(--detail-open-ease);
+  will-change: left, top, width, height;
+}
+
+.detail-shared-track-meta.phase-open {
+  left: clamp(72px, 13vw, 190px);
+  top: clamp(132px, 27vh, 252px);
+  width: var(--detail-art-size);
+  height: calc(var(--detail-art-size) + 82px);
+}
+
+.detail-shared-track-meta.phase-closing {
+  transition-duration: var(--detail-close-duration);
+  transition-timing-function: var(--detail-close-ease);
+  transition-delay: 0ms;
+}
+
+.detail-shared-track-cover {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 54px;
+  height: 54px;
+  border: 1px solid var(--stage-line);
+  border-radius: 16px;
+  background-color: #101614;
+  background-position: center;
+  background-size: cover;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
+  transition:
+    left var(--detail-open-duration) var(--detail-open-ease),
+    top var(--detail-open-duration) var(--detail-open-ease),
+    width var(--detail-open-duration) var(--detail-open-ease),
+    height var(--detail-open-duration) var(--detail-open-ease),
+    border-radius var(--detail-open-duration) var(--detail-open-ease),
+    box-shadow var(--detail-open-duration) var(--detail-open-ease);
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-cover {
+  width: var(--detail-art-size);
+  height: var(--detail-art-size);
+  border-radius: 28px;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.detail-shared-track-meta.phase-closing .detail-shared-track-cover {
+  transition-duration: var(--detail-close-duration);
+  transition-timing-function: var(--detail-close-ease);
+  transition-delay: 0ms;
+}
+
+.detail-shared-track-copy {
+  position: absolute;
+  top: 50%;
+  left: 66px;
+  width: calc(100% - 66px);
+  height: 40px;
+  min-width: 0;
+  transform: translateY(-50%);
+  transition:
+    top var(--detail-open-duration) var(--detail-open-ease),
+    left var(--detail-open-duration) var(--detail-open-ease),
+    width var(--detail-open-duration) var(--detail-open-ease),
+    height var(--detail-open-duration) var(--detail-open-ease),
+    transform var(--detail-open-duration) var(--detail-open-ease),
+    gap var(--detail-open-duration) var(--detail-open-ease);
+}
+
+.detail-shared-track-copy p,
+.detail-shared-track-copy span {
+  position: absolute;
+  left: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-shared-track-copy p {
+  top: 0;
+  color: var(--stage-text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  transition:
+    left var(--detail-open-duration) var(--detail-open-ease),
+    transform var(--detail-open-duration) var(--detail-open-ease),
+    font-size var(--detail-open-duration) var(--detail-open-ease),
+    line-height var(--detail-open-duration) var(--detail-open-ease);
+}
+
+.detail-shared-track-copy span {
+  top: 23px;
+  color: var(--stage-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    top var(--detail-open-duration) var(--detail-open-ease),
+    left var(--detail-open-duration) var(--detail-open-ease),
+    transform var(--detail-open-duration) var(--detail-open-ease),
+    font-size var(--detail-open-duration) var(--detail-open-ease),
+    line-height var(--detail-open-duration) var(--detail-open-ease);
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy {
+  top: calc(var(--detail-art-size) + 14px);
+  left: 0;
+  width: 100%;
+  height: 68px;
+  transform: translateY(0);
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy p,
+.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy p {
+  font-size: clamp(1.45rem, 1.7vw + 0.8rem, 2.2rem);
+  line-height: 1.1;
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
+  top: clamp(39px, 2vw + 18px, 48px);
+  font-size: clamp(0.95rem, 0.4vw + 0.82rem, 1.08rem);
+  font-weight: 600;
+}
+
+.detail-shared-track-meta.phase-closing .detail-shared-track-copy {
+  transition-duration: var(--detail-close-duration);
+  transition-timing-function: var(--detail-close-ease);
+  transition-delay: 0ms;
+}
+
+.detail-shared-track-meta.phase-closing .detail-shared-track-copy p,
+.detail-shared-track-meta.phase-closing .detail-shared-track-copy span {
+  transition-duration: var(--detail-close-duration);
+  transition-timing-function: var(--detail-close-ease);
+}
+
+@media (max-width: 700px), (pointer: coarse) {
+  .detail-shared-track-meta.phase-open {
+    --detail-art-size: min(56vw, 280px);
+    left: calc(50% - min(28vw, 140px));
+    top: clamp(88px, 15vh, 132px);
+  }
 }
 
 .immersive-player-dock .spotify-player-center,

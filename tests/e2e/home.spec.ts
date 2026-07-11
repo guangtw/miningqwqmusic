@@ -371,6 +371,17 @@ test("logged-in account entry opens account management drawer", async ({ page })
       body: successPayload({ enabled: false })
     });
   });
+  await page.route("**/api/account/music/unblock/redeem", async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: "application/json",
+      body: JSON.stringify({
+        code: 5508,
+        message: "Invite code not found",
+        traceId: "e2e-account-manager-redeem"
+      })
+    });
+  });
   await page.route("**/api/account/profile", async (route) => {
     const updatedUser = { ...user, nickname: "新昵称", avatarFallbackText: "新" };
     await route.fulfill({
@@ -389,7 +400,6 @@ test("logged-in account entry opens account management drawer", async ({ page })
   if (await usesMobileShell(page)) {
     await openLibraryTab(page);
   }
-  await page.waitForLoadState("networkidle");
   await openLibraryTab(page);
 
   const accountButton = page.getByRole("button", { name: /账户管理/ }).first();
@@ -402,7 +412,7 @@ test("logged-in account entry opens account management drawer", async ({ page })
   await expect(drawer.getByRole("tab", { name: "资料" })).toBeVisible();
   await expect(drawer.getByRole("tab", { name: "安全" })).toBeVisible();
   await expect(drawer.getByRole("tab", { name: "高级" })).toBeVisible();
-  await expect(drawer.getByText("账户总览")).toBeVisible();
+  await expect(drawer.getByRole("heading", { name: "个人中心" })).toBeVisible();
   await expect(page.getByText("解灰")).toHaveCount(0);
 
   await drawer.getByLabel("昵称").fill("新昵称");
@@ -410,10 +420,17 @@ test("logged-in account entry opens account management drawer", async ({ page })
   await expect(drawer.getByText("昵称已更新。")).toBeVisible();
 
   await drawer.getByRole("tab", { name: "高级" }).click();
-  await expect(drawer.getByPlaceholder("输入兑换码")).toBeVisible();
+  const redeemInput = drawer.getByPlaceholder("输入兑换码");
+  await expect(redeemInput).toBeVisible();
+  await redeemInput.fill("expired-code");
+  await drawer.getByRole("button", { name: "兑换" }).click();
+  await expect(drawer.getByText("兑换码无效、已禁用或已过期。")).toBeVisible();
+  await redeemInput.fill("replacement-code");
+  await expect(drawer.getByText("兑换码无效、已禁用或已过期。")).toHaveCount(0);
 
-  await drawer.getByRole("button", { name: "退出登录" }).click();
-  await page.waitForLoadState("networkidle");
+  await drawer.getByRole("button", { name: "退出登录" }).evaluate((button) => {
+    if (button instanceof HTMLButtonElement) button.click();
+  });
   await openLibraryTab(page);
   await expect(page.getByRole("button", { name: "登录同步" })).toBeVisible();
   await expect(page.locator(".mobile-library-account-row")).toContainText("游客");

@@ -1,24 +1,99 @@
- ⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
-Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
  ⨯ TypeError: __webpack_modules__[moduleId] is not a function
-    at __webpack_exec__ (C:\MiningQwQMusic\.next\server\app\page.js:663:39)
-    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:664:237)
-    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:664:47)
-    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\page.js:667:3) {
+    at __webpack_exec__ (C:\MiningQwQMusic\.next\server\app\page.js:751:39)
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:752:237)
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:752:47)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\page.js:755:3) {
   page: '/'
 }
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app-paths-manifest.json'] {
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⨯ Failed to generate static paths for /api/account/[...path]:
+[Error: Cannot find module 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'
+Require stack:
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Failed to generate static paths for /api/music/track/[id]/play-url:
+[Error: Cannot find module 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js'
+Require stack:
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
+- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
+  type: 'Error',
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\app-paths-manifest.json',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\music\\track\\[id]\\play-url\\route.js',
+  page: '/api/music/track/85571/play-url'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\quality-options\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\music\\track\\[id]\\quality-options\\route.js',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\account\\[...path]\\route.js',
+  page: '/api/account/auth/me'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\account\\[...path]\\route.js',
   page: '/api/account/auth/refresh'
 }
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages-manifest.json'] {
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\routes-manifest.json'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\pages-manifest.json'
+  path: 'C:\\MiningQwQMusic\\.next\\routes-manifest.json',
+  page: '/api/music/discover/search-assist'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
 }
  ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
   errno: -4058,
@@ -33,33 +108,75 @@ Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allow
   syscall: 'open',
   path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
 }
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/play-url'
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\account\\[...path]\\route.js',
+  page: '/api/account/auth/refresh'
 }
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/play-url'
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\account\\[...path]\\route.js',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\quality-options\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\music\\track\\[id]\\quality-options\\route.js',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development-fallback\0.pack.gz'
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\music\\track\\[id]\\play-url\\route.js',
+  page: '/api/music/track/1957838347/play-url'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\play-url\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\music\\track\\[id]\\play-url\\route.js',
+  page: '/api/music/track/85571/play-url'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\api\\account\\[...path]\\route.js',
+  page: '/api/account/auth/refresh'
 }
  ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
   errno: -4058,
@@ -73,85 +190,80 @@ Require stack:
   syscall: 'open',
   path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
 }
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\quality-options\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/quality-options'
-}
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
 }
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\insight\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/insight'
-}
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\insight\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/insight'
-}
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
 }
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
 }
- ⨯ [Error: Cannot find module './vendor-chunks/next.js'
-Require stack:
-- C:\MiningQwQMusic\.next\server\webpack-runtime.js
-- C:\MiningQwQMusic\.next\server\app\api\music\track\[id]\lyric\route.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
-- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
-- C:\MiningQwQMusic\node_modules\next\dist\server\dev\static-paths-worker.js
-- C:\MiningQwQMusic\node_modules\next\dist\compiled\jest-worker\processChild.js] {
-  type: 'Error',
-  code: 'MODULE_NOT_FOUND',
-  requireStack: [Array],
-  page: '/api/music/track/track-long-1/lyric'
-}
- ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
   errno: -4058,
   code: 'ENOENT',
   syscall: 'open',
-  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
 }
-<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz'
-<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz'
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\app\favicon.ico\route.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
+  page: '/favicon.ico'
+}

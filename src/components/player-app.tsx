@@ -117,6 +117,7 @@ type DetailViewTab = "lyric" | "meta";
 type DetailLyricMode = "origin" | "translated" | "karaoke";
 type DetailModalPhase = "closed" | "opening" | "open" | "closing";
 type DetailOpenInteraction = "pointer" | "keyboard";
+type DetailDockOrigin = { left: number; top: number; width: number; height: number };
 type PlaylistPanelPhase = "closed" | "opening" | "open" | "closing";
 type DetailPalette = {
   bgA: string;
@@ -150,7 +151,8 @@ type AccountManagerTab = "profile" | "security" | "advanced" | "desktop";
 type ListenDrawerTab = "room" | "friends" | "activity";
 type ListenActivityTab = "listen-invites" | "friend-requests";
 
-const DETAIL_ANIMATION_MS = 360;
+const DETAIL_ANIMATION_MS = 640;
+const DETAIL_SHARED_START_HOLD_MS = 90;
 const PLAYLIST_PANEL_ANIMATION_MS = 260;
 const PALETTE_TRANSITION_MS = 960;
 const LISTEN_HEARTBEAT_INTERVAL_MS = 45_000;
@@ -1012,6 +1014,7 @@ export function PlayerApp() {
   const search = useSearchPanel({ active: activeTab === "search" });
   const [libraryView, setLibraryView] = useState<LibraryView>("library-favorites");
   const [detailPhase, setDetailPhase] = useState<DetailModalPhase>("closed");
+  const [detailDockOrigin, setDetailDockOrigin] = useState<DetailDockOrigin | null>(null);
   const [detailTab, setDetailTab] = useState<DetailViewTab>("lyric");
   const [detailLyricMode, setDetailLyricMode] = useState<DetailLyricMode>("origin");
   const [currentPalette, setCurrentPalette] = useState<DetailPalette>(NEUTRAL_DETAIL_PALETTE);
@@ -1133,6 +1136,7 @@ export function PlayerApp() {
   const detailCloseTimerRef = useRef<number | null>(null);
   const detailOpenFrameRef = useRef<number | null>(null);
   const detailOpenSecondFrameRef = useRef<number | null>(null);
+  const detailOpenTimerRef = useRef<number | null>(null);
   const detailOpenInteractionRef = useRef<DetailOpenInteraction>("pointer");
   const paletteTransitionTimerRef = useRef<number | null>(null);
   const homePlaylistCloseTimerRef = useRef<number | null>(null);
@@ -2313,6 +2317,7 @@ export function PlayerApp() {
   }, [isAccountEnabled, restoreAuthenticatedSession]);
 
   const handleRedeemMusicUnblockInvite = useCallback(async () => {
+    if (musicUnblockLoading) return;
     if (authStatus !== "authenticated") {
       setMusicUnblockError("请先登录账号后再兑换。");
       return;
@@ -2339,7 +2344,7 @@ export function PlayerApp() {
     } finally {
       setMusicUnblockLoading(false);
     }
-  }, [authStatus, musicUnblockInviteInput]);
+  }, [authStatus, musicUnblockInviteInput, musicUnblockLoading]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
@@ -3374,6 +3379,7 @@ export function PlayerApp() {
     const returnFocusElement = detailReturnFocusRef.current;
     detailReturnFocusRef.current = null;
     setDetailPhase("closed");
+    setDetailDockOrigin(null);
     if (returnFocusElement?.isConnected) {
       returnFocusElement.focus({ preventScroll: true });
     }
@@ -3390,6 +3396,10 @@ export function PlayerApp() {
     if (detailOpenSecondFrameRef.current) {
       window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
       detailOpenSecondFrameRef.current = null;
+    }
+    if (detailOpenTimerRef.current) {
+      window.clearTimeout(detailOpenTimerRef.current);
+      detailOpenTimerRef.current = null;
     }
     setDetailPhase("closing");
     detailCloseTimerRef.current = window.setTimeout(() => {
@@ -3434,15 +3444,27 @@ export function PlayerApp() {
       window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
       detailOpenSecondFrameRef.current = null;
     }
+    if (detailOpenTimerRef.current) {
+      window.clearTimeout(detailOpenTimerRef.current);
+      detailOpenTimerRef.current = null;
+    }
     if (!popstateHandlingRef.current) {
       pushHistoryGuardState("detail", activeTabRef.current);
+    }
+    const dockMeta = playerDockRef.current?.querySelector<HTMLElement>(".player-dock-meta");
+    if (dockMeta) {
+      const { left, top, width, height } = dockMeta.getBoundingClientRect();
+      setDetailDockOrigin({ left, top, width, height });
     }
     setDetailPhase("opening");
     detailOpenFrameRef.current = window.requestAnimationFrame(() => {
       detailOpenFrameRef.current = null;
       detailOpenSecondFrameRef.current = window.requestAnimationFrame(() => {
         detailOpenSecondFrameRef.current = null;
-        setDetailPhase("open");
+        detailOpenTimerRef.current = window.setTimeout(() => {
+          detailOpenTimerRef.current = null;
+          setDetailPhase("open");
+        }, DETAIL_SHARED_START_HOLD_MS);
       });
     });
   };
@@ -3691,6 +3713,9 @@ export function PlayerApp() {
       }
       if (detailOpenSecondFrameRef.current) {
         window.cancelAnimationFrame(detailOpenSecondFrameRef.current);
+      }
+      if (detailOpenTimerRef.current) {
+        window.clearTimeout(detailOpenTimerRef.current);
       }
       if (paletteTransitionTimerRef.current) {
         window.clearTimeout(paletteTransitionTimerRef.current);
@@ -4683,6 +4708,8 @@ export function PlayerApp() {
     <PlayerDock
       variant="global"
       dockRef={playerDockRef}
+      hideTrackMeta={detailPhase === "opening" || detailPhase === "open"}
+      returningTrackMeta={detailPhase === "closing"}
       isMobile={isMobileUi}
       canOpenDetail={canOpenDetail}
       title={currentTrack?.name ?? "还没有播放音乐"}
@@ -4729,6 +4756,31 @@ export function PlayerApp() {
       onToggleMute={toggleMute}
     />
   );
+
+  const detailSharedTrackMeta =
+    detailDockOrigin && detailPhase !== "closed" && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            className={`detail-shared-track-meta phase-${detailPhase}`}
+            aria-hidden="true"
+            style={
+              {
+                "--detail-origin-left": `${detailDockOrigin.left}px`,
+                "--detail-origin-top": `${detailDockOrigin.top}px`,
+                "--detail-origin-width": `${detailDockOrigin.width}px`,
+                "--detail-origin-height": `${detailDockOrigin.height}px`
+              } as CSSProperties
+            }
+          >
+            <div className="detail-shared-track-cover" style={{ backgroundImage: `url(${currentCoverUrl || DEFAULT_COVER_URL})` }} />
+            <div className="detail-shared-track-copy">
+              <p>{currentTrack?.name ?? "还没有播放音乐"}</p>
+              <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "从发现页开始探索"}</span>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   const themeSwitchControl = (
     <button
@@ -4933,7 +4985,11 @@ export function PlayerApp() {
               >
                 <input
                   value={musicUnblockInviteInput}
-                  onChange={(event) => setMusicUnblockInviteInput(event.target.value)}
+                  onChange={(event) => {
+                    setMusicUnblockInviteInput(event.target.value);
+                    setMusicUnblockError(null);
+                    setMusicUnblockMessage(null);
+                  }}
                   placeholder="输入兑换码"
                   disabled={musicUnblockLoading}
                   autoComplete="off"
@@ -5424,6 +5480,7 @@ export function PlayerApp() {
 
       {/* Keep one shared dock for home + detail so the control bar never “changes skin”. */}
       {dockPortalTarget ? createPortal(playerDock, dockPortalTarget) : playerDock}
+      {detailSharedTrackMeta}
 
       {playlistPortalTarget && homePlaylistPanel && homePlaylistPhase !== "closed"
         ? createPortal(
@@ -5898,12 +5955,6 @@ export function PlayerApp() {
               <button className="detail-collapse-btn" onClick={closeDetail} aria-label="收起播放器">
                 <CollapseIcon />
               </button>
-              <div className="stage-detail-top-meta" aria-hidden={!isMobileUi}>
-                <strong>
-                  <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
-                </strong>
-                <span>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请选择歌曲开始播放"}</span>
-              </div>
               <div className="detail-tab-row stage-detail-tabs">
                 <button type="button" className={detailTab === "lyric" ? "active" : ""} onClick={() => setDetailTab("lyric")}>
                   歌词
@@ -5915,34 +5966,9 @@ export function PlayerApp() {
             </header>
 
             <div className="detail-stage stage-detail-stage">
-              <section className="detail-stage-left">
-                <div className={`detail-art-spotlight ${player.isPlaying ? "is-playing" : ""}`.trim()}>
-                  <div className="detail-art-glow" aria-hidden="true" />
-                  <div className="detail-art-ripple" aria-hidden="true" />
-                  <div className="detail-art-frame">
-                    <div className="detail-art-cover" style={{ backgroundImage: `url(${resolveTrackCover(currentTrack)})` }} />
-                  </div>
-                </div>
-                <div className="detail-bottom-meta stage-detail-mobile-meta">
-                  <h3>
-                    <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
-                  </h3>
-                  <p>{currentTrack?.artists.map((item) => item.name).join(" / ") ?? "请先在搜索页选择歌曲开始播放"}</p>
-                </div>
-              </section>
+              <section className="detail-stage-left detail-shared-art-target" aria-hidden="true" />
 
               <section className="detail-stage-right">
-                <div className="detail-title-block stage-detail-title">
-                  <p className="stage-detail-kicker">NOW PLAYING</p>
-                  <h2>
-                    <MarqueeText text={currentTrack?.name ?? "还没有播放任何歌曲"} />
-                  </h2>
-                  <p className="stage-detail-artists">
-                    {currentTrack?.artists.map((item) => item.name).join(" / ") || "未知歌手"}
-                  </p>
-                  <p className="stage-detail-album">专辑 · {currentTrack?.album?.name ?? "未知专辑"}</p>
-                </div>
-
                 {detailTab === "meta" ? (
                   <div className="detail-meta-list stage-detail-meta">
                     <div className="detail-meta-copy">

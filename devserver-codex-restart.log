@@ -1,6 +1,6 @@
 
 > miningqwqmusic-player@0.1.0 dev
-> next dev
+> next dev --port 3000
 
    ▲ Next.js 15.5.18
    - Local:        http://localhost:3000
@@ -8,46 +8,259 @@
    - Environments: .env.local
 
  ✓ Starting...
- ✓ Ready in 1939ms
+ ✓ Ready in 12.2s
  ○ Compiling / ...
- ✓ Compiled / in 2.8s (1486 modules)
- GET / 200 in 3482ms
- GET / 200 in 116ms
- GET / 200 in 54ms
- GET / 200 in 51ms
- GET / 200 in 64ms
- ○ Compiling /api/account/[...path] ...
- ✓ Compiled /api/account/[...path] in 682ms (1500 modules)
- GET / 200 in 237ms
- GET /api/music/scene/sport?bpm=130 200 in 1297ms
- GET /api/music/discover/home 200 in 1494ms
- GET /api/music/scene/sati 200 in 1537ms
- POST /api/account/auth/refresh 200 in 8988ms
- ✓ Compiled in 711ms (1514 modules)
- ○ Compiling /_error ...
- ✓ Compiled /_error in 1173ms (1846 modules)
- GET / 500 in 1670ms
- GET / 200 in 251ms
- GET / 200 in 54ms
- GET /api/music/scene/sport?bpm=130 200 in 259ms
- GET /api/music/scene/sati 200 in 278ms
- POST /api/account/auth/refresh 500 in 1284ms
- POST /api/account/auth/refresh 500 in 776ms
+ ✓ Compiled / in 3.5s (1502 modules)
+ GET / 200 in 3875ms
+ ○ Compiling /api/music/track/[id]/play-url ...
+ ✓ Compiled /api/music/track/[id]/play-url in 1023ms (817 modules)
+ ✓ Compiled in 743ms (694 modules)
+ GET /favicon.ico 200 in 2203ms
+ POST /api/account/auth/refresh 502 in 2749ms
+ ✓ Compiled /api/music/track/[id]/quality-options in 310ms (1523 modules)
+ GET /api/account/auth/me 502 in 390ms
+ GET /api/account/auth/me 502 in 393ms
+ POST /api/account/auth/refresh 502 in 23ms
+ POST /api/account/auth/refresh 502 in 39ms
+ GET /api/account/auth/me 502 in 58ms
+ POST /api/account/auth/refresh 502 in 13ms
+ GET /api/music/scene/sport?bpm=130 200 in 17711ms
+ GET /api/music/discover/home 200 in 17729ms
+ ✓ Compiled /api/music/track/[id]/insight in 383ms (1525 modules)
+ GET / 200 in 522ms
+ POST /api/account/auth/refresh 502 in 60ms
+ GET /api/account/auth/me 502 in 12ms
+ POST /api/account/auth/refresh 502 in 15ms
+ GET /api/music/track/85571/play-url 503 in 16717ms
+ GET /api/music/track/1957838347/play-url 503 in 18898ms
+ POST /api/account/auth/refresh 502 in 51ms
+ GET /api/music/track/1957838347/quality-options 503 in 16678ms
+ POST /api/account/auth/refresh 502 in 49ms
+ GET /api/account/auth/me 502 in 17ms
+ POST /api/account/auth/refresh 502 in 13ms
+ GET / 200 in 185ms
+ POST /api/account/auth/refresh 502 in 74ms
+ GET /api/music/scene/sati 200 in 33356ms
+ GET /api/account/auth/me 502 in 59ms
+ POST /api/account/auth/refresh 502 in 13ms
+ GET /api/music/track/1957838347/quality-options 503 in 15748ms
+ GET /api/account/auth/me 502 in 63ms
+ POST /api/account/auth/refresh 502 in 11ms
+ GET /api/music/track/1957838347/insight 200 in 16763ms
+ GET /api/account/auth/me 502 in 14ms
+ POST /api/account/auth/refresh 502 in 14ms
+ GET /api/music/track/1957838347/quality-options 503 in 15720ms
+ POST /api/account/auth/refresh 502 in 44ms
+ GET /api/account/auth/me 502 in 12ms
+ POST /api/account/auth/refresh 502 in 13ms
+ GET /api/music/discover/home 200 in 15679ms
+ GET /api/music/scene/sport?bpm=130 200 in 15655ms
+ GET /api/music/track/1957838347/play-url 503 in 15790ms
+ POST /api/account/auth/refresh 502 in 66ms
+ GET /api/music/track/85571/play-url 503 in 15775ms
+ POST /api/account/auth/refresh 502 in 41ms
+ GET /api/music/track/1957838347/quality-options 503 in 15709ms
+ GET /api/account/auth/me 502 in 11ms
+ POST /api/account/auth/refresh 502 in 12ms
+ GET /api/music/track/1957838347/quality-options 503 in 80ms
+ GET /api/music/track/1957838347/quality-options 503 in 15726ms
+ GET /api/music/track/1957838347/insight 200 in 15687ms
+ GET /api/music/track/1957838347/insight 503 in 46ms
+ ✓ Compiled /api/music/track/[id]/lyric in 317ms (1527 modules)
+ GET /api/music/track/1957838347/insight 200 in 15694ms
+ GET /api/music/scene/sati 200 in 31284ms
+ GET /api/music/track/1957838347/lyric 200 in 32122ms
+ GET /api/music/track/1957838347/lyric 200 in 31317ms
+ ✓ Compiled /api/music/track/[id] in 292ms (1509 modules)
+ GET /api/music/track/1957838347 503 in 16532ms
+ ✓ Compiled in 567ms (694 modules)
+ GET / 200 in 93ms
+ GET / 200 in 26ms
+ ✓ Compiled in 1063ms (1523 modules)
+ ○ Compiling /api/music/track/[id]/play-url ...
+ ✓ Compiled /api/account/[...path] in 1204ms (1860 modules)
+ POST /api/account/auth/refresh 502 in 1092ms
+ GET /api/account/auth/me 502 in 27ms
+ GET /api/account/auth/me 502 in 29ms
+ GET /api/account/auth/me 502 in 24ms
+ POST /api/account/auth/refresh 502 in 29ms
+ POST /api/account/auth/refresh 502 in 42ms
+ GET /api/music/track/28403111 503 in 15795ms
+ GET / 500 in 1943ms
+ POST /api/account/auth/refresh 502 in 179ms
+ POST /api/account/auth/refresh 502 in 37ms
+ GET /api/account/auth/me 502 in 15ms
+ GET / 200 in 129ms
+ POST /api/account/auth/refresh 502 in 119ms
+ GET / 200 in 32ms
+ GET / 200 in 36ms
+ GET / 200 in 33ms
+ GET / 200 in 32ms
+ GET /api/music/track/1957838347/play-url 200 in 2155ms
+ GET /api/music/track/85571/play-url 200 in 2158ms
+ GET /api/music/track/1957838347 200 in 11644ms
+ GET / 200 in 277ms
+ ✓ Compiled /api/music/scene/sati in 129ms (1031 modules)
+ ✓ Compiled (1035 modules)
+ POST /api/account/auth/refresh 502 in 354ms
+ GET /api/account/auth/me 502 in 11ms
+ POST /api/account/auth/refresh 502 in 12ms
+ GET /api/music/track/1957838347/play-url 503 in 15884ms
+ GET /api/account/auth/me 502 in 53ms
+ POST /api/account/auth/refresh 502 in 15ms
+ GET /api/music/track/85571/play-url 503 in 15813ms
+ ✓ Compiled /api/music/track/[id]/quality-options in 160ms (1037 modules)
+ GET /api/account/auth/me 502 in 18ms
+ POST /api/account/auth/refresh 502 in 13ms
+ GET /api/music/discover/home 200 in 15968ms
+ GET /api/music/scene/sport?bpm=130 200 in 15995ms
+ GET /api/music/track/1957838347/play-url 503 in 15770ms
+ ✓ Compiled /api/music/track/[id]/insight in 197ms (1039 modules)
+ ✓ Compiled in 0ms (1039 modules)
+ ✓ Compiled in 0ms (1039 modules)
+ ✓ Compiled in 1ms (1039 modules)
+ POST /api/account/auth/refresh 502 in 647ms
+ GET /api/account/auth/me 502 in 18ms
+ POST /api/account/auth/refresh 502 in 14ms
+ POST /api/account/auth/refresh 502 in 54ms
+ POST /api/account/auth/refresh 502 in 53ms
+ GET /api/account/auth/me 502 in 9ms
+ POST /api/account/auth/refresh 502 in 10ms
+ GET /api/music/track/85571/play-url 503 in 15772ms
+ GET /api/music/track/1957838347/quality-options 503 in 15930ms
+ GET /api/music/scene/sati 200 in 31614ms
+ GET /api/music/track/1957838347/insight 200 in 16313ms
+ GET /api/music/track/1957838347/quality-options 503 in 16367ms
+ GET /api/music/track/1957838347/quality-options 503 in 15718ms
+ GET /api/music/track/1957838347/insight 200 in 15692ms
+ ✓ Compiled /api/music/track/[id]/lyric in 136ms (1041 modules)
+ GET /api/music/track/1957838347/insight 200 in 15693ms
+ ✓ Compiled in 631ms (1885 modules)
+ GET / 200 in 140ms
+ GET / 200 in 28ms
+ ✓ Compiled in 577ms (1783 modules)
+ GET / 200 in 182ms
+ GET / 200 in 27ms
+ GET /api/music/track/1957838347/lyric 200 in 31497ms
+ GET / 200 in 214ms
+ ✓ Compiled /api/music/track/[id]/play-url in 94ms (933 modules)
+ ✓ Compiled (942 modules)
+ POST /api/account/auth/refresh 502 in 412ms
+ GET /api/account/auth/me 502 in 21ms
+ GET /api/account/auth/me 502 in 17ms
+ POST /api/account/auth/refresh 502 in 23ms
+ POST /api/account/auth/refresh 502 in 15ms
+ GET /api/music/discover/home 200 in 15923ms
+ GET /api/music/track/85571/play-url 503 in 15714ms
+ GET /api/music/track/1957838347/play-url 503 in 16109ms
+ GET /api/music/track/1957838347/lyric 200 in 31475ms
+ GET /api/music/scene/sport?bpm=130 200 in 16146ms
+ GET / 200 in 247ms
+ ✓ Compiled /api/music/track/[id]/insight in 120ms (942 modules)
+ ✓ Compiled (944 modules)
+ POST /api/account/auth/refresh 502 in 410ms
+ GET /api/account/auth/me 502 in 25ms
+ GET /api/account/auth/me 502 in 41ms
+ POST /api/account/auth/refresh 502 in 19ms
+ POST /api/account/auth/refresh 502 in 27ms
+ POST /api/account/auth/refresh 502 in 39ms
+ GET /api/music/scene/sati 200 in 31779ms
+ GET /api/account/auth/me 502 in 49ms
+ POST /api/account/auth/refresh 502 in 14ms
+ GET /api/music/track/1957838347/insight 200 in 16002ms
+ GET /api/account/auth/me 502 in 14ms
+ POST /api/account/auth/refresh 502 in 15ms
+ GET /api/music/track/1957838347/quality-options 503 in 16125ms
+ GET /api/music/track/1957838347/quality-options 503 in 16128ms
+ ✓ Compiled /favicon.ico in 133ms (946 modules)
+ GET /api/music/scene/sport?bpm=130 200 in 15662ms
+ GET /api/music/discover/home 200 in 15709ms
+ GET /favicon.ico 200 in 381ms
+ POST /api/account/auth/refresh 502 in 149ms
+ POST /api/account/auth/refresh 502 in 166ms
+ GET /api/account/auth/me 502 in 47ms
+ POST /api/account/auth/refresh 502 in 16ms
+ POST /api/account/auth/refresh 502 in 15ms
+ POST /api/account/auth/refresh 502 in 46ms
+ GET /api/account/auth/me 502 in 19ms
+ POST /api/account/auth/refresh 502 in 16ms
+ GET /api/music/track/1957838347/play-url 503 in 15768ms
+ POST /api/account/auth/refresh 502 in 54ms
+ GET /api/music/track/1957838347/insight 200 in 14945ms
+ GET /api/music/track/1957838347/quality-options 200 in 13949ms
+ GET /api/account/auth/me 502 in 17ms
+ POST /api/account/auth/refresh 502 in 18ms
+ GET /api/music/track/85571/play-url 503 in 15689ms
+ GET /api/music/track/1957838347/quality-options 503 in 16253ms
+ GET /api/music/track/1957838347/insight 200 in 15705ms
+ GET /api/music/track/1957838347/insight 200 in 15719ms
+ GET /api/music/track/1957838347/quality-options 503 in 15773ms
+ GET /api/music/scene/sati 200 in 31377ms
+ GET /api/music/track/1957838347/lyric 200 in 31311ms
+ ✓ Compiled in 444ms (845 modules)
+ ✓ Compiled in 347ms (845 modules)
+ GET / 200 in 353ms
+ GET / 200 in 37ms
+ GET / 200 in 272ms
+ GET /favicon.ico 200 in 8ms
+ POST /api/account/auth/refresh 502 in 125ms
+ GET /api/account/auth/me 502 in 63ms
+ GET /api/account/auth/me 502 in 27ms
+ GET /api/account/auth/me 502 in 39ms
+ POST /api/account/auth/refresh 502 in 31ms
+ POST /api/account/auth/refresh 502 in 38ms
+ POST /api/account/auth/refresh 502 in 36ms
+ GET /api/music/discover/home 200 in 15673ms
+ GET /api/music/scene/sport?bpm=130 200 in 15722ms
+ GET /api/music/track/1957838347/quality-options 200 in 15595ms
+ GET /api/music/track/85571/play-url 200 in 15600ms
+ GET /api/music/track/1957838347/play-url 200 in 15606ms
+ GET /api/music/scene/sati 200 in 15734ms
+ GET / 200 in 75ms
+ GET /favicon.ico 200 in 8ms
+ GET /api/music/scene/sati 503 in 17ms
+ GET /api/music/discover/home 503 in 41ms
+ GET /api/music/scene/sport?bpm=130 503 in 76ms
+ POST /api/account/auth/refresh 502 in 80ms
+ ○ Compiling /api/music/track/[id]/insight ...
+ ✓ Compiled /api/music/track/[id]/insight in 544ms (1777 modules)
  ○ Compiling /_not-found ...
- ✓ Compiled /_not-found in 718ms (1851 modules)
- POST /api/account/auth/refresh 404 in 973ms
+ ✓ Compiled /_not-found in 1217ms (1878 modules)
+ GET /api/music/track/1957838347/insight 404 in 2446ms
+ GET /api/music/track/85571/play-url 500 in 8689ms
+ POST /api/account/auth/refresh 500 in 8618ms
+ GET /api/account/auth/me 500 in 8612ms
+ GET /api/music/discover/search-assist?q= 500 in 8689ms
+ GET /api/music/track/1957838347/quality-options 500 in 8704ms
  POST /api/account/auth/refresh 500 in 52ms
- ✓ Compiled /api/music/track/[id]/insight in 425ms (1858 modules)
- GET /api/music/track/track-long-2/play-url 500 in 989ms
- GET /api/music/track/track-long-1/play-url 500 in 990ms
- GET /api/music/track/track-long-1/quality-options 500 in 1073ms
- GET /api/music/track/track-long-1/insight 500 in 1139ms
- GET /api/music/track/track-long-1/insight 500 in 145ms
- GET /api/music/discover/home 200 in 6414ms
- ✓ Compiled /api/music/track/[id]/lyric in 207ms (1860 modules)
- GET /api/music/track/track-long-1/lyric 500 in 743ms
- ✓ Compiled in 494ms (1874 modules)
- GET / 200 in 234ms
- GET / 200 in 48ms
- GET / 200 in 52ms
- GET / 200 in 48ms
+ POST /api/account/auth/refresh 500 in 36ms
+ POST /api/account/auth/refresh 500 in 214ms
+ GET /api/music/track/1957838347/quality-options 500 in 94ms
+ GET /api/music/track/1957838347/play-url 503 in 24493ms
+ ✓ Compiled in 1448ms (1892 modules)
+ GET / 200 in 2328ms
+ GET /api/music/track/1957838347/play-url 500 in 707ms
+ GET /api/music/track/85571/play-url 500 in 713ms
+ POST /api/account/auth/refresh 500 in 711ms
+ GET / 200 in 873ms
+ GET /favicon.ico 500 in 47ms
+ GET /favicon.ico 500 in 35ms
+ GET /favicon.ico 500 in 46ms
+ GET /favicon.ico 500 in 34ms
+ GET /favicon.ico 500 in 45ms
+ ✓ Compiled /icon.png in 428ms (1044 modules)
+ GET /icon.png 200 in 677ms
+ GET /favicon.ico 500 in 523ms
+ GET /favicon.ico 500 in 31ms
+ GET /icon.png 200 in 13ms
+ GET /api/music/track/1957838347/insight 200 in 16388ms
+ GET / 200 in 357ms
+ GET /favicon.ico 500 in 21ms
+ GET /favicon.ico 500 in 20ms
+ GET /icon.png 200 in 9ms
+ GET / 200 in 54ms
+ GET /favicon.ico 500 in 21ms
+ GET /favicon.ico 500 in 19ms
+ ✓ Compiled in 358ms (845 modules)
+ ✓ Compiled in 454ms (1744 modules)
+ ✓ Compiled in 962ms (1744 modules)

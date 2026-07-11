@@ -13,6 +13,8 @@ export type PlayerDockMobileTab = {
 export type PlayerDockProps = {
   variant?: "global" | "detail";
   dockRef?: Ref<HTMLElement>;
+  hideTrackMeta?: boolean;
+  returningTrackMeta?: boolean;
   isMobile: boolean;
   canOpenDetail: boolean;
   title: string;
@@ -85,6 +87,8 @@ function DockIconButton({
 export function PlayerDock({
   variant = "global",
   dockRef,
+  hideTrackMeta = false,
+  returningTrackMeta = false,
   isMobile,
   canOpenDetail,
   title,
@@ -131,7 +135,9 @@ export function PlayerDock({
         canOpenDetail && !isDetail ? "clickable" : "",
         empty ? "empty" : "",
         isPlaying ? "is-playing" : "",
-        hasProgress ? "has-track" : ""
+        hasProgress ? "has-track" : "",
+        hideTrackMeta ? "detail-meta-in-flight" : "",
+        returningTrackMeta ? "detail-meta-returning" : ""
       ]
         .filter(Boolean)
         .join(" ")}
@@ -139,32 +145,34 @@ export function PlayerDock({
       data-variant={variant}
     >
       <div className={`player-dock-main-grid player-dock-body ${isDetail ? "detail-player-main-grid" : ""}`.trim()}>
-        <div
-          className={`spotify-player-left player-dock-meta ${canOpenDetail && !isDetail ? "is-openable" : ""}`.trim()}
-          role={canOpenDetail && !isDetail ? "button" : undefined}
-          tabIndex={canOpenDetail && !isDetail ? 0 : undefined}
-          onClick={() => {
-            if (!isDetail && canOpenDetail && onOpenDetail) {
-              onOpenDetail("pointer");
-            }
-          }}
-          onKeyDown={(event) => {
-            if (!isDetail && canOpenDetail && onOpenDetail && (event.key === "Enter" || event.key === " ")) {
-              event.preventDefault();
-              onOpenDetail("keyboard");
-            }
-          }}
-        >
+        {!hideTrackMeta ? (
           <div
-            className={`player-dock-cover ${empty ? "is-empty" : ""}`.trim()}
-            style={{ backgroundImage: `url(${coverUrl})` }}
-            aria-hidden="true"
-          />
-          <div className="player-dock-copy">
-            <p className="player-title">{title}</p>
-            <p className="player-subtitle">{subtitle}</p>
+            className={`spotify-player-left player-dock-meta ${canOpenDetail && !isDetail ? "is-openable" : ""}`.trim()}
+            role={canOpenDetail && !isDetail ? "button" : undefined}
+            tabIndex={canOpenDetail && !isDetail ? 0 : undefined}
+            onClick={() => {
+              if (!isDetail && canOpenDetail && onOpenDetail) {
+                onOpenDetail("pointer");
+              }
+            }}
+            onKeyDown={(event) => {
+              if (!isDetail && canOpenDetail && onOpenDetail && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                onOpenDetail("keyboard");
+              }
+            }}
+          >
+            <div
+              className={`player-dock-cover ${empty ? "is-empty" : ""}`.trim()}
+              style={{ backgroundImage: `url(${coverUrl})` }}
+              aria-hidden="true"
+            />
+            <div className="player-dock-copy">
+              <p className="player-title">{title}</p>
+              <p className="player-subtitle">{subtitle}</p>
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="spotify-player-center player-dock-center" onClick={(event) => event.stopPropagation()}>
           <div className={`spotify-player-controls ${isDetail ? "detail-dock-controls" : ""}`.trim()}>

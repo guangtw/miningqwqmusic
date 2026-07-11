@@ -267,3 +267,4 @@ Require stack:
   path: 'C:\\MiningQwQMusic\\.next\\server\\app\\favicon.ico\\route.js',
   page: '/favicon.ico'
 }
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: EPERM: operation not permitted, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development\6.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development\6.pack.gz'

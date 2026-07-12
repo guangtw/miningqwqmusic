@@ -1809,7 +1809,9 @@ input:focus-visible {
   overflow: hidden;
   border-radius: 22px;
   border: 1px solid var(--glass-stroke);
-  background: var(--glass-veil), var(--glass-fill-elevated);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0.025) 100%),
+    rgba(12, 17, 18, 0.78);
   backdrop-filter: blur(22px) saturate(170%);
   -webkit-backdrop-filter: blur(22px) saturate(170%);
   box-shadow: var(--glass-shadow-float), var(--glass-highlight);
@@ -6080,6 +6082,12 @@ input:focus-visible {
 
 .stage-detail .detail-stage-left {
   align-content: center;
+}
+
+:root[data-theme="light"] .home-playlist-drawer {
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.62) 52%, rgba(255, 255, 255, 0.46) 100%),
+    rgba(238, 244, 240, 0.78);
 }
 
 .detail-shared-art-target {

@@ -1102,7 +1102,6 @@ export function PlayerApp() {
   const [musicUnblockInviteInput, setMusicUnblockInviteInput] = useState("");
   const [musicUnblockMessage, setMusicUnblockMessage] = useState<string | null>(null);
   const [musicUnblockError, setMusicUnblockError] = useState<string | null>(null);
-  const [playbackResumeToken, setPlaybackResumeToken] = useState(0);
   const [listenPanelOpen, setListenPanelOpen] = useState(false);
   const [listenPanelPhase, setListenPanelPhase] = useState<PlaylistPanelPhase>("closed");
   const [listenDrawerTab, setListenDrawerTab] = useState<ListenDrawerTab>("room");
@@ -1209,8 +1208,7 @@ export function PlayerApp() {
   }, [player.playQualityLevel, trackQualityAvailability]);
   const controller = usePlayerController({
     effectivePlayQualityLevel,
-    playbackRefreshKey,
-    resumePlaybackToken: playbackResumeToken
+    playbackRefreshKey
   });
 
   const openListenPanel = useCallback(() => {
@@ -2464,7 +2462,6 @@ export function PlayerApp() {
         phase: "restoring",
         syncOnSuccess: false
       });
-      setPlaybackResumeToken((previous) => previous + 1);
       void triggerCloudPull("window-focus");
     };
     const onVisibilityChange = () => {
@@ -2475,7 +2472,6 @@ export function PlayerApp() {
           phase: "restoring",
           syncOnSuccess: false
         });
-      setPlaybackResumeToken((previous) => previous + 1);
       void triggerCloudPull("tab-visible");
     };
 

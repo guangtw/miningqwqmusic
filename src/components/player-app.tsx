@@ -117,7 +117,11 @@ type DetailViewTab = "lyric" | "meta";
 type DetailLyricMode = "origin" | "translated" | "karaoke";
 type DetailModalPhase = "closed" | "opening" | "open" | "closing";
 type DetailOpenInteraction = "pointer" | "keyboard";
-type DetailDockOrigin = { left: number; top: number; width: number; height: number };
+type DetailDockOrigin = {
+  cover: { left: number; top: number; width: number; height: number };
+  title: { left: number; top: number; width: number; height: number };
+  subtitle: { left: number; top: number; width: number; height: number };
+};
 type PlaylistPanelPhase = "closed" | "opening" | "open" | "closing";
 type DetailPalette = {
   bgA: string;
@@ -3452,9 +3456,18 @@ export function PlayerApp() {
       pushHistoryGuardState("detail", activeTabRef.current);
     }
     const dockMeta = playerDockRef.current?.querySelector<HTMLElement>(".player-dock-meta");
-    if (dockMeta) {
-      const { left, top, width, height } = dockMeta.getBoundingClientRect();
-      setDetailDockOrigin({ left, top, width, height });
+    const coverElement = dockMeta?.querySelector<HTMLElement>(".player-dock-cover");
+    const titleElement = dockMeta?.querySelector<HTMLElement>(".player-title");
+    const subtitleElement = dockMeta?.querySelector<HTMLElement>(".player-subtitle");
+    if (coverElement && titleElement && subtitleElement) {
+      const cover = coverElement.getBoundingClientRect();
+      const title = titleElement.getBoundingClientRect();
+      const subtitle = subtitleElement.getBoundingClientRect();
+      setDetailDockOrigin({
+        cover: { left: cover.left, top: cover.top, width: cover.width, height: cover.height },
+        title: { left: title.left, top: title.top, width: title.width, height: title.height },
+        subtitle: { left: subtitle.left, top: subtitle.top, width: subtitle.width, height: subtitle.height }
+      });
     }
     setDetailPhase("opening");
     detailOpenFrameRef.current = window.requestAnimationFrame(() => {
@@ -4765,10 +4778,18 @@ export function PlayerApp() {
             aria-hidden="true"
             style={
               {
-                "--detail-origin-left": `${detailDockOrigin.left}px`,
-                "--detail-origin-top": `${detailDockOrigin.top}px`,
-                "--detail-origin-width": `${detailDockOrigin.width}px`,
-                "--detail-origin-height": `${detailDockOrigin.height}px`
+                "--detail-origin-cover-left": `${detailDockOrigin.cover.left}px`,
+                "--detail-origin-cover-top": `${detailDockOrigin.cover.top}px`,
+                "--detail-origin-cover-width": `${detailDockOrigin.cover.width}px`,
+                "--detail-origin-cover-height": `${detailDockOrigin.cover.height}px`,
+                "--detail-origin-title-left": `${detailDockOrigin.title.left}px`,
+                "--detail-origin-title-top": `${detailDockOrigin.title.top}px`,
+                "--detail-origin-title-width": `${detailDockOrigin.title.width}px`,
+                "--detail-origin-title-height": `${detailDockOrigin.title.height}px`,
+                "--detail-origin-subtitle-left": `${detailDockOrigin.subtitle.left}px`,
+                "--detail-origin-subtitle-top": `${detailDockOrigin.subtitle.top}px`,
+                "--detail-origin-subtitle-width": `${detailDockOrigin.subtitle.width}px`,
+                "--detail-origin-subtitle-height": `${detailDockOrigin.subtitle.height}px`
               } as CSSProperties
             }
           >

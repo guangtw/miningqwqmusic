@@ -1,5 +1,6 @@
-const CACHE_NAME = "qwq-music-shell-v3";
+const CACHE_NAME = "qwq-music-shell-v4";
 const OFFLINE_URL = "/offline";
+
 const ASSET_CACHE = [
   "/offline",
   "/manifest.webmanifest",
@@ -13,7 +14,10 @@ const ASSET_CACHE = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSET_CACHE)).then(() => self.skipWaiting())
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(ASSET_CACHE))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -21,49 +25,80 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE_NAME)
+            .map((key) => caches.delete(key))
+        )
+      )
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (request.method !== "GET") return;
 
-  const requestUrl = new URL(request.url);
-  const isSameOrigin = requestUrl.origin === self.location.origin;
-  const isApiRequest = isSameOrigin && requestUrl.pathname.startsWith("/api/");
-  if (isApiRequest) return;
-
-  const isPageRequest = request.mode === "navigate";
-  if (isPageRequest) {
-    // Keep HTML network-first and do not cache page responses.
-    // This avoids stale SSR HTML causing hydration mismatches with fresh JS bundles.
-    event.respondWith(
-      fetch(request)
-        .then((response) => response)
-        .catch(() => caches.match(request).then((cached) => cached || caches.match(OFFLINE_URL)))
-    );
+  if (request.method !== "GET") {
     return;
   }
 
-  const isStaticAsset =
+  const url = new URL(request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+
+  /*
+   * 不缓存 API 和 Next.js 构建文件。
+   *
+   * /_next/static 的文件本身已经包含内容哈希，
+   * 交给浏览器和 Next.js 管理，避免 Service Worker
+   * 长期返回旧 CSS 或旧 JavaScript。
+   */
+  if (
     isSameOrigin &&
-    (requestUrl.pathname.startsWith("/_next/static/") ||
-      requestUrl.pathname.startsWith("/icons/") ||
-      requestUrl.pathname === "/manifest.webmanifest");
-  if (!isStaticAsset) return;
+    (
+      url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/_next/")
+    )
+  ) {
+    return;
+  }
+
+  // 页面请求使用网络优先，离线时才显示离线页面。
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(OFFLINE_URL))
+    );
+
+    return;
+  }
+
+  // 只缓存固定的 PWA 图标和清单。
+  const isPwaAsset =
+    isSameOrigin &&
+    (
+      url.pathname.startsWith("/icons/") ||
+      url.pathname === "/manifest.webmanifest"
+    );
+
+  if (!isPwaAsset) {
+    return;
+  }
 
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (cached) return cached;
+      if (cached) {
+        return cached;
+      }
+
       return fetch(request).then((response) => {
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          if (response.ok) {
-            cache.put(request, responseClone);
-          }
-        });
+        if (response.ok) {
+          const responseCopy = response.clone();
+
+          void caches
+            .open(CACHE_NAME)
+            .then((cache) => cache.put(request, responseCopy));
+        }
+
         return response;
       });
     })

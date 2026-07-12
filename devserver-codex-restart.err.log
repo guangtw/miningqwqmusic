@@ -268,3 +268,792 @@ Require stack:
   page: '/favicon.ico'
 }
 <w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: EPERM: operation not permitted, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development\6.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development\6.pack.gz'
+ ⨯ Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js:1:6849)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js:1:6902) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/scene/sport'
+}
+ ⨯ Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sati\route.js:1:6799)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sati\route.js:1:6852) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/scene/sati'
+}
+ ⨯ Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js:1:8820)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js:1:8869) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/account/auth/refresh'
+}
+ ⨯ Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\discover\home\route.js:1:6741)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\discover\home\route.js:1:6794) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/discover/home'
+}
+ ⨯ Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\vendor-chunks\@swc.js'
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\offline\page.js:324:47)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\offline\page.js:327:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\vendor-chunks\\@swc.js',
+  page: '/offline'
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js:1:6849)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js:1:6902) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/scene/sport'
+}
+Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sati\route.js:1:6799)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\scene\sati\route.js:1:6852) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/scene/sati'
+}
+Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js:1:8820)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\account\[...path]\route.js:1:8869) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/account/auth/refresh'
+}
+Error: Cannot find module './331.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\app\api\music\scene\sport\route.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\api\music\discover\home\route.js:1:6741)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\api\music\discover\home\route.js:1:6794) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array],
+  page: '/api/music/discover/home'
+}
+Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\vendor-chunks\@swc.js'
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\offline\page.js:324:47)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\offline\page.js:327:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\vendor-chunks\\@swc.js',
+  page: '/offline'
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+ ⨯ Error: Cannot find module './611.js'
+Require stack:
+- C:\MiningQwQMusic\.next\server\webpack-runtime.js
+- C:\MiningQwQMusic\.next\server\pages\_document.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\require.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\load-components.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\utils.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\options.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\swc\index.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\parse-module.js
+- C:\MiningQwQMusic\node_modules\next\dist\build\analysis\get-page-static-info.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\router-server.js
+- C:\MiningQwQMusic\node_modules\next\dist\server\lib\start-server.js
+    at <unknown> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:321)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\pages\_document.js:1:366) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [Array]
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[Error: ENOENT: no such file or directory, stat 'C:\MiningQwQMusic\.next\cache\webpack\server-development\1.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'C:\\MiningQwQMusic\\.next\\cache\\webpack\\server-development\\1.pack.gz'
+}
+ ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'C:\MiningQwQMusic\.next\cache\webpack\server-development\1.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'C:\\MiningQwQMusic\\.next\\cache\\webpack\\server-development\\1.pack.gz'
+}
+ ⨯ unhandledRejection:  [Error: ENOENT: no such file or directory, stat 'C:\MiningQwQMusic\.next\cache\webpack\server-development\1.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'C:\\MiningQwQMusic\\.next\\cache\\webpack\\server-development\\1.pack.gz'
+}
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, stat 'C:\MiningQwQMusic\.next\cache\webpack\server-development\1.pack.gz'
+ ⨯ Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\vendor-chunks\next.js'
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:752:47)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\page.js:755:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\vendor-chunks\\next.js',
+  page: '/'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\vendor-chunks\next.js'
+    at <unknown> (C:\MiningQwQMusic\.next\server\app\page.js:752:47)
+    at Object.<anonymous> (C:\MiningQwQMusic\.next\server\app\page.js:755:3) {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\vendor-chunks\\next.js',
+  page: '/'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/85571/play-url'
+}
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/85571/play-url'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/85571/play-url'
+}
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/85571/play-url'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ Failed to generate static paths for /api/music/track/[id]/insight:
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError'
+}
+ ⨯ Failed to generate static paths for /api/music/track/[id]/quality-options:
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError'
+}
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/account/auth/refresh'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/quality-options'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ ⨯ [TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/insight'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+[TypeError: __webpack_modules__[moduleId] is not a function] {
+  type: 'TypeError',
+  page: '/api/music/track/1957838347/insight'
+}
+ ⨯ [Error: ENOENT: no such file or directory, open 'C:\MiningQwQMusic\.next\server\pages\_document.js'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: 'C:\\MiningQwQMusic\\.next\\server\\pages\\_document.js'
+}
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+ ⨯ TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+TypeError: Cannot read properties of undefined (reading '/_app')
+    at new Promise (<anonymous>)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\server-development\0.pack.gz'
+ ⨯ ./app/globals.css:6131:78
+Syntax error: C:\MiningQwQMusic\app\globals.css Unclosed bracket
+
+ [90m 6129 | [39m    height [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+ [90m 6130 | [39m    border-radius [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+[1m[31m>[39m[22m[90m 6131 | [39m    box-shadow [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[33m;[39m
+ [90m      | [39m                                                                             [1m[31m^[39m[22m
+ [90m 6132 | [39m  will-change[33m:[39m left, top, width, height[33m;[39m
+ [90m 6133 | [39m[33m}[39m
+ ⨯ ./app/globals.css:6131:78
+Syntax error: C:\MiningQwQMusic\app\globals.css Unclosed bracket
+
+ [90m 6129 | [39m    height [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+ [90m 6130 | [39m    border-radius [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+[1m[31m>[39m[22m[90m 6131 | [39m    box-shadow [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[33m;[39m
+ [90m      | [39m                                                                             [1m[31m^[39m[22m
+ [90m 6132 | [39m  will-change[33m:[39m left, top, width, height[33m;[39m
+ [90m 6133 | [39m[33m}[39m
+ ⨯ ./app/globals.css:6131:78
+Syntax error: C:\MiningQwQMusic\app\globals.css Unclosed bracket
+
+ [90m 6129 | [39m    height [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+ [90m 6130 | [39m    border-radius [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[36m)[39m,
+[1m[31m>[39m[22m[90m 6131 | [39m    box-shadow [36mvar[39m[36m([39m--detail-shared-duration, [36mvar[39m[36m(--detail-open-duration)[39m[36m)[39m [36mvar[39m[36m([39m--detail-shared-ease, [36mvar[39m[36m(--detail-open-ease)[39m[33m;[39m
+ [90m      | [39m                                                                             [1m[31m^[39m[22m
+ [90m 6132 | [39m  will-change[33m:[39m left, top, width, height[33m;[39m
+ [90m 6133 | [39m[33m}[39m
+<w> [webpack.cache.PackFileCacheStrategy] Skipped not serializable cache item 'Compilation/modules|C:\MiningQwQMusic\node_modules\next\dist\build\webpack\loaders\css-loader\src\index.js??ruleSet[1].rules[14].oneOf[10].use[2]!C:\MiningQwQMusic\node_modules\next\dist\build\webpack\loaders\postcss-loader\src\index.js??ruleSet[1].rules[14].oneOf[10].use[3]!C:\MiningQwQMusic\app\globals.css': No serializer registered for PostCSSSyntaxError
+<w> while serializing webpack/lib/cache/PackFileCacheStrategy.PackContentItems -> webpack/lib/NormalModule -> webpack/lib/ModuleBuildError -> PostCSSSyntaxError
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: EPERM: operation not permitted, rename 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz_' -> 'C:\MiningQwQMusic\.next\cache\webpack\client-development\1.pack.gz'

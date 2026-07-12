@@ -6082,6 +6082,145 @@ input:focus-visible {
   align-content: center;
 }
 
+.detail-shared-art-target {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 14px;
+}
+
+.detail-shared-track-meta {
+  --detail-art-size: min(31vw, 336px);
+  --detail-art-left: clamp(72px, 13vw, 190px);
+  --detail-art-top: clamp(132px, 27vh, 252px);
+  --detail-title-top: calc(var(--detail-art-top) + var(--detail-art-size) + 14px);
+  --detail-subtitle-top: calc(var(--detail-title-top) + clamp(39px, 2vw + 18px, 48px));
+  position: fixed;
+  z-index: 130;
+  inset: 0;
+  display: block;
+  pointer-events: none;
+  contain: layout paint style;
+}
+
+.detail-shared-track-meta.phase-closing {
+  --detail-shared-duration: var(--detail-close-duration);
+  --detail-shared-ease: var(--detail-close-ease);
+}
+
+.detail-shared-track-cover {
+  position: absolute;
+  left: var(--detail-origin-cover-left);
+  top: var(--detail-origin-cover-top);
+  width: var(--detail-origin-cover-width);
+  height: var(--detail-origin-cover-height);
+  border: 1px solid var(--stage-line);
+  border-radius: 16px;
+  background-color: #101614;
+  background-position: center;
+  background-size: cover;
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.28),
+    0 0 0 1px color-mix(in srgb, var(--stage-accent) 18%, transparent);
+  transition:
+    left var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    top var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    width var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    height var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    border-radius var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    box-shadow var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease));
+  will-change: left, top, width, height;
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-cover {
+  left: var(--detail-art-left);
+  top: var(--detail-art-top);
+  width: var(--detail-art-size);
+  height: var(--detail-art-size);
+  border-radius: 28px;
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.detail-shared-track-copy {
+  display: contents;
+}
+
+.detail-shared-track-copy p,
+.detail-shared-track-copy span {
+  position: absolute;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  transform: translate3d(0, 0, 0);
+  transform-origin: left center;
+  transition:
+    left var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    top var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    width var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    height var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    transform var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    font-size var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease)),
+    line-height var(--detail-shared-duration, var(--detail-open-duration)) var(--detail-shared-ease, var(--detail-open-ease));
+  will-change: left, top, width, font-size, transform;
+}
+
+.detail-shared-track-copy p {
+  left: var(--detail-origin-title-left);
+  top: var(--detail-origin-title-top);
+  width: var(--detail-origin-title-width);
+  height: var(--detail-origin-title-height);
+  color: var(--stage-text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.detail-shared-track-copy span {
+  left: var(--detail-origin-subtitle-left);
+  top: var(--detail-origin-subtitle-top);
+  width: var(--detail-origin-subtitle-width);
+  height: var(--detail-origin-subtitle-height);
+  color: var(--stage-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy p,
+.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
+  left: calc(var(--detail-art-left) + (var(--detail-art-size) / 2));
+  width: var(--detail-art-size);
+  transform: translate3d(-50%, 0, 0);
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy p {
+  top: var(--detail-title-top);
+  height: clamp(32px, 2.6vw, 42px);
+  font-size: clamp(1.45rem, 1.7vw + 0.8rem, 2.2rem);
+  line-height: 1.1;
+}
+
+.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
+  top: var(--detail-subtitle-top);
+  height: 24px;
+  font-size: clamp(0.95rem, 0.4vw + 0.82rem, 1.08rem);
+  font-weight: 600;
+}
+
+@media (max-width: 700px), (pointer: coarse) {
+  .detail-shared-track-meta {
+    --detail-art-size: min(56vw, 280px);
+    --detail-art-left: calc(50% - min(28vw, 140px));
+    --detail-art-top: clamp(88px, 15vh, 132px);
+  }
+}
+
 .stage-detail .detail-art-spotlight {
   width: min(46vh, 420px);
 }
@@ -10509,175 +10648,6 @@ body {
   pointer-events: none;
 }
 
-.detail-shared-track-meta {
-  --detail-art-size: min(31vw, 336px);
-  position: fixed;
-  z-index: 130;
-  left: var(--detail-origin-left);
-  top: var(--detail-origin-top);
-  width: var(--detail-origin-width);
-  height: var(--detail-origin-height);
-  display: block;
-  pointer-events: none;
-  transition:
-    left var(--detail-open-duration) var(--detail-open-ease),
-    top var(--detail-open-duration) var(--detail-open-ease),
-    width var(--detail-open-duration) var(--detail-open-ease),
-    height var(--detail-open-duration) var(--detail-open-ease),
-    gap var(--detail-open-duration) var(--detail-open-ease);
-  will-change: left, top, width, height;
-}
-
-.detail-shared-track-meta.phase-open {
-  left: clamp(72px, 13vw, 190px);
-  top: clamp(132px, 27vh, 252px);
-  width: var(--detail-art-size);
-  height: calc(var(--detail-art-size) + 82px);
-}
-
-.detail-shared-track-meta.phase-closing {
-  transition-duration: var(--detail-close-duration);
-  transition-timing-function: var(--detail-close-ease);
-  transition-delay: 0ms;
-}
-
-.detail-shared-track-cover {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 54px;
-  height: 54px;
-  border: 1px solid var(--stage-line);
-  border-radius: 16px;
-  background-color: #101614;
-  background-position: center;
-  background-size: cover;
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.28);
-  transition:
-    left var(--detail-open-duration) var(--detail-open-ease),
-    top var(--detail-open-duration) var(--detail-open-ease),
-    width var(--detail-open-duration) var(--detail-open-ease),
-    height var(--detail-open-duration) var(--detail-open-ease),
-    border-radius var(--detail-open-duration) var(--detail-open-ease),
-    box-shadow var(--detail-open-duration) var(--detail-open-ease);
-}
-
-.detail-shared-track-meta.phase-open .detail-shared-track-cover {
-  width: var(--detail-art-size);
-  height: var(--detail-art-size);
-  border-radius: 28px;
-  box-shadow:
-    0 28px 70px rgba(0, 0, 0, 0.38),
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    inset 0 1px rgba(255, 255, 255, 0.14);
-}
-
-.detail-shared-track-meta.phase-closing .detail-shared-track-cover {
-  transition-duration: var(--detail-close-duration);
-  transition-timing-function: var(--detail-close-ease);
-  transition-delay: 0ms;
-}
-
-.detail-shared-track-copy {
-  position: absolute;
-  top: 50%;
-  left: 66px;
-  width: calc(100% - 66px);
-  height: 40px;
-  min-width: 0;
-  transform: translateY(-50%);
-  transition:
-    top var(--detail-open-duration) var(--detail-open-ease),
-    left var(--detail-open-duration) var(--detail-open-ease),
-    width var(--detail-open-duration) var(--detail-open-ease),
-    height var(--detail-open-duration) var(--detail-open-ease),
-    transform var(--detail-open-duration) var(--detail-open-ease),
-    gap var(--detail-open-duration) var(--detail-open-ease);
-}
-
-.detail-shared-track-copy p,
-.detail-shared-track-copy span {
-  position: absolute;
-  left: 0;
-  margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-shared-track-copy p {
-  top: 0;
-  color: var(--stage-text);
-  font-size: 1rem;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: -0.02em;
-  transition:
-    left var(--detail-open-duration) var(--detail-open-ease),
-    transform var(--detail-open-duration) var(--detail-open-ease),
-    font-size var(--detail-open-duration) var(--detail-open-ease),
-    line-height var(--detail-open-duration) var(--detail-open-ease);
-}
-
-.detail-shared-track-copy span {
-  top: 23px;
-  color: var(--stage-muted);
-  font-size: 0.86rem;
-  font-weight: 600;
-  line-height: 1.2;
-  transition:
-    top var(--detail-open-duration) var(--detail-open-ease),
-    left var(--detail-open-duration) var(--detail-open-ease),
-    transform var(--detail-open-duration) var(--detail-open-ease),
-    font-size var(--detail-open-duration) var(--detail-open-ease),
-    line-height var(--detail-open-duration) var(--detail-open-ease);
-}
-
-.detail-shared-track-meta.phase-open .detail-shared-track-copy {
-  top: calc(var(--detail-art-size) + 14px);
-  left: 0;
-  width: 100%;
-  height: 68px;
-  transform: translateY(0);
-}
-
-.detail-shared-track-meta.phase-open .detail-shared-track-copy p,
-.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.detail-shared-track-meta.phase-open .detail-shared-track-copy p {
-  font-size: clamp(1.45rem, 1.7vw + 0.8rem, 2.2rem);
-  line-height: 1.1;
-}
-
-.detail-shared-track-meta.phase-open .detail-shared-track-copy span {
-  top: clamp(39px, 2vw + 18px, 48px);
-  font-size: clamp(0.95rem, 0.4vw + 0.82rem, 1.08rem);
-  font-weight: 600;
-}
-
-.detail-shared-track-meta.phase-closing .detail-shared-track-copy {
-  transition-duration: var(--detail-close-duration);
-  transition-timing-function: var(--detail-close-ease);
-  transition-delay: 0ms;
-}
-
-.detail-shared-track-meta.phase-closing .detail-shared-track-copy p,
-.detail-shared-track-meta.phase-closing .detail-shared-track-copy span {
-  transition-duration: var(--detail-close-duration);
-  transition-timing-function: var(--detail-close-ease);
-}
-
-@media (max-width: 700px), (pointer: coarse) {
-  .detail-shared-track-meta.phase-open {
-    --detail-art-size: min(56vw, 280px);
-    left: calc(50% - min(28vw, 140px));
-    top: clamp(88px, 15vh, 132px);
-  }
-}
-
 .immersive-player-dock .spotify-player-center,
 .stage-player-dock .player-dock-center {
   display: grid;
@@ -11525,7 +11495,9 @@ body {
 .stage-shell .immersive-player-dock,
 .immersive-shell .immersive-player-dock,
 .stage-shell .stage-player-dock,
-.immersive-shell .stage-player-dock {
+.immersive-shell .stage-player-dock,
+/* The dock is portaled to body, so it is not a descendant of either shell. */
+#player-dock-root > .immersive-player-dock {
   /* Keep frosted glass translucent so content can show through under the dock */
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 48%, rgba(255, 255, 255, 0.02) 100%),
@@ -11545,7 +11517,9 @@ body {
 .immersive-shell .spotify-player-bar::before,
 .immersive-shell .spotify-player-bar::after,
 .immersive-shell .immersive-player-dock::before,
-.immersive-shell .immersive-player-dock::after {
+.immersive-shell .immersive-player-dock::after,
+#player-dock-root > .immersive-player-dock::before,
+#player-dock-root > .immersive-player-dock::after {
   content: none !important;
   display: none !important;
 }
@@ -11605,7 +11579,8 @@ body {
   .stage-shell .spotify-player-bar.immersive-player-dock,
   .immersive-shell .spotify-player-bar.immersive-player-dock,
   .stage-shell .stage-player-dock,
-  .immersive-shell .stage-player-dock {
+  .immersive-shell .stage-player-dock,
+  #player-dock-root > .immersive-player-dock {
     left: 12px !important;
     right: 12px !important;
     bottom: max(10px, env(safe-area-inset-bottom)) !important;
@@ -11638,7 +11613,8 @@ body {
 :root[data-theme="light"] .stage-shell .spotify-player-bar,
 :root[data-theme="light"] .immersive-shell .spotify-player-bar,
 :root[data-theme="light"] .stage-shell .immersive-player-dock,
-:root[data-theme="light"] .immersive-shell .immersive-player-dock {
+:root[data-theme="light"] .immersive-shell .immersive-player-dock,
+:root[data-theme="light"] #player-dock-root > .immersive-player-dock {
   border-color: rgba(20, 40, 30, 0.12) !important;
   background:
     linear-gradient(165deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.48) 100%),
@@ -11648,4 +11624,48 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
   backdrop-filter: blur(24px) saturate(165%) !important;
   -webkit-backdrop-filter: blur(24px) saturate(165%) !important;
+}
+
+/*
+ * Account and settings surfaces are sometimes rendered outside a shell (the
+ * login dialog is portaled to body), so their material cannot depend on an
+ * ancestor selector such as `.immersive-shell`.
+ */
+.utility-drawer,
+.account-dialog-panel,
+.stage-auth-panel {
+  border-color: var(--glass-stroke) !important;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.045) 48%, rgba(255, 255, 255, 0.02) 100%),
+    rgba(10, 14, 16, 0.42) !important;
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  backdrop-filter: blur(22px) saturate(170%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(170%) !important;
+}
+
+:root[data-theme="light"] .utility-drawer,
+:root[data-theme="light"] .account-dialog-panel,
+:root[data-theme="light"] .stage-auth-panel {
+  border-color: rgba(20, 40, 30, 0.12) !important;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.44) 52%, rgba(255, 255, 255, 0.26) 100%),
+    rgba(238, 243, 240, 0.46) !important;
+  box-shadow:
+    0 16px 42px rgba(24, 48, 34, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
+}
+
+/* Keep the standards property after CSS prefixing; Chromium ignores the lone webkit alias. */
+@supports (backdrop-filter: blur(1px)) {
+  #player-dock-root > .immersive-player-dock {
+    backdrop-filter: blur(24px) saturate(170%) !important;
+  }
+
+  .utility-drawer,
+  .account-dialog-panel,
+  .stage-auth-panel {
+    backdrop-filter: blur(22px) saturate(170%) !important;
+  }
 }

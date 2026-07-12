@@ -264,3 +264,111 @@
  ✓ Compiled in 358ms (845 modules)
  ✓ Compiled in 454ms (1744 modules)
  ✓ Compiled in 962ms (1744 modules)
+ ✓ Compiled in 10.1s (845 modules)
+ ✓ Compiled in 1128ms (845 modules)
+ GET / 200 in 2344ms
+ ○ Compiling /offline ...
+ ✓ Compiled /offline in 1433ms (929 modules)
+ ✓ Compiled in 4s (845 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 2.4s (1864 modules)
+ GET /offline 500 in 10607ms
+ GET /offline 500 in 519ms
+ ✓ Compiled in 1031ms (845 modules)
+ ✓ Compiled in 1060ms (845 modules)
+ ✓ Compiled in 2.3s (1744 modules)
+ ✓ Compiled in 866ms (845 modules)
+ ✓ Compiled in 1401ms (1744 modules)
+ ✓ Compiled in 1800ms (845 modules)
+ ✓ Compiled in 967ms (845 modules)
+ ✓ Compiled in 1337ms (1744 modules)
+ ✓ Compiled in 705ms (845 modules)
+ ✓ Compiled in 2.8s (1744 modules)
+ ✓ Compiled in 1240ms (1744 modules)
+ ✓ Compiled in 1354ms (1744 modules)
+ ✓ Compiled in 1208ms (845 modules)
+ ✓ Compiled in 1011ms (845 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 1578ms (1826 modules)
+ GET / 500 in 2024ms
+ GET / 500 in 141ms
+ ✓ Compiled /favicon.ico in 463ms (1011 modules)
+ GET /favicon.ico 200 in 974ms
+ GET / 200 in 1050ms
+ ○ Compiling /api/music/track/[id]/play-url ...
+ ✓ Compiled /api/music/track/[id]/play-url in 956ms (1872 modules)
+ GET /favicon.ico 404 in 1257ms
+ POST /api/account/auth/refresh 500 in 2170ms
+ POST /api/account/auth/refresh 500 in 228ms
+ GET /api/music/track/1957838347/play-url 500 in 2334ms
+ GET /api/music/track/1957838347/play-url 500 in 205ms
+ GET /api/music/track/85571/play-url 500 in 1166ms
+ GET /api/music/track/85571/play-url 500 in 205ms
+ ✓ Compiled /api/music/track/[id]/insight in 349ms (1038 modules)
+ ✓ Compiled (1040 modules)
+ GET / 200 in 1568ms
+ POST /api/account/auth/refresh 500 in 662ms
+ POST /api/account/auth/refresh 500 in 53ms
+ GET /api/music/track/1957838347/quality-options 500 in 539ms
+ GET /api/music/track/1957838347/quality-options 500 in 45ms
+ POST /api/account/auth/refresh 500 in 500ms
+ POST /api/account/auth/refresh 500 in 42ms
+ POST /api/account/auth/refresh 500 in 477ms
+ POST /api/account/auth/refresh 500 in 45ms
+ GET /api/music/track/1957838347/quality-options 500 in 473ms
+ GET /api/music/track/1957838347/quality-options 500 in 39ms
+ GET /api/music/scene/sport?bpm=130 200 in 16995ms
+ GET /api/music/discover/home 200 in 17135ms
+ GET /api/music/track/1957838347/insight 200 in 16909ms
+ GET /api/music/track/1957838347/quality-options 503 in 17931ms
+ GET /api/music/track/1957838347/insight 500 in 896ms
+ GET /api/music/scene/sati 200 in 20220ms
+ GET / 200 in 1103ms
+ ✓ Compiled in 3.2s (1886 modules)
+ ✓ Compiled in 1362ms (1744 modules)
+ ✓ Compiled in 509ms (845 modules)
+ ✓ Compiled in 1556ms (1744 modules)
+ ✓ Compiled in 897ms (1744 modules)
+ ✓ Compiled in 963ms (1744 modules)
+ ✓ Compiled in 2.2s (1744 modules)
+ ✓ Compiled in 1547ms (1744 modules)
+ ✓ Compiled in 1698ms (1744 modules)
+ ✓ Compiled in 1746ms (1744 modules)
+ ✓ Compiled in 1356ms (1744 modules)
+ ✓ Compiled in 1382ms (1744 modules)
+ ✓ Compiled in 1011ms (1744 modules)
+ ✓ Compiled in 781ms (1744 modules)
+ ✓ Compiled in 492ms (845 modules)
+ GET / 200 in 993ms
+ ✓ Compiled /api/music/track/[id]/play-url in 310ms (916 modules)
+ ✓ Compiled (940 modules)
+ GET /icon.png 200 in 1254ms
+ POST /api/account/auth/refresh 502 in 1611ms
+ ✓ Compiled /api/music/track/[id]/quality-options in 303ms (942 modules)
+ GET /api/music/track/85571/play-url 200 in 11141ms
+ GET /api/music/track/1957838347/quality-options 200 in 10730ms
+ GET /api/music/track/1957838347/play-url 200 in 12315ms
+ GET /api/music/scene/sport?bpm=130 200 in 12352ms
+ GET /api/music/discover/home 200 in 12353ms
+ GET /api/music/scene/sati 200 in 12353ms
+ ✓ Compiled in 2.1s (1744 modules)
+ ✓ Compiled in 1730ms (1744 modules)
+ ✓ Compiled in 840ms (1744 modules)
+ ✓ Compiled in 738ms (1744 modules)
+ ✓ Compiled in 748ms (1744 modules)
+ ✓ Compiled in 858ms (1744 modules)
+ ✓ Compiled in 1275ms (1744 modules)
+ ✓ Compiled in 1157ms (1744 modules)
+ ✓ Compiled in 584ms (845 modules)
+ ✓ Compiled in 48.7s (1744 modules)
+ ✓ Compiled in 5.6s (1744 modules)
+ ✓ Compiled in 14.8s (1744 modules)
+ ✓ Compiled in 5.1s (1744 modules)
+ ✓ Compiled in 6s (1744 modules)
+ ✓ Compiled in 8.1s (1744 modules)
+ ✓ Compiled in 7.7s (1744 modules)
+ ✓ Compiled in 8.2s (1744 modules)
+ ✓ Compiled in 3.3s (845 modules)
+ ✓ Compiled in 9.7s (1744 modules)
+ ✓ Compiled in 23.3s (1744 modules)
+ ✓ Compiled in 54.5s (1744 modules)

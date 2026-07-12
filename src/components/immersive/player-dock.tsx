@@ -168,8 +168,12 @@ export function PlayerDock({
               aria-hidden="true"
             />
             <div className="player-dock-copy">
-              <p className="player-title">{title}</p>
-              <p className="player-subtitle">{subtitle}</p>
+              <p className="player-title">
+                {title}
+              </p>
+              <p className="player-subtitle">
+                {subtitle}
+              </p>
             </div>
           </div>
         ) : null}

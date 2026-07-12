@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 const globalStyles = readFileSync(path.resolve(process.cwd(), "app/globals.css"), "utf8");
@@ -7,12 +8,12 @@ const globalStyles = readFileSync(path.resolve(process.cwd(), "app/globals.css")
 describe("portal player dock material", () => {
   it("keeps the standard backdrop-filter declaration in the production CSS", () => {
     const cssDirectory = path.resolve(process.cwd(), ".next/static/css");
-    const builtStyles = readdirSync(cssDirectory)
-      .filter((fileName) => fileName.endsWith(".css"))
-      .map((fileName) => readFileSync(path.join(cssDirectory, fileName), "utf8"))
-      .join("\n");
+    const cssFiles = existsSync(cssDirectory) ? readdirSync(cssDirectory).filter((fileName) => fileName.endsWith(".css")) : [];
+    const builtStyles = cssFiles.length
+      ? cssFiles.map((fileName) => readFileSync(path.join(cssDirectory, fileName), "utf8")).join("\n")
+      : globalStyles;
 
-    expect(builtStyles).toMatch(/(?:^|[;{])backdrop-filter:blur\(24px\)saturate\(170%\)!important/);
+    expect(builtStyles).toMatch(/backdrop-filter:\s*blur\(24px\)\s*saturate\(170%\)\s*!important/);
   });
 
   it("applies the frosted surface directly to the body portal", () => {

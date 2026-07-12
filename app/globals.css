@@ -10224,8 +10224,6 @@ body {
 .stage-shell .home-playlist-more-section,
 .immersive-shell .artist-detail-panel,
 .stage-shell .artist-detail-panel,
-.immersive-shell .home-playlist-drawer,
-.stage-shell .home-playlist-drawer,
 .immersive-shell .utility-drawer,
 .stage-shell .utility-drawer {
   border: 1px solid var(--glass-stroke);
@@ -10938,8 +10936,6 @@ body {
     0 0 16px color-mix(in srgb, var(--stage-glow) 16%, transparent);
 }
 
-:root[data-theme="light"] .immersive-shell .home-playlist-drawer,
-:root[data-theme="light"] .stage-shell .home-playlist-drawer,
 :root[data-theme="light"] .immersive-shell .utility-drawer,
 :root[data-theme="light"] .stage-shell .utility-drawer {
   border-color: var(--glass-stroke);
@@ -11632,6 +11628,27 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
   backdrop-filter: blur(24px) saturate(165%) !important;
   -webkit-backdrop-filter: blur(24px) saturate(165%) !important;
+}
+
+.immersive-shell .home-playlist-drawer,
+.stage-shell .home-playlist-drawer,
+.home-playlist-drawer {
+  border-color: var(--glass-stroke);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.06) 46%, rgba(255, 255, 255, 0.025) 100%),
+    rgba(12, 17, 18, 0.78);
+  box-shadow: var(--glass-shadow-float), var(--glass-highlight);
+  backdrop-filter: blur(22px) saturate(170%);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+}
+
+:root[data-theme="light"] .immersive-shell .home-playlist-drawer,
+:root[data-theme="light"] .stage-shell .home-playlist-drawer,
+:root[data-theme="light"] .home-playlist-drawer {
+  border-color: rgba(92, 113, 143, 0.24);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.62) 52%, rgba(255, 255, 255, 0.46) 100%),
+    rgba(238, 244, 240, 0.78);
 }
 
 /*

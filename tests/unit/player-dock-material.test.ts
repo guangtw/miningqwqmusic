@@ -26,4 +26,16 @@ describe("portal player dock material", () => {
       /\.utility-drawer,\s*\.account-dialog-panel,\s*\.stage-auth-panel[\s\S]*?background:[\s\S]*?backdrop-filter:\s*blur\(22px\)\s*saturate\(170%\)[\s\S]*?-webkit-backdrop-filter:\s*blur\(22px\)\s*saturate\(170%\)/
     );
   });
+
+  it("keeps playlist drawers on their own opaque material instead of the shared utility glass", () => {
+    expect(globalStyles).toMatch(
+      /\.immersive-shell \.home-playlist-drawer,\s*\.stage-shell \.home-playlist-drawer,\s*\.home-playlist-drawer[\s\S]*?rgba\(12,\s*17,\s*18,\s*0\.78\)/
+    );
+    expect(globalStyles).toMatch(
+      /:root\[data-theme="light"\] \.immersive-shell \.home-playlist-drawer,\s*:root\[data-theme="light"\] \.stage-shell \.home-playlist-drawer,\s*:root\[data-theme="light"\] \.home-playlist-drawer[\s\S]*?rgba\(238,\s*244,\s*240,\s*0\.78\)/
+    );
+    expect(globalStyles).not.toMatch(
+      /:root\[data-theme="light"\] \.immersive-shell \.home-playlist-drawer,\s*:root\[data-theme="light"\] \.stage-shell \.home-playlist-drawer,\s*:root\[data-theme="light"\] \.immersive-shell \.utility-drawer/
+    );
+  });
 });

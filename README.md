@@ -1,6 +1,6 @@
 # MiningQwQ Music Player
 
-基于 `Next.js + TypeScript + BFF` 的音乐播放器网站，面向“网易云风格”的私有音乐源 API。
+基于 `Next.js + TypeScript + BFF` 的音乐播放器网站，采用 [唱片行](https://github.com/guangtw/chang-pian-hang) 前端，面向“网易云风格”的私有音乐源 API。前端与 BFF 在同一个进程、同一个域名运行，无需再启动 Vite 或配置跨域代理。
 
 ## 功能概览
 
@@ -8,14 +8,14 @@
 - 歌词时间轴同步与滚动高亮
 - 收藏与最近播放（本地持久化）
 - 可选账号登录（不强制），登录后自动启用云端音乐库同步
-- 播放模式：顺序 / 单曲循环 / 随机
+- 播放模式：顺序 / 列表循环 / 单曲循环 / 随机
 - 播放链接短时效续签（播放器中自动刷新播放 URL）
 - 基础 PWA：可安装、离线壳页面、静态资源缓存
 - BFF 代理与上游解耦（前端不直连私有音乐源）
 
 ## 技术架构
 
-- 前端：Next.js App Router + React + Zustand
+- 前端：原版唱片行 React SPA，保留全部组件、CSS、字体、唱机和视图过渡动效，由 Next.js 挂载
 - BFF：Next.js Route Handlers
 - 适配层：`MusicSourceAdapter` + `NeteaseLikeAdapter`
 - 稳定性：超时、重试、熔断、标准错误响应、traceId
@@ -26,8 +26,11 @@
 - `src/lib/music/adapter.ts`: 上游适配器抽象
 - `src/lib/music/providers/netease-like.ts`: 网易云风格 provider
 - `src/lib/music/service.ts`: 熔断包装后的音乐服务
-- `src/store/player-store.ts`: 播放状态机与本地持久化
-- `src/hooks/use-player-controller.ts`: 音频控制与 URL 续签
+- `src/frontend/`: 唱片行前端；旧界面及其专用 hooks、store、样式已删除
+- `src/frontend/player/player.ts`: 音频控制、播放队列与 URL 续签
+- `src/frontend/lib/account.ts`: 同源登录、token 刷新和收藏同步
+- `src/frontend/lib/migrate-storage.ts`: 一次性迁移旧站设备上的收藏、历史、队列与偏好
+- `docs/frontend-integration.md`: 来源版本、接入方式与验证命令
 
 ## 环境变量
 

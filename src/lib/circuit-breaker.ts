@@ -37,6 +37,8 @@ export class CircuitBreaker {
       this.failures = 0;
       return result;
     } catch (error) {
+      // An unavailable song is a resource failure, not an upstream outage.
+      if (error instanceof AppError && error.status < 500) throw error;
       this.failures += 1;
       if (this.failures >= this.failureThreshold) {
         this.state = "open";

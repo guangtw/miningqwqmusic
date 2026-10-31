@@ -92,4 +92,21 @@ describe("account proxy route", () => {
     expect(payload.code).toBe(5403);
     expect(payload.retryable).toBe(true);
   });
+
+  it.each([["..", "..", "admin"], ["auth/me"], ["auth\\me"]])("rejects path traversal segments %s", async (...segments) => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const response = await GET(new NextRequest("http://localhost/api/account/test"), createContext(segments));
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not trust client-supplied forwarding identity and prevents token caching", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 0 }, { headers: { "cache-control": "public, max-age=600" } }));
+    const response = await GET(new NextRequest("http://localhost/api/account/auth/me", { headers: { "x-forwarded-for": "127.0.0.1" } }), createContext(["auth", "me"]));
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).has("x-forwarded-for")).toBe(false);
+    expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
 });

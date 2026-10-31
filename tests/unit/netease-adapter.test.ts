@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNeteaseLikeAdapterFromEnv, NeteaseLikeAdapter } from "@/src/lib/music/providers/netease-like";
 
-function createAdapter(overrides?: ConstructorParameters<typeof NeteaseLikeAdapter>[0]) {
+function createAdapter(overrides?: Partial<ConstructorParameters<typeof NeteaseLikeAdapter>[0]>) {
   return new NeteaseLikeAdapter({
     baseUrl: "https://music.internal.test",
     apiKey: "abc123",

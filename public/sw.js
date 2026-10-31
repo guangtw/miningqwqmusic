@@ -1,4 +1,4 @@
-const CACHE_NAME = "qwq-music-shell-v4";
+const CACHE_NAME = "qwq-music-shell-v6";
 const OFFLINE_URL = "/offline";
 
 const ASSET_CACHE = [
@@ -28,7 +28,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter((key) => key.startsWith("qwq-music-shell-") && key !== CACHE_NAME)
             .map((key) => caches.delete(key))
         )
       )

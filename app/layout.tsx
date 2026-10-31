@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import "./globals.css";
+import "@fontsource-variable/space-grotesk";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@/src/frontend/styles/tokens.css";
+import "@/src/frontend/styles/app.css";
+import "@/src/frontend/styles/motion.css";
 import { ServiceWorkerRegister } from "@/src/components/sw-register";
 
 const siteUrl = "https://echo.miningqwq.cn";
-const siteTitle = "MiningQwQ Music";
+const siteTitle = process.env.NEXT_PUBLIC_SITE_NAME || `${process.env.NEXT_PUBLIC_BRAND_BIG || "Mining"}${process.env.NEXT_PUBLIC_BRAND_SMALL || "唱片行"}`;
 const siteDescription = "MiningQwQ Music 是一个面向私人网易云风格音源的现代网页音乐播放器，支持发现、搜索、播放队列、歌词与音乐库同步。";
 
 export const metadata: Metadata = {
@@ -22,8 +26,7 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "32x32" },
-      { url: "/icon.png", type: "image/png", sizes: "512x512" }
+      { url: "/record-store-icon.svg", type: "image/svg+xml" }
     ],
     apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }]
   },
@@ -52,12 +55,15 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#070a0c"
+  themeColor: "#f3eee4"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var s=JSON.parse(localStorage.getItem('cph.settings.v2')||'{}');if(s.theme==='paper'||s.theme==='night')document.documentElement.dataset.theme=s.theme;if(s.motion)document.documentElement.dataset.motion=s.motion}catch(e){}})()` }} />
+      </head>
       <body>
         <ServiceWorkerRegister />
         {children}

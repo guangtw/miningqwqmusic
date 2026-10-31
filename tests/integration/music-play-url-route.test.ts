@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getTrackQualityAvailability: vi.fn(async (trackId: string) => ({
@@ -40,6 +40,7 @@ function context(trackId: string) {
 describe("GET /api/music/track/:id/play-url", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("ACCOUNT_SERVICE_BASE_URL", "http://127.0.0.1:3002");
     mocks.getTrackQualityAvailability.mockClear();
     mocks.getPlaySource.mockClear();
   });
@@ -110,13 +111,13 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(mocks.getTrackQualityAvailability).toHaveBeenCalledWith("1002");
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3002/api/account/auth/me", expect.objectContaining({
       method: "GET",
       headers: {
         authorization: "Bearer token"
       },
       cache: "no-store"
-    });
+    }));
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1002", {
       level: "lossless",
       unblockMode: "force_on"
@@ -324,20 +325,20 @@ describe("GET /api/music/track/:id/play-url", () => {
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3002/api/account/auth/me", expect.objectContaining({
       method: "GET",
       headers: {
         cookie: "mqm_refresh=refresh-token"
       },
       cache: "no-store"
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/auth/refresh", {
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:3002/api/account/auth/refresh", expect.objectContaining({
       method: "POST",
       headers: {
         cookie: "mqm_refresh=refresh-token"
       },
       cache: "no-store"
-    });
+    }));
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1005", {
       level: undefined,
       unblockMode: "force_on"
@@ -459,20 +460,20 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://localhost:3000/api/account/auth/me", {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3002/api/account/auth/me", expect.objectContaining({
       method: "GET",
       headers: {
         authorization: "Bearer token"
       },
       cache: "no-store"
-    });
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/music/unblock/entitlement", {
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:3002/api/account/music/unblock/entitlement", expect.objectContaining({
       method: "GET",
       headers: {
         authorization: "Bearer token"
       },
       cache: "no-store"
-    });
+    }));
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1006", {
       level: undefined,
       unblockMode: "force_on"
@@ -592,15 +593,17 @@ describe("GET /api/music/track/:id/play-url", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://localhost:3000/api/account/music/unblock/entitlement", {
+    expect(fetchMock).toHaveBeenNthCalledWith(3, "http://127.0.0.1:3002/api/account/music/unblock/entitlement", expect.objectContaining({
       method: "GET",
       headers: {
         authorization: "Bearer cookie-refresh-token"
       },
       cache: "no-store"
-    });
+    }));
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");
     expect(payload.data.authorizationVersion).toBe(9);
   });
 });
+
+afterEach(() => vi.unstubAllEnvs());

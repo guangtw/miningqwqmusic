@@ -5,8 +5,8 @@ export default function OfflinePage() {
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        background: "linear-gradient(145deg, #0b1020, #0f223f)",
-        color: "#e7eeff",
+        background: "var(--bg)",
+        color: "var(--ink)",
         padding: "2rem"
       }}
     >

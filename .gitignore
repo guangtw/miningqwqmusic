@@ -25,3 +25,4 @@ npm-debug.log*
 coverage
 playwright-report
 test-results
+*.tsbuildinfo

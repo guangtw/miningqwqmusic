@@ -1,5 +1,14 @@
 import type { PlayUnblockMode } from "@/src/types/music";
 import { PLAY_QUALITY_LEVELS, toPlayQualityLevel } from "@/src/lib/play-quality";
+import { accountServiceUrl } from "@/src/lib/account-service";
+
+function fetchAccountAuthorization(path: string, init: RequestInit): Promise<Response> {
+  return fetch(accountServiceUrl(path.split("/")).toString(), {
+    ...init,
+    redirect: "error",
+    signal: AbortSignal.timeout(5000)
+  });
+}
 
 export const PLAY_UNBLOCK_MODES: PlayUnblockMode[] = ["auto", "force_on", "force_off"];
 
@@ -62,8 +71,7 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
   const cookie = request.headers.get("cookie");
 
   try {
-    const authUrl = new URL("/api/account/auth/me", request.url);
-    const authResponse = await fetch(authUrl.toString(), {
+    const authResponse = await fetchAccountAuthorization("auth/me", {
       method: "GET",
       headers: forwardedHeaders,
       cache: "no-store"
@@ -83,8 +91,7 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
   if (cookie) {
     try {
       const refreshHeaders: Record<string, string> = { cookie };
-      const refreshUrl = new URL("/api/account/auth/refresh", request.url);
-      const refreshResponse = await fetch(refreshUrl.toString(), {
+      const refreshResponse = await fetchAccountAuthorization("auth/refresh", {
         method: "POST",
         headers: refreshHeaders,
         cache: "no-store"
@@ -103,7 +110,6 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
   }
 
   try {
-    const entitlementUrl = new URL("/api/account/music/unblock/entitlement", request.url);
     const entitlementHeaders: Record<string, string> = {};
     if (authorization) {
       entitlementHeaders.authorization = authorization;
@@ -112,7 +118,7 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
     } else if (cookie) {
       return null;
     }
-    const entitlementResponse = await fetch(entitlementUrl.toString(), {
+    const entitlementResponse = await fetchAccountAuthorization("music/unblock/entitlement", {
       method: "GET",
       headers: entitlementHeaders,
       cache: "no-store"

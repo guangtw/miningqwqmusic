@@ -1,3 +1,9 @@
 {
-  "extends": ["next/core-web-vitals"]
+  "extends": ["next/core-web-vitals"],
+  "overrides": [
+    {
+      "files": ["src/frontend/**/*.tsx"],
+      "rules": { "@next/next/no-img-element": "off" }
+    }
+  ]
 }

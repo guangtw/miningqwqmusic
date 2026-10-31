@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { failure } from "@/src/lib/api-response";
 import { createTraceId } from "@/src/lib/trace";
+import { accountServiceUrl } from "@/src/lib/account-service";
 
 const FORWARDED_REQUEST_HEADERS = [
   "authorization",
@@ -8,9 +9,7 @@ const FORWARDED_REQUEST_HEADERS = [
   "cookie",
   "user-agent",
   "accept",
-  "accept-language",
-  "x-forwarded-for",
-  "x-forwarded-proto"
+  "accept-language"
 ] as const;
 
 const RESPONSE_HEADERS_PASSTHROUGH = [
@@ -21,21 +20,8 @@ const RESPONSE_HEADERS_PASSTHROUGH = [
   "x-accel-buffering"
 ] as const;
 
-function resolveServiceBaseUrl(): string | null {
-  const raw = process.env.ACCOUNT_SERVICE_BASE_URL;
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/\/$/, "");
-}
-
 function buildTargetUrl(request: NextRequest, pathSegments: string[]): URL {
-  const base = resolveServiceBaseUrl();
-  if (!base) {
-    throw new Error("ACCOUNT_SERVICE_NOT_CONFIGURED");
-  }
-  const joinedPath = pathSegments.map((segment) => encodeURIComponent(segment)).join("/");
-  const target = new URL(`${base}/api/account/${joinedPath}`);
+  const target = accountServiceUrl(pathSegments);
   target.search = request.nextUrl.search;
   return target;
 }
@@ -57,6 +43,9 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
   try {
     targetUrl = buildTargetUrl(request, pathSegments);
   } catch (error) {
+    if (error instanceof Error && error.message === "ACCOUNT_SERVICE_PATH_INVALID") {
+      return failure({ code: 4001, message: "Invalid account path", traceId, status: 400 });
+    }
     if (error instanceof Error && error.message === "ACCOUNT_SERVICE_NOT_CONFIGURED") {
       return failure({
         code: 5401,
@@ -77,16 +66,23 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
 
   const method = request.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "HEAD";
-  const bodyBuffer = hasBody ? await request.arrayBuffer() : undefined;
-
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  request.signal.addEventListener("abort", onAbort, { once: true });
+  if (request.signal.aborted) onAbort();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    const bodyBuffer = hasBody ? await request.arrayBuffer() : undefined;
     const upstreamResponse = await fetch(targetUrl, {
       method,
       headers: pickForwardHeaders(request),
       body: hasBody ? bodyBuffer : undefined,
       redirect: "manual",
-      cache: "no-store"
+      cache: "no-store",
+      signal: controller.signal
     });
+    // The deadline covers response headers; SSE streams stay connected.
+    clearTimeout(timer);
 
     const headers = new Headers();
     for (const headerName of RESPONSE_HEADERS_PASSTHROUGH) {
@@ -109,6 +105,7 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
       }
     }
 
+    headers.set("cache-control", "no-store");
     return new Response(upstreamResponse.body, {
       status: upstreamResponse.status,
       headers
@@ -118,9 +115,12 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
       code: 5403,
       message: "Account service unavailable",
       traceId,
-      status: 502,
+      status: controller.signal.aborted ? 504 : 502,
       retryable: true
     });
+  } finally {
+    clearTimeout(timer);
+    request.signal.removeEventListener("abort", onAbort);
   }
 }
 

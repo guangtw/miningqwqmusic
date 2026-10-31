@@ -4,8 +4,8 @@
   "description": "面向私人网易云风格音源的现代网页音乐播放器。",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0b1020",
-  "theme_color": "#1c6df2",
+  "background_color": "#f1ece3",
+  "theme_color": "#8f5b3d",
   "lang": "zh-CN",
   "icons": [
     {

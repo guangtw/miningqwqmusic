@@ -1,5 +1,5 @@
-import { PlayerApp } from "@/src/components/player-app";
+import { RecordStore } from "@/src/frontend/record-store";
 
 export default function HomePage() {
-  return <PlayerApp />;
+  return <RecordStore />;
 }

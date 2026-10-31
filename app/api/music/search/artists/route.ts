@@ -1,3 +1,4 @@
+import { boundedInteger } from "@/src/lib/api-pagination";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { searchArtists } from "@/src/lib/music/service";
@@ -8,8 +9,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const keyword = (searchParams.get("q") ?? "").trim();
-    const page = Number(searchParams.get("page") ?? "1");
-    const pageSize = Number(searchParams.get("pageSize") ?? "20");
+    const page = boundedInteger(searchParams.get("page"), 1, 10000);
+    const pageSize = boundedInteger(searchParams.get("pageSize"), 20, 50);
 
     if (!keyword) {
       return failure({
@@ -23,8 +24,8 @@ export async function GET(request: Request) {
 
     const data = await searchArtists({
       keyword,
-      page: Number.isNaN(page) ? 1 : Math.max(1, page),
-      pageSize: Number.isNaN(pageSize) ? 20 : Math.min(50, Math.max(1, pageSize))
+      page,
+      pageSize
     });
     return success(data, traceId);
   } catch (error) {

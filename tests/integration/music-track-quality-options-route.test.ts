@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getTrackQualityAvailability: vi.fn(async (trackId: string) => ({
@@ -33,6 +33,7 @@ function context(trackId: string) {
 describe("GET /api/music/track/:id/quality-options", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("ACCOUNT_SERVICE_BASE_URL", "http://127.0.0.1:3002");
     mocks.getTrackQualityAvailability.mockClear();
   });
 
@@ -218,15 +219,17 @@ describe("GET /api/music/track/:id/quality-options", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://localhost:3000/api/account/auth/refresh", {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "http://127.0.0.1:3002/api/account/auth/refresh", expect.objectContaining({
       method: "POST",
       headers: {
         cookie: "mqm_refresh=refresh-token"
       },
       cache: "no-store"
-    });
+    }));
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");
     expect(payload.data.authorizationVersion).toBe(13);
   });
 });
+
+afterEach(() => vi.unstubAllEnvs());

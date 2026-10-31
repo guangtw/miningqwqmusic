@@ -69,9 +69,11 @@ function dependencies(repo, exported) {
   } else npm(exported, ['ci']);
 }
 
+let phase = 'transport';
 try {
   // Fail before expensive tests if transport or sudo is unavailable.
   if (!flags.has('--prepare-only')) run('ssh', ['-o', 'ConnectTimeout=8', host, 'sudo -n true && echo DEPLOY_TRANSPORT_OK']);
+  phase = 'source';
   const musicCommit = checkRepo(root);
   const loginCommit = checkRepo(loginRoot);
   const id = 'echo-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14) + '-' + musicCommit.slice(0, 8);
@@ -88,22 +90,28 @@ try {
   const manifest = { schema: 1, id, musicCommit, loginCommit, createdAt: new Date().toISOString(), files: fileHashes(pack) };
   fs.writeFileSync(path.join(pack, 'release.json'), JSON.stringify(manifest, null, 2));
   if (!flags.has('--prepare-only')) {
+    phase = 'tests';
     dependencies(root, path.join(stage, 'music'));
     dependencies(loginRoot, path.join(stage, 'login'));
-    npm(path.join(stage, 'login'), ['run', 'test:run']);
-    npm(path.join(stage, 'music'), ['run', 'test:run']);
+    // Keep file-level DB setup independent without exhausting SQLite/Windows I/O.
+    // Tests that intentionally issue concurrent requests still run unchanged.
+    npm(path.join(stage, 'login'), ['run', 'test:run', '--', '--fileParallelism=false']);
+    npm(path.join(stage, 'music'), ['run', 'test:run', '--', '--fileParallelism=false']);
     npm(path.join(stage, 'music'), ['run', 'test:e2e']);
   }
   const archive = path.join(stage, id + '.tar.gz');
+  phase = 'package';
   run('tar', ['-czf', archive, '-C', pack, 'music', 'login', 'ops', 'release.json']);
   const digest = hash(archive);
   fs.writeFileSync(path.join(stage, 'receipt.json'), JSON.stringify({ id, musicCommit, loginCommit, archive, sha256: digest }, null, 2));
   if (flags.has('--prepare-only')) { console.log('PACKAGE_VERIFIED', archive, digest); process.exit(0); }
   const remote = '/home/aiops/releases/' + id;
+  phase = 'upload';
   run('ssh', [host, 'mkdir -p ' + remote]);
   run('scp', [archive, host + ':' + remote + '/release.tar.gz']);
   // The transport hash is checked before any release code is extracted/executed.
   run('ssh', [host, 'cd ' + remote + ' && echo "' + digest + '  release.tar.gz" | sha256sum -c - && tar -xzf release.tar.gz && (umask 077; nohup /bin/bash ' + remote + '/ops/run-echo-release.sh > job.log 2>&1 < /dev/null & echo DEPLOY_PID=$!)']);
+  phase = 'server';
   const deadline = Date.now() + 15 * 60 * 1000;
   let complete = false;
   while (Date.now() < deadline) {
@@ -125,11 +133,13 @@ try {
     console.log('SERVER_DEPLOYMENT_RUNNING', id);
   }
   if (!complete) throw Error('Timed out waiting for the server result. Do not start a second release; inspect the detached job first: ' + remote);
+  phase = 'verify';
   const response = await fetch(origin + '/__deployment.json?check=' + id, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
   const receipt = await response.json();
   if (!response.ok || receipt.id !== id || receipt.musicCommit !== musicCommit || receipt.loginCommit !== loginCommit) throw Error('Public deployment receipt does not match the requested release');
   console.log('PRODUCTION_VERIFIED', origin, id);
   if (flags.has('--push')) {
+    phase = 'github';
     run('git', ['push', 'origin', loginCommit + ':refs/heads/main'], loginRoot);
     run('git', ['push', 'origin', musicCommit + ':refs/heads/main'], root);
     for (const [repo, expected] of [[loginRoot, loginCommit], [root, musicCommit]]) {
@@ -141,7 +151,10 @@ try {
     console.log('GITHUB_AND_PRODUCTION_VERIFIED');
   }
 } catch (error) {
-  console.error('RELEASE_FAILED:', error.message);
-  console.error('Production is successful only after PRODUCTION_VERIFIED. If SSH fails, check the server /32 route and the current single-IP cloud firewall rule; do not change sudo or disable host-key verification.');
+  console.error('RELEASE_FAILED [' + phase + ']:', error.message);
+  if (phase === 'transport') console.error('Check the server /32 route and current single-IP firewall rule. Do not change sudo or disable host-key verification.');
+  else if (['source', 'tests', 'package', 'upload'].includes(phase)) console.error('This release has not changed production or pushed source.');
+  else if (phase === 'github') console.error('Production was verified. Complete the GitHub step using the same commits/package; do not redeploy.');
+  else console.error('Inspect the server job/result before starting another release. Only PRODUCTION_VERIFIED confirms a completed deployment.');
   process.exitCode = 1;
 }

@@ -117,8 +117,8 @@ try {
   while (Date.now() < deadline) {
     await new Promise(resolve => setTimeout(resolve, 5000));
     let result;
-    try { result = read('ssh', ['-o', 'ConnectTimeout=8', host, 'test ! -f ' + remote + '/result.json || cat ' + remote + '/result.json']); }
-    catch { console.log('SSH interrupted; the detached server job continues. Waiting for the HTTPS receipt.'); }
+    try { result = read('ssh', ['-o', 'ConnectTimeout=8', host, 'test ! -f ' + remote + '/result.json || sudo -n cat ' + remote + '/result.json']); }
+    catch { console.log('Cannot read server status over SSH; the detached job continues. Waiting for the next status check.'); }
     if (result) {
       const state = JSON.parse(result);
       if (state.id !== id || state.status !== 'success') throw Error('Server release failed; previous services restored where necessary. Log: ' + remote + '/job.log');

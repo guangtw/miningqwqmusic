@@ -34,6 +34,10 @@ export const api = {
   playUrlRenewLeadSeconds: 20,
   /** 已登录时，多久从云端拉一次收藏/最近播放（毫秒） */
   libraryPullIntervalMs: 5 * 60_000,
+  /** 密码规则，和账户服务一致（AUTH_PASSWORD_MIN_LENGTH 最低 10） */
+  password: { min: 10, max: 128 },
+  /** 头像上传上限（账户服务 5MB） */
+  avatarMaxBytes: 5 * 1024 * 1024,
   /** 账户服务单个请求最多多少个 JSON 字段（AUTH_JSON_BODY_MAX_FIELDS），自建歌单按它分卷存 */
   cloudFieldLimit: 400,
   /** 本地最多保留多少条最近播放 */
@@ -60,6 +64,10 @@ export const api = {
     authRefresh: '/api/account/auth/refresh',
     authMe: '/api/account/auth/me',
     authLogout: '/api/account/auth/logout',
+    authLogoutAll: '/api/account/auth/logout-all',
+    authChangePassword: '/api/account/auth/change-password',
+    profile: '/api/account/profile',
+    profileAvatar: '/api/account/profile/avatar',
     librarySnapshot: '/api/account/library/snapshot',
     libraryFavorites: '/api/account/library/favorites',
     libraryFavorite: '/api/account/library/favorites/:id',
@@ -89,7 +97,9 @@ export const api = {
     4001: '缺少搜索关键词。',
     5101: '提交的内容不合规，检查一下再试。',
     5102: '内容太多了，账户服务收不下。',
+    5202: '邮箱或密码不对。',
     5205: '操作太频繁了，歇一会儿再试。',
+    5301: '头像图片不能用：只支持 PNG、JPG、WebP、GIF，5MB 以内。',
     5401: '账户服务未启用。',
     5501: '兑换码无效、已停用或已过期。',
   } as Record<number, string>,

@@ -76,4 +76,5 @@ export const href = {
   library: () => '#/library',
   settings: () => '#/settings',
   admin: () => '#/admin',
+  account: () => '#/account',
 };

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { login, register } from '../lib/account';
 import { usePresence } from '../lib/motion';
+import { passwordProblem } from '../lib/profile';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
 import { Icon } from './Icon';
+import { PasswordRules } from './PasswordRules';
 
 type Mode = 'login' | 'register';
 
@@ -36,8 +38,10 @@ export function LoginDialog() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setError({ field: 'email', text: '填一个有效的邮箱。' });
-    if (password.length < (mode === 'register' ? 8 : 1))
-      return setError({ field: 'password', text: mode === 'register' ? '密码至少 8 位。' : '填一下密码。' });
+    if (!password) return setError({ field: 'password', text: '填一下密码。' });
+    // 注册时按账户服务的规则先查一遍，免得提交后只收到一句「内容不合规」
+    const problem = mode === 'register' ? passwordProblem(password) : null;
+    if (problem) return setError({ field: 'password', text: problem });
     setBusy(true);
     setError(null);
     try {
@@ -116,6 +120,7 @@ export function LoginDialog() {
             />
             <span>密码</span>
           </label>
+          {mode === 'register' && <PasswordRules value={password} />}
           {error?.field === 'password' && <p className="field-error">{error.text}</p>}
           {error && !error.field && <p className="field-error">{error.text}</p>}
           <button className="btn solid wide" disabled={busy}>

@@ -176,6 +176,45 @@ export async function logout() {
   lastPull = 0;
 }
 
+/** 退出所有设备：撤销这个账号的全部会话（包括这台），其他标签页跟着退出 */
+export async function logoutAll() {
+  await sessionLock(() => authed(p.authLogoutAll, { method: 'POST' }));
+  ++authGeneration;
+  refreshError = null;
+  clearTimeout(recoveryTimer);
+  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  publishAuth('logout');
+  lastPull = 0;
+}
+
+/**
+ * 改密码。账户服务改完会撤销全部会话（包括这台），
+ * 所以接着用新密码重新登录一次，这台设备不用掉线。
+ */
+export async function changePassword(oldPassword: string, newPassword: string): Promise<'relogged' | 'signed-out'> {
+  const email = authStore.get().user?.email;
+  await authed(p.authChangePassword, { method: 'POST', body: { oldPassword, newPassword } });
+  // 重新登录会广播 login，其他标签页随之用新 Cookie 恢复会话
+  if (email) {
+    try {
+      await login(email, newPassword);
+      return 'relogged';
+    } catch {
+      /* 重新登录失败就当退出了 */
+    }
+  }
+  ++authGeneration;
+  clearTimeout(recoveryTimer);
+  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  publishAuth('logout');
+  return 'signed-out';
+}
+
+/** 资料改动（昵称、头像）后，用账户服务返回的新资料替换当前用户 */
+export function setUser(user: AccountUser) {
+  if (authStore.get().user?.id === user.id) authStore.set({ user });
+}
+
 /** Retry after connectivity/foreground recovery; coordinate login/logout across tabs. */
 export function watchSessionRecovery() {
   recoveryWatching = true;

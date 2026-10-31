@@ -19,6 +19,7 @@ import { uiStore } from './player/ui';
 import { Charts } from './views/Charts';
 import { AlbumView, ArtistView, PlaylistView } from './views/Collection';
 import { Home } from './views/Home';
+import { AccountView } from './views/AccountView';
 import { AdminView } from './views/Admin';
 import { Library } from './views/Library';
 import { MyPlaylistView } from './views/MyPlaylist';
@@ -50,6 +51,8 @@ function View({ route }: { route: Route }) {
       return <SettingsView />;
     case 'admin':
       return <AdminView />;
+    case 'account':
+      return <AccountView />;
     default:
       return (
         <div className="page">

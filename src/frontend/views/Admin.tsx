@@ -61,8 +61,8 @@ export function AdminView() {
     return (
       <div className="page">
         <Empty title="这一页只对管理员开放">
-          <a className="btn" href={href.settings()} style={{ marginTop: 18 }}>
-            回设置
+          <a className="btn" href={href.account()} style={{ marginTop: 18 }}>
+            回个人中心
           </a>
         </Empty>
       </div>

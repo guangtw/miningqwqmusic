@@ -153,7 +153,7 @@ test('search categories, login, cloud sync and logout use the BFF contract', asy
   await expect(page.locator('.card-title')).toHaveText('本期精选');
   await page.getByRole('tab', { name: '单曲', exact: true }).click();
   await page.locator('.track').first().getByRole('button', { name: '收藏', exact: true }).click();
-  await page.goto('/#/settings');
+  await page.goto('/#/account');
   await page.locator('.main').getByRole('button', { name: '登录同步', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.locator('input[type="email"]').fill(user.email);
@@ -167,7 +167,7 @@ test('search categories, login, cloud sync and logout use the BFF contract', asy
   const storage = await page.evaluate(() => JSON.stringify(localStorage));
   expect(storage).not.toContain('login-token');
   expect(storage).not.toContain('test-password');
-  await page.goto('/#/settings');
+  await page.goto('/#/account');
   await page.getByRole('button', { name: '退出登录', exact: true }).click();
   await expect(page.locator('.main').getByRole('button', { name: '登录同步' })).toBeVisible();
   expect(state.errors).toEqual([]);

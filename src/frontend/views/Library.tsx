@@ -4,7 +4,7 @@ import { Card } from '../components/Cards';
 import { Icon } from '../components/Icon';
 import { Empty } from '../components/States';
 import { TrackList } from '../components/TrackList';
-import { authStore, displayName, libraryStore, logout, pullLibrary } from '../lib/account';
+import { authStore, displayName, libraryStore, pullLibrary } from '../lib/account';
 import { kindOf, playlistCover } from '../lib/playlists';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
@@ -101,9 +101,9 @@ export function Library() {
           <div className="account-line">
             <Avatar user={user} size={28} />
             <span className="muted small">{user.email} · 已同步</span>
-            <button className="text-btn" onClick={logout}>
-              退出
-            </button>
+            <a className="text-btn" href={href.account()}>
+              个人中心
+            </a>
           </div>
         ) : status === 'guest' ? (
           <div className="account-line">

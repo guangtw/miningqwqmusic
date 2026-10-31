@@ -21,7 +21,7 @@ export function path(template: string, params: Record<string, string> = {}): str
 type Query = Record<string, string | number | undefined>;
 
 export interface RequestInitEx {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   query?: Query;
   body?: unknown;
   token?: string | null;
@@ -47,14 +47,16 @@ export async function request<T>(urlPath: string, init: RequestInitEx = {}): Pro
 
   const headers = new Headers();
   if (init.token) headers.set('authorization', `Bearer ${init.token}`);
-  if (init.body !== undefined) headers.set('content-type', 'application/json');
+  // FormData（上传头像）让浏览器自己带 multipart 边界
+  const form = init.body instanceof FormData;
+  if (init.body !== undefined && !form) headers.set('content-type', 'application/json');
 
   let res: Response;
   try {
     res = await fetch(url, {
       method: init.method ?? 'GET',
       headers,
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
+      body: init.body === undefined ? undefined : form ? (init.body as FormData) : JSON.stringify(init.body),
       credentials: api.base ? 'include' : 'same-origin',
       cache: 'no-store',
       signal: init.signal,

@@ -7,13 +7,13 @@ import { useStore } from '../lib/store';
 import { uiStore } from '../player/ui';
 import { Avatar } from './Avatar';
 
-const SECTION_ALIAS: Record<string, string> = { mine: 'library', admin: 'settings' };
+const SECTION_ALIAS: Record<string, string> = { mine: 'library' };
 
 export function Sidebar() {
   const route = useRoute();
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
-  // 自建歌单归在唱片架下，授权管理归在设置下
+  // 自建歌单归在唱片架下
   const section = SECTION_ALIAS[route.parts[0] ?? ''] ?? route.parts[0] ?? '';
   const navRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
@@ -57,7 +57,12 @@ export function Sidebar() {
 
       <div className="side-foot">
         {status === 'authenticated' && user ? (
-          <a href={href.library()} className="who">
+          <a
+            href={href.account()}
+            className={`who ${section === 'account' || section === 'admin' ? 'on' : ''}`}
+            aria-current={section === 'account' ? 'page' : undefined}
+            title="个人中心"
+          >
             <Avatar user={user} size={30} />
             <span className="who-name">{displayName(user)}</span>
           </a>

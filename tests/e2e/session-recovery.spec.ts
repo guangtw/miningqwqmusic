@@ -30,7 +30,7 @@ test('two tabs serialize cookie rotation and share logout without another passwo
   });
   const first = await context.newPage();
   const second = await context.newPage();
-  await Promise.all([first.goto('/#/settings'), second.goto('/#/settings')]);
+  await Promise.all([first.goto('/#/account'), second.goto('/#/account')]);
   for (const page of [first, second]) await expect(page.locator('.who-name')).toHaveText(user.nickname);
   expect(rotations).toBe(2);
   expect(staleRequests).toBe(0);

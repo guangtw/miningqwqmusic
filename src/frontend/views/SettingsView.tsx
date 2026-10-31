@@ -1,15 +1,13 @@
 import { useSyncExternalStore } from 'react';
 import { music } from '../api';
 import { api } from '../config/site';
-import { MemberCard } from '../components/MemberCard';
 import { QualityPicker } from '../components/QualityPicker';
 import { setQuality } from '../player/player';
-import { authStore, displayName, logout } from '../lib/account';
+import { authStore } from '../lib/account';
 import { transition } from '../lib/motion';
 import { getSettings, subscribeSettings, updateSettings, type Settings, type Theme } from '../lib/settings';
 import { useStore } from '../lib/store';
 import { useAsync } from '../lib/useAsync';
-import { uiStore } from '../player/ui';
 
 const THEMES: { key: Theme; label: string }[] = [
   { key: 'auto', label: '跟随系统' },
@@ -37,7 +35,6 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
 export function SettingsView() {
   const s = useSyncExternalStore(subscribeSettings, getSettings);
   const status = useStore(authStore, (x) => x.status);
-  const user = useStore(authStore, (x) => x.user);
   // 用推荐接口探一下 BFF 是否可用
   const probe = useAsync(() => music.searchAssist(''), []);
 
@@ -73,41 +70,15 @@ export function SettingsView() {
         </div>
 
         <div className="field reveal" style={{ '--i': 3 } as React.CSSProperties}>
-          <span className="label">账号</span>
-          <div className="field-inline">
-            {status === 'authenticated' && user ? (
-              <>
-                <span>{displayName(user)}</span>
-                <span className="muted small">{user.email}</span>
-                <button className="btn sm" onClick={logout}>
-                  退出登录
-                </button>
-              </>
-            ) : status === 'guest' ? (
-              <button className="btn sm" onClick={() => uiStore.set({ login: true })}>
-                登录同步
-              </button>
-            ) : status === 'unavailable' ? (
-              <span className="muted small">后端未启用账户服务，收藏只保存在本机。</span>
-            ) : (
-              <span className="muted small">检查中…</span>
-            )}
-          </div>
-        </div>
-
-        {status !== 'unavailable' && (
-          <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
-            <span className="label">会员卡</span>
-            <MemberCard />
-          </div>
-        )}
-
-        <div className="field reveal" style={{ '--i': 5 } as React.CSSProperties}>
           <span className="label">后端</span>
-          <div className="field-inline">
-            <span className={`status-dot ${probe.loading ? '' : probe.error ? 'bad' : 'ok'}`} />
-            <span className="small">{probe.loading ? '连接中…' : probe.error ? probe.error.message : '已连接'}</span>
-            <span className="mono faint">{api.base || '同源 /api'}</span>
+          <div>
+            <div className="field-inline">
+              <span className={`status-dot ${probe.loading ? '' : probe.error ? 'bad' : 'ok'}`} />
+              <span className="small">{probe.loading ? '连接中…' : probe.error ? probe.error.message : '已连接'}</span>
+              <span className="mono faint">{api.base || '同源 /api'}</span>
+            </div>
+            {/* 账号相关都在个人中心（点侧栏头像），这里只报账户服务有没有开 */}
+            {status === 'unavailable' && <p className="help">后端未启用账户服务，收藏只保存在本机。</p>}
           </div>
         </div>
       </div>

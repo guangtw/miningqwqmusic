@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { site } from '../config/site';
 import { authStore, displayName } from '../lib/account';
-import { isAdmin, redeemCode, refreshEntitlement } from '../lib/membership';
-import { href } from '../lib/router';
+import { redeemCode, refreshEntitlement } from '../lib/membership';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
-import { Icon } from './Icon';
 
 const day = (iso?: string) => {
   if (!iso) return '';
@@ -113,11 +111,6 @@ export function MemberCard() {
           </form>
         )}
         {error && <p className="field-error">{error}</p>}
-        {signedIn && isAdmin() && (
-          <a className="text-btn member-admin" href={href.admin()}>
-            <Icon name="card" size={16} /> 授权管理
-          </a>
-        )}
       </div>
     </div>
   );

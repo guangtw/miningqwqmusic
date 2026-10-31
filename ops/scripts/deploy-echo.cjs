@@ -11,6 +11,7 @@ const manifest = JSON.parse(fs.readFileSync(packageDir + '/release.json', 'utf8'
 if (manifest.schema !== 1 || !/^echo-[0-9]{14}-[a-f0-9]{8}$/.test(manifest.id) || !/^[a-f0-9]{40}$/.test(manifest.musicCommit) || !/^[a-f0-9]{40}$/.test(manifest.loginCommit)) throw Error('Invalid release manifest');
 if (path.basename(packageDir) !== manifest.id) throw Error('Package directory differs from release id');
 const digest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const lockHash = file => crypto.createHash('sha256').update(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')).digest('hex');
 for (const [file, expected] of Object.entries(manifest.files)) {
   if (!/^(music|login|ops)\//.test(file) || file.split('/').includes('..') || /(^|\/)\.env|\.db(?:-|$)|\.pem$|(^|\/)uploads\//.test(file)) throw Error('Forbidden package file');
   if (digest(path.join(packageDir, file)) !== expected) throw Error('Source checksum failed: ' + file);
@@ -52,7 +53,7 @@ function stage() {
   try {
     for (const [source, target] of [[originalLogin.pm_cwd, loginRelease], [previousMusic, musicRelease]]) {
       const options = { cwd: target, env: { ...process.env, NODE_OPTIONS: '--max-old-space-size=768', NEXT_TELEMETRY_DISABLED: '1' }, stdio: ['ignore', fd, fd] };
-      if (fs.existsSync(source + '/node_modules') && digest(source + '/package-lock.json') === digest(target + '/package-lock.json')) {
+      if (fs.existsSync(source + '/node_modules') && lockHash(source + '/package-lock.json') === lockHash(target + '/package-lock.json')) {
         execFileSync('cp', ['-a', '--reflink=auto', source + '/node_modules', target + '/node_modules'], options);
       } else execFileSync(node, [npmCli, 'ci', '--include=dev'], options);
       execFileSync(node, [npmCli, 'run', 'build'], options);

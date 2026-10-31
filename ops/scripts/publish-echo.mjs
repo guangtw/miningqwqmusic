@@ -16,6 +16,7 @@ const origin = 'https://echo.miningqwq.cn';
 const run = (bin, args, cwd = root, options = {}) => execFileSync(bin, args, { cwd, stdio: 'inherit', ...options });
 const read = (bin, args, cwd = root) => execFileSync(bin, args, { cwd, encoding: 'utf8' }).trim();
 const hash = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const lockHash = file => crypto.createHash('sha256').update(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n')).digest('hex');
 const available = (base, names) => names.filter(name => fs.existsSync(path.join(base, name)));
 const configs = ['package.json', 'package-lock.json', 'next.config.mjs', 'next-env.d.ts', 'tsconfig.json', 'postcss.config.mjs', '.eslintrc.json'];
 const runtime = ['app', 'src', 'public', ...configs];
@@ -62,7 +63,7 @@ function npm(stage, args) {
 }
 function dependencies(repo, exported) {
   if (flags.has('--reuse-local-deps')) {
-    if (hash(path.join(repo, 'package-lock.json')) !== hash(path.join(exported, 'package-lock.json'))) throw Error('Local dependencies do not match the committed lockfile');
+    if (lockHash(path.join(repo, 'package-lock.json')) !== lockHash(path.join(exported, 'package-lock.json'))) throw Error('Local dependencies do not match the committed lockfile');
     if (!fs.existsSync(path.join(repo, 'node_modules'))) throw Error('Local dependencies are missing');
     fs.symlinkSync(path.join(repo, 'node_modules'), path.join(exported, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
   } else npm(exported, ['ci']);

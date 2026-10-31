@@ -3,6 +3,7 @@ import { music, type DiscoverBlock, type DiscoverItem } from '../api';
 import { Card, DiscoverCard, discoverActivate } from '../components/Cards';
 import { Cover } from '../components/Cover';
 import { Icon } from '../components/Icon';
+import { useFullRows, useRail } from '../components/Rail';
 import { ErrorState, Loading } from '../components/States';
 import { Vinyl } from '../components/Vinyl';
 import { epigraph as epigraphCfg, homeLayout, site, type BlockLayout } from '../config/site';
@@ -30,11 +31,12 @@ function pickFeature(blocks: DiscoverBlock[]): DiscoverItem | undefined {
   return (preferred ?? fallback)?.items.find((i) => resolveDiscover(i).kind === 'link');
 }
 
-function SectionHead({ no, title }: { no: number; title: string }) {
+function SectionHead({ no, title, children }: { no: number; title: string; children?: React.ReactNode }) {
   return (
     <div className="section-head reveal">
       <span className="section-no">{String(no).padStart(2, '0')}</span>
       <h2>{title}</h2>
+      {children}
     </div>
   );
 }
@@ -80,9 +82,9 @@ function Feature({ item }: { item: DiscoverItem }) {
   );
 }
 
-function BannerStrip({ items }: { items: DiscoverItem[] }) {
+function BannerStrip({ items, className, railRef }: { items: DiscoverItem[]; className: string; railRef: React.Ref<HTMLDivElement> }) {
   return (
-    <div className="banner-strip">
+    <div ref={railRef} className={`banner-strip ${className}`}>
       {items.map((it, i) => {
         const action = resolveDiscover(it);
         const onActivate = discoverActivate(action);
@@ -151,25 +153,50 @@ function Block({ block, no, skip }: { block: DiscoverBlock; no: number; skip?: s
   const layout = layoutOf(block);
   const items = block.items.filter((i) => i.id !== skip).slice(0, homeLayout.limits[layout]);
   if (!items.length) return null;
+  if (layout === 'banner' || layout === 'shelf') return <RailBlock layout={layout} title={block.title} no={no} items={items} />;
+  if (layout === 'grid' || layout === 'list') return <GridBlock title={block.title} no={no} items={items} />;
   return (
     <section className={`section section-${layout}`}>
       <SectionHead no={no} title={block.title} />
-      {layout === 'banner' && <BannerStrip items={items} />}
-      {layout === 'chart' && <ChartList items={items} />}
-      {(layout === 'grid' || layout === 'list') && (
-        <div className="grid-cards">
+      <ChartList items={items} />
+    </section>
+  );
+}
+
+/** 横排：左右翻页，或者展开成网格一次看完 */
+function RailBlock({ layout, title, no, items }: { layout: 'banner' | 'shelf'; title: string; no: number; items: DiscoverItem[] }) {
+  const rail = useRail();
+  return (
+    <section className={`section section-${layout}`}>
+      <SectionHead no={no} title={title}>
+        {rail.controls}
+      </SectionHead>
+      {layout === 'banner' ? (
+        <BannerStrip items={items} className={rail.className} railRef={rail.ref} />
+      ) : (
+        <div ref={rail.ref} className={`shelf ${rail.className}`}>
           {items.map((it, i) => (
             <DiscoverCard key={it.id} item={it} index={i} />
           ))}
         </div>
       )}
-      {layout === 'shelf' && (
-        <div className="shelf">
-          {items.map((it, i) => (
-            <DiscoverCard key={it.id} item={it} index={i} />
-          ))}
-        </div>
-      )}
+    </section>
+  );
+}
+
+/** 网格：只露整行，不让最后一行孤零零剩一张 */
+function GridBlock({ title, no, items }: { title: string; no: number; items: DiscoverItem[] }) {
+  const grid = useFullRows(items.length);
+  return (
+    <section className="section section-grid">
+      <SectionHead no={no} title={title}>
+        {grid.controls}
+      </SectionHead>
+      <div ref={grid.ref} className="grid-cards">
+        {items.slice(0, grid.visible).map((it, i) => (
+          <DiscoverCard key={it.id} item={it} index={i} />
+        ))}
+      </div>
     </section>
   );
 }

@@ -1017,9 +1017,9 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     const [assist, bannerRaw, personalizedRaw, toplistRaw, highQualityRaw] = await Promise.all([
       this.getSearchAssist(""),
       this.requestSafe<AnyRecord>(this.config.pathBanner, {}),
-      this.requestSafe<AnyRecord>(this.config.pathPersonalized, { limit: 8 }),
+      this.requestSafe<AnyRecord>(this.config.pathPersonalized, { limit: 13 }),
       this.requestSafe<AnyRecord>(this.config.pathToplistDetail, {}),
-      this.requestSafe<AnyRecord>(this.config.pathTopPlaylistHighquality, { limit: 8 })
+      this.requestSafe<AnyRecord>(this.config.pathTopPlaylistHighquality, { limit: 12 })
     ]);
 
     const blocks: DiscoverBlock[] = [];
@@ -1054,7 +1054,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         type: "playlist" as const,
         targetId: String(item.id ?? "")
       }))
-      .slice(0, 12);
+      // 多要一张：首页封面故事会占掉第一张，剩下 12 张在 2/3/4/6 列下都能排满整行
+      .slice(0, 13);
     if (personalized.length) {
       blocks.push({ id: "discover-personalized", title: "推荐歌单", items: personalized });
     }

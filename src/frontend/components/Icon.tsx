@@ -43,6 +43,8 @@ const paths = {
   close: <path d="M6 6l12 12M18 6 6 18" />,
   plus: <path d="M12 5v14M5 12h14" />,
   down: <path d="M6 9l6 6 6-6" />,
+  left: <path d="M15 6l-6 6 6 6" />,
+  right: <path d="M9 6l6 6-6 6" />,
   arrow: <path d="M5 12h14m-5-5 5 5-5 5" />,
   more: (
     <g fill="currentColor" stroke="none">

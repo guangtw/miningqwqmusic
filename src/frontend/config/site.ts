@@ -140,7 +140,7 @@ export const homeLayout = {
   /** 封面故事取哪个区块的第一项；找不到就用第一个 grid 区块 */
   featureBlockId: 'discover-personalized',
   /** 每种版式最多展示几项 */
-  limits: { banner: 8, grid: 8, shelf: 12, chart: 8, list: 10 } as Record<BlockLayout, number>,
+  limits: { banner: 8, grid: 12, shelf: 12, chart: 8, list: 10 } as Record<BlockLayout, number>,
 };
 
 /** 音质分三档：常规（有损码率）、无损、臻品（环绕声 / 母带） */
@@ -175,6 +175,7 @@ export const qualityTiers: { key: QualityTier; label: string; note: string }[] =
 export const defaultQuality: PlayQualityLevel = ((env.VITE_DEFAULT_QUALITY as PlayQualityLevel) || 'exhigh');
 
 export const searchTabs = [
+  { key: 'all', label: '综合' },
   { key: 'track', label: '单曲' },
   { key: 'artist', label: '艺人' },
   { key: 'playlist', label: '歌单' },

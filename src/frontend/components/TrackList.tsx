@@ -7,7 +7,9 @@ import { useStore } from '../lib/store';
 import { movePlaylistTrack } from '../lib/playlists';
 import { currentTrack, playerStore, playList, toggle } from '../player/player';
 import { openTrackMenu } from '../player/ui';
+import { Cover } from './Cover';
 import { Equalizer } from './Equalizer';
+import { Highlight } from './Highlight';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 
@@ -18,12 +20,18 @@ interface Props {
   showAlbum?: boolean;
   /** 自建歌单的 id：菜单里多一个「移除」，行可以拖动排序 */
   playlistId?: string;
+  /** 每行带小封面，艺人挪到曲名下面（搜索结果这种来自不同专辑的列表用） */
+  covers?: boolean;
+  /** 标出曲名、艺人里命中的搜索词 */
+  highlight?: string;
+  /** 序号从几开始（分页时接着上一页编号） */
+  start?: number;
 }
 
 /** 入场动画只给前若干行，长列表后面的直接出现 */
 const STAGGER_ROWS = 24;
 
-export function TrackList({ tracks, sides = false, showAlbum = true, playlistId }: Props) {
+export function TrackList({ tracks, sides = false, showAlbum = true, playlistId, covers = false, highlight, start = 0 }: Props) {
   const current = useStore(playerStore, (s) => currentTrack(s)?.id);
   const playing = useStore(playerStore, (s) => s.playing);
   const favorites = useStore(libraryStore, (s) => s.favorites);
@@ -39,11 +47,11 @@ export function TrackList({ tracks, sides = false, showAlbum = true, playlistId 
   };
 
   return (
-    <div className={`tracks ${showAlbum ? '' : 'no-album'}`} role="list">
+    <div className={`tracks ${showAlbum ? '' : 'no-album'} ${covers ? 'with-covers' : ''}`} role="list">
       <div className="tracks-head mono" aria-hidden="true">
         <span>{sides ? '面' : '序'}</span>
-        <span>曲名</span>
-        <span className="col-artist">艺人</span>
+        <span>{covers ? '曲名 / 艺人' : '曲名'}</span>
+        {!covers && <span className="col-artist">艺人</span>}
         {showAlbum && <span className="col-album">专辑</span>}
         <span />
         <span style={{ textAlign: 'right' }}>时长</span>
@@ -100,30 +108,37 @@ export function TrackList({ tracks, sides = false, showAlbum = true, playlistId 
                   <Equalizer playing={playing} />
                 ) : (
                   <>
-                    <span className="label">{sides ? sideLabel(i, tracks.length) : String(i + 1).padStart(2, '0')}</span>
+                    <span className="label">{sides ? sideLabel(i, tracks.length) : String(start + i + 1).padStart(2, '0')}</span>
                     <span className="play-hint">
                       <Icon name="play" />
                     </span>
                   </>
                 )}
               </span>
-              <span className="name">
-                <span className="t">{t.name}</span>
-              </span>
-              <span className="cell col-artist">
-                {t.artists.map((a, k) => (
-                  <Fragment key={`${a.id}-${k}`}>
-                    {k > 0 && ' / '}
-                    {hasId(a.id) ? (
-                      <a href={href.artist(a.id)} onClick={(e) => e.stopPropagation()}>
-                        {a.name}
-                      </a>
-                    ) : (
-                      a.name
-                    )}
-                  </Fragment>
-                ))}
-              </span>
+              {covers ? (
+                <span className="name">
+                  <Cover src={t.coverUrl ?? t.album?.coverUrl} alt="" size={96} className="track-cover" />
+                  <span className="name-text">
+                    <span className="t">
+                      <Highlight text={t.name} q={highlight} />
+                    </span>
+                    <span className="sub">
+                      <Artists track={t} q={highlight} />
+                    </span>
+                  </span>
+                </span>
+              ) : (
+                <>
+                  <span className="name">
+                    <span className="t">
+                      <Highlight text={t.name} q={highlight} />
+                    </span>
+                  </span>
+                  <span className="cell col-artist">
+                    <Artists track={t} q={highlight} />
+                  </span>
+                </>
+              )}
               {showAlbum && (
                 <span className="cell col-album">
                   {hasId(t.album?.id) ? (
@@ -149,5 +164,24 @@ export function TrackList({ tracks, sides = false, showAlbum = true, playlistId 
         );
       })}
     </div>
+  );
+}
+
+function Artists({ track, q }: { track: Track; q?: string }) {
+  return (
+    <>
+      {track.artists.map((a, k) => (
+        <Fragment key={`${a.id}-${k}`}>
+          {k > 0 && ' / '}
+          {hasId(a.id) ? (
+            <a href={href.artist(a.id)} onClick={(e) => e.stopPropagation()}>
+              <Highlight text={a.name} q={q} />
+            </a>
+          ) : (
+            <Highlight text={a.name} q={q} />
+          )}
+        </Fragment>
+      ))}
+    </>
   );
 }

@@ -896,6 +896,59 @@ img {
   opacity: 0.8;
 }
 
+/* 横排的翻页和展开 */
+.rail-ctrl {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.rail-arrow {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+}
+.rail-arrow:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+.rail-toggle {
+  margin-left: 10px;
+  white-space: nowrap;
+}
+/* 还能往哪边滚，哪边就渐隐，告诉人后面还有 */
+.rail {
+  --fl: 0px;
+  --fr: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent);
+  overscroll-behavior-x: contain;
+}
+.rail.fade-l {
+  --fl: 56px;
+}
+.rail.fade-r {
+  --fr: 72px;
+}
+.rail.expanded {
+  grid-auto-flow: row;
+  overflow: visible;
+  mask-image: none;
+}
+.banner-strip.expanded {
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+.shelf.expanded {
+  grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+  gap: 40px 28px;
+}
+/* 手指操作的设备直接滑，箭头收起来 */
+@media (pointer: coarse) {
+  .rail-arrow {
+    display: none;
+  }
+}
+
 .chart-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1199,6 +1252,45 @@ img {
 .track .more[aria-expanded='true'] {
   display: inline-grid;
 }
+/* 带封面的列表：艺人挪到曲名下面，省掉艺人这一列 */
+.tracks.with-covers .tracks-head,
+.tracks.with-covers .track {
+  grid-template-columns: 44px minmax(0, 2.6fr) minmax(0, 1.3fr) 40px 64px;
+}
+.tracks.with-covers.no-album .tracks-head,
+.tracks.with-covers.no-album .track {
+  grid-template-columns: 36px minmax(0, 1fr) 40px 64px;
+}
+.tracks.with-covers .track {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.tracks.with-covers .name {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.track-cover {
+  flex: none;
+  width: 46px;
+  border-radius: 8px;
+  box-shadow: 0 1px 0 var(--line);
+}
+.name-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.track .name .sub {
+  font-size: 13px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.track .name .sub a:hover {
+  color: var(--accent);
+}
 /* 拖动排序（自建歌单） */
 .track[draggable='true'] {
   cursor: grab;
@@ -1340,31 +1432,253 @@ img {
   margin-left: auto;
   align-self: center;
 }
-.hot {
+/* 没输入时：最近搜过 + 热搜榜 */
+.history {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
-.hot-chip {
+.history-chip {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  height: 44px;
-  padding: 0 18px 0 14px;
+  height: 38px;
+  padding: 0 4px 0 16px;
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--line);
-  font-size: 15px;
-  font-weight: 500;
-  transition: transform 0.35s var(--ease-spring), border-color 0.2s, color 0.2s;
+  font-size: 14px;
+  transition: border-color 0.2s;
 }
-.hot-chip .mono {
-  color: var(--accent);
-}
-.hot-chip:hover {
-  transform: translateY(-2px);
+.history-chip:hover {
   border-color: var(--line-strong);
 }
+.history-x {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  border-radius: 50%;
+  color: var(--ink-3);
+  transition: background 0.2s, color 0.2s;
+}
+.history-x:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.hot-rank {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* 按列排名次：左边 1–6，右边 7–12 */
+  grid-template-rows: repeat(var(--rows, 6), auto);
+  grid-auto-flow: column;
+  gap: 0 48px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.hot-rank button {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.hot-no {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  color: var(--ink-3);
+  transition: color 0.25s;
+}
+.hot-rank .top .hot-no {
+  color: var(--accent);
+}
+.hot-word {
+  font-size: 16px;
+  font-weight: 500;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: color 0.2s;
+}
+.hot-rank svg {
+  color: var(--ink-3);
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.2s, transform 0.3s var(--ease-spring);
+}
+.hot-rank button:hover .hot-word {
+  color: var(--accent);
+}
+.hot-rank button:hover svg {
+  opacity: 1;
+  transform: none;
+}
+
+/* 有结果时：综合页 */
+mark.hl {
+  background: none;
+  color: var(--accent);
+}
+.s-section {
+  margin-top: 56px;
+}
+.s-head {
+  margin-bottom: 16px;
+}
+.s-head h2 {
+  font-size: 22px;
+}
+.s-head-side {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.s-head-side .rail-ctrl {
+  margin-left: 0;
+}
+.s-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  white-space: nowrap;
+}
+.s-all {
+  display: flex;
+  margin: 22px auto 0;
+}
+.search-top {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr);
+  gap: 44px;
+  margin-top: 8px;
+}
+.search-top.solo {
+  grid-template-columns: minmax(0, 520px);
+}
+.search-songs .tracks-head {
+  display: none;
+}
+.best {
+  --tint: hsl(var(--tint-h) var(--tint-s) var(--tint-l) / var(--tint-a));
+  position: relative;
+  isolation: isolate;
+  border-radius: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  transition: border-color 0.3s, transform 0.5s var(--ease-out), box-shadow 0.5s var(--ease-out);
+}
+.best::before {
+  content: '';
+  position: absolute;
+  inset: -30% 10% 30% -30%;
+  background: radial-gradient(closest-side, var(--tint), transparent);
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.9s var(--ease-soft);
+}
+.best.tinted::before {
+  opacity: 1;
+}
+.best:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.best-link {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  height: 100%;
+  min-height: 300px;
+  padding: 26px 26px 24px;
+}
+.best-art {
+  width: 132px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+}
+.best-art.round {
+  border-radius: 50%;
+}
+.best-kind {
+  margin-top: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+.best-name {
+  margin-top: 10px;
+  font-family: var(--display);
+  font-size: clamp(26px, 2.8vw, 38px);
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.best-meta {
+  margin-top: 6px;
+  max-width: calc(100% - 70px);
+  font-size: 14px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.best-play {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 10px 24px -8px var(--accent);
+  opacity: 0;
+  transform: translateY(10px) scale(0.92);
+  transition: opacity 0.25s, transform 0.4s var(--ease-spring);
+}
+.best-play svg {
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+}
+.best:hover .best-play,
+.best-play:focus-visible {
+  opacity: 1;
+  transform: none;
+}
+.best-play:active {
+  transform: scale(0.92);
+}
+.best-play:disabled {
+  opacity: 0.6;
+}
+@media (pointer: coarse) {
+  .best-play {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .pager {
   display: flex;
   justify-content: center;
@@ -3325,5 +3639,51 @@ img {
   }
   .acct-avatar-field {
     align-items: flex-start;
+  }
+}
+
+/* ============ 搜索：窄屏 ============ */
+@media (max-width: 1080px) {
+  .search-top {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 36px;
+  }
+  .best-link {
+    min-height: 0;
+  }
+  .best-kind {
+    margin-top: 22px;
+  }
+  .tracks.with-covers .tracks-head,
+  .tracks.with-covers .track,
+  .tracks.with-covers.no-album .track {
+    grid-template-columns: 40px minmax(0, 1fr) 40px 60px;
+  }
+}
+@media (max-width: 860px) {
+  .tracks.with-covers .track,
+  .tracks.with-covers.no-album .track {
+    grid-template-columns: 26px minmax(0, 1fr) 34px 44px;
+    gap: 10px;
+  }
+  .track-cover {
+    width: 42px;
+  }
+  .tracks.with-covers .name {
+    gap: 12px;
+  }
+  .best-link {
+    padding: 20px;
+  }
+  .best-art {
+    width: 104px;
+  }
+  .hot-rank {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-auto-flow: row;
+  }
+  .s-section {
+    margin-top: 44px;
   }
 }

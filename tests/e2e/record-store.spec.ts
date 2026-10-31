@@ -92,6 +92,11 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.getByRole('link', { name: '搜索', exact: true }).click();
   await page.getByRole('combobox').fill('晨光');
   await page.getByRole('combobox').press('Enter');
+  // 默认是综合页：最佳匹配 + 单曲 + 艺人 + 歌单
+  await expect(page.locator('.best-name')).toHaveText('晨光唱片');
+  await expect(page.locator('.search-songs .track')).toHaveCount(2);
+  await expect(page.locator('.s-section .card-title')).toHaveText(['测试艺人', '本期精选']);
+  await page.getByRole('tab', { name: '单曲', exact: true }).click();
   await expect(page.locator('.tracks .track')).toHaveCount(2);
   await page.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(page.locator('.tracks .track')).toHaveCount(1);

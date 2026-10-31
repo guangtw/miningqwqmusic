@@ -64,10 +64,10 @@ export const music = {
   // BFF 的分页从 1 开始
   searchTracks: (q: string, page = 1) =>
     request<PagedResult<Track>>(p.searchTracks, { query: { q, page, pageSize: api.pageSize } }),
-  searchArtists: (q: string, page = 1) =>
-    request<PagedResult<ArtistSearchItem>>(p.searchArtists, { query: { q, page, pageSize: api.pageSize } }),
-  async searchPlaylists(q: string, page = 1) {
-    const r = await request<PagedResult<Playlist>>(p.searchPlaylists, { query: { q, page, pageSize: api.pageSize } });
+  searchArtists: (q: string, page = 1, pageSize: number = api.pageSize) =>
+    request<PagedResult<ArtistSearchItem>>(p.searchArtists, { query: { q, page, pageSize } }),
+  async searchPlaylists(q: string, page = 1, pageSize: number = api.pageSize) {
+    const r = await request<PagedResult<Playlist>>(p.searchPlaylists, { query: { q, page, pageSize } });
     return { ...r, items: await Promise.all(r.items.map(withToplistCover)) };
   },
 

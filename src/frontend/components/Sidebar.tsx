@@ -7,11 +7,14 @@ import { useStore } from '../lib/store';
 import { uiStore } from '../player/ui';
 import { Avatar } from './Avatar';
 
+const SECTION_ALIAS: Record<string, string> = { mine: 'library', admin: 'settings' };
+
 export function Sidebar() {
   const route = useRoute();
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
-  const section = route.parts[0] ?? '';
+  // 自建歌单归在唱片架下，授权管理归在设置下
+  const section = SECTION_ALIAS[route.parts[0] ?? ''] ?? route.parts[0] ?? '';
   const navRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
 

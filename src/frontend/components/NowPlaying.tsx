@@ -6,7 +6,7 @@ import { tintVars, useTint } from '../lib/palette';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
 import { audioTime, currentTrack, playerStore, seek } from '../player/player';
-import { uiStore } from '../player/ui';
+import { openTrackMenu, uiStore } from '../player/ui';
 import { Icon } from './Icon';
 import { toggleNowPlaying } from './PlayerBar';
 import { Turntable } from './Turntable';
@@ -132,6 +132,9 @@ export function NowPlaying() {
                   </>
                 )}
               </p>
+              <button className="text-btn np-add" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
+                <Icon name="listAdd" size={16} /> 加到歌单
+              </button>
             </div>
 
             {lines.length ? (

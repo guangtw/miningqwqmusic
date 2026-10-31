@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { hasId, music, type Track } from '../api';
+import { hasId, music, type Playlist, type Track } from '../api';
 import { DetailHeader } from '../components/DetailHeader';
 import { Icon } from '../components/Icon';
 import { ErrorState, Loading } from '../components/States';
@@ -8,15 +8,20 @@ import { formatDate, formatTime } from '../lib/format';
 import { getPreview } from '../lib/motion';
 import { href } from '../lib/router';
 import { useAsync } from '../lib/useAsync';
+import { libraryStore } from '../lib/account';
+import { deletePlaylist, kindOf, linkPlaylist } from '../lib/playlists';
+import { useStore } from '../lib/store';
+import { toast } from '../lib/toast';
 import { playList } from '../player/player';
+import { openTrackMenu } from '../player/ui';
 
-function totalTime(tracks: Track[]) {
+export function totalTime(tracks: Track[]) {
   const ms = tracks.reduce((s, t) => s + t.durationMs, 0);
   const min = Math.round(ms / 60000);
   return min >= 60 ? `${Math.floor(min / 60)} 小时 ${min % 60} 分` : formatTime(ms);
 }
 
-export function PlayActions({ tracks }: { tracks: Track[] }) {
+export function PlayActions({ tracks, addable = false }: { tracks: Track[]; addable?: boolean }) {
   return (
     <>
       <button className="btn solid" onClick={() => playList(tracks)} disabled={!tracks.length}>
@@ -25,7 +30,37 @@ export function PlayActions({ tracks }: { tracks: Track[] }) {
       <button className="btn" onClick={() => playList([...tracks].sort(() => Math.random() - 0.5))} disabled={!tracks.length}>
         <Icon name="shuffle" /> 随机
       </button>
+      {addable && tracks.length > 0 && (
+        <button className="btn ghost" onClick={(e) => openTrackMenu(e, tracks, { addOnly: true })} aria-haspopup="menu">
+          <Icon name="listAdd" /> 加到歌单
+        </button>
+      )}
     </>
+  );
+}
+
+/** 网易云歌单：收进唱片架（只存索引，打开时实时拉） */
+function KeepButton({ p }: { p: Playlist }) {
+  const kept = useStore(libraryStore, (s) => {
+    const x = s.importedPlaylists[p.id];
+    return !!x && kindOf(x) === 'linked';
+  });
+  return (
+    <button
+      className={`btn ${kept ? 'kept' : 'ghost'}`}
+      aria-pressed={kept}
+      onClick={() => {
+        if (kept) {
+          void deletePlaylist(p.id);
+          toast('已从唱片架取下这张歌单。');
+        } else {
+          void linkPlaylist(p);
+          toast(`《${p.name}》收进唱片架了。`);
+        }
+      }}
+    >
+      <Icon name={kept ? 'heartFill' : 'heart'} /> {kept ? '已收藏' : '收藏歌单'}
+    </button>
   );
 }
 
@@ -47,7 +82,14 @@ export function PlaylistView({ id, source }: { id: string; source: 'playlist' | 
           coverUrl={p?.coverUrl ?? preview?.coverUrl}
           description={p?.description}
           meta={p && [`${p.tracks.length} 首`, p.tracks.length > 0 && totalTime(p.tracks)]}
-          actions={p && <PlayActions tracks={p.tracks} />}
+          actions={
+            p && (
+              <>
+                <PlayActions tracks={p.tracks} addable />
+                {source === 'playlist' && <KeepButton p={p} />}
+              </>
+            )
+          }
           pending={!p}
         />
       )}
@@ -78,7 +120,7 @@ export function AlbumView({ id }: { id: string }) {
           ))}
           description={a?.description}
           meta={a && [`${a.tracks.length} 首`, a.tracks.length > 0 && totalTime(a.tracks)]}
-          actions={a && <PlayActions tracks={a.tracks} />}
+          actions={a && <PlayActions tracks={a.tracks} addable />}
           pending={!a}
         />
       )}
@@ -103,7 +145,7 @@ export function ArtistView({ id }: { id: string }) {
           coverUrl={a?.coverUrl ?? preview?.coverUrl}
           description={a?.briefDesc}
           meta={a && [`热门 ${a.topTracks.length} 首`]}
-          actions={a && <PlayActions tracks={a.topTracks} />}
+          actions={a && <PlayActions tracks={a.topTracks} addable />}
           round
           pending={!a}
         />

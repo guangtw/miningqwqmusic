@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { music } from '../api';
 import { api } from '../config/site';
+import { MemberCard } from '../components/MemberCard';
 import { QualityPicker } from '../components/QualityPicker';
 import { setQuality } from '../player/player';
 import { authStore, displayName, logout } from '../lib/account';
@@ -94,7 +95,14 @@ export function SettingsView() {
           </div>
         </div>
 
-        <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
+        {status !== 'unavailable' && (
+          <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
+            <span className="label">会员卡</span>
+            <MemberCard />
+          </div>
+        )}
+
+        <div className="field reveal" style={{ '--i': 5 } as React.CSSProperties}>
           <span className="label">后端</span>
           <div className="field-inline">
             <span className={`status-dot ${probe.loading ? '' : probe.error ? 'bad' : 'ok'}`} />

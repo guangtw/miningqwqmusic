@@ -71,7 +71,9 @@ export const href = {
   artist: (id: string) => `#/artist/${encodeURIComponent(id)}`,
   search: (q?: string, type?: string) =>
     `#/search${q ? `?q=${encodeURIComponent(q)}${type ? `&type=${type}` : ''}` : ''}`,
+  mine: (id: string) => `#/mine/${encodeURIComponent(id)}`,
   charts: () => '#/charts',
   library: () => '#/library',
   settings: () => '#/settings',
+  admin: () => '#/admin',
 };

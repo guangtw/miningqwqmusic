@@ -2,11 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { coverOf } from './api';
 import { LoginDialog } from './components/LoginDialog';
 import { NowPlaying } from './components/NowPlaying';
+import { ImportDialog, PlaylistDialog } from './components/PlaylistDialogs';
 import { PlayerBar, toggleNowPlaying } from './components/PlayerBar';
 import { QueueDrawer } from './components/QueueDrawer';
 import { Sidebar } from './components/Sidebar';
 import { Empty } from './components/States';
 import { Toast } from './components/Toast';
+import { TrackMenu } from './components/TrackMenu';
 import { restoreSession, watchSessionRecovery } from './lib/account';
 import { applyGlobalTint, DEFAULT_TINT, tintOf } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
@@ -17,7 +19,9 @@ import { uiStore } from './player/ui';
 import { Charts } from './views/Charts';
 import { AlbumView, ArtistView, PlaylistView } from './views/Collection';
 import { Home } from './views/Home';
+import { AdminView } from './views/Admin';
 import { Library } from './views/Library';
+import { MyPlaylistView } from './views/MyPlaylist';
 import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
 
@@ -28,6 +32,8 @@ function View({ route }: { route: Route }) {
       return <Home />;
     case 'playlist':
       return <PlaylistView id={id} source="playlist" />;
+    case 'mine':
+      return <MyPlaylistView id={id} />;
     case 'toplist':
       return <PlaylistView id={id} source="toplist" />;
     case 'album':
@@ -42,6 +48,8 @@ function View({ route }: { route: Route }) {
       return <Library />;
     case 'settings':
       return <SettingsView />;
+    case 'admin':
+      return <AdminView />;
     default:
       return (
         <div className="page">
@@ -122,7 +130,7 @@ export function App() {
   // 用 layout effect：要在视图过渡拍新快照之前滚好
   useLayoutEffect(() => {
     mainRef.current?.scrollTo(0, route.scrollY);
-    uiStore.set({ nowPlaying: false, queue: false });
+    uiStore.set({ nowPlaying: false, queue: false, menu: null });
   }, [route.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -135,6 +143,9 @@ export function App() {
       <NowPlaying />
       <QueueDrawer />
       <LoginDialog />
+      <PlaylistDialog />
+      <ImportDialog />
+      <TrackMenu />
       <Toast />
     </div>
   );

@@ -34,6 +34,8 @@ export const api = {
   playUrlRenewLeadSeconds: 20,
   /** 已登录时，多久从云端拉一次收藏/最近播放（毫秒） */
   libraryPullIntervalMs: 5 * 60_000,
+  /** 账户服务单个请求最多多少个 JSON 字段（AUTH_JSON_BODY_MAX_FIELDS），自建歌单按它分卷存 */
+  cloudFieldLimit: 400,
   /** 本地最多保留多少条最近播放 */
   recentLimit: 100,
   paths: {
@@ -47,6 +49,7 @@ export const api = {
     lyric: '/api/music/track/:id/lyric',
     qualityOptions: '/api/music/track/:id/quality-options',
     playlist: '/api/music/playlist/:id',
+    playlistResolve: '/api/music/playlist/resolve',
     toplists: '/api/music/toplist',
     toplist: '/api/music/toplist/:id',
     album: '/api/music/album/:id',
@@ -61,6 +64,12 @@ export const api = {
     libraryFavorites: '/api/account/library/favorites',
     libraryFavorite: '/api/account/library/favorites/:id',
     libraryRecent: '/api/account/library/recent',
+    libraryPlaylist: '/api/account/library/imported-playlists/:id',
+    unblockEntitlement: '/api/account/music/unblock/entitlement',
+    unblockRedeem: '/api/account/music/unblock/redeem',
+    adminAuthUsers: '/api/account/admin/playback-authorizations/users',
+    adminAuthGrant: '/api/account/admin/playback-authorizations/grant',
+    adminAuthRevoke: '/api/account/admin/playback-authorizations/revoke',
   },
   /**
    * BFF 返回英文错误时给用户看的中文说明（code 见 BFF 的 src/lib/errors.ts）。
@@ -78,7 +87,11 @@ export const api = {
     3003: '找不到这张歌单。',
     3011: '暂时无法下载这首歌。',
     4001: '缺少搜索关键词。',
+    5101: '提交的内容不合规，检查一下再试。',
+    5102: '内容太多了，账户服务收不下。',
+    5205: '操作太频繁了，歇一会儿再试。',
     5401: '账户服务未启用。',
+    5501: '兑换码无效、已停用或已过期。',
   } as Record<number, string>,
   errorFallback: '请求失败，稍后再试。',
   /** 账户服务返回这些 code 表示服务未启用 / 会话失效 */

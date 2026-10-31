@@ -590,3 +590,13 @@ html[data-motion='reduced'] *::after {
   animation-delay: 0ms !important;
   transition-duration: 0.01ms !important;
 }
+
+/* 会员卡开通后的金箔流光，比音质标识慢一些 */
+.member-card.gold {
+  animation: foil 7s ease-in-out infinite alternate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .member-card.gold {
+    animation: none;
+  }
+}

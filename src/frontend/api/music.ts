@@ -11,6 +11,7 @@ import type {
   Playlist,
   PlayQualityLevel,
   PlaySource,
+  PlaylistResolveResult,
   SearchAssist,
   ToplistItem,
   Track,
@@ -80,6 +81,7 @@ export const music = {
   async playlist(id: string) {
     return withToplistCover(await request<Playlist>(path(p.playlist, { id })));
   },
+  resolvePlaylist: (input: string) => request<PlaylistResolveResult>(p.playlistResolve, { query: { input } }),
   async toplists() {
     const list = await request<ToplistItem[]>(p.toplists);
     toplistIndex = Promise.resolve(new Map(list.map((t) => [t.id, t.name])));

@@ -24,7 +24,10 @@ export function LoginDialog() {
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setTimeout(() => emailRef.current?.focus(), 60);
+    // 只在焦点还没进对话框时才聚焦邮箱，否则会把正在输入的密码框的焦点抢走
+    setTimeout(() => {
+      if (!emailRef.current?.closest('.dialog')?.contains(document.activeElement)) emailRef.current?.focus();
+    }, 60);
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

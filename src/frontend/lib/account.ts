@@ -5,6 +5,7 @@ import { path, request, type RequestInitEx } from '../api/http';
 import { api } from '../config/site';
 import { readJSON, writeJSON } from './storage';
 import { createStore } from './store';
+import { mergeCloudPlaylists } from './playlists';
 import { toast } from './toast';
 
 const p = api.paths;
@@ -222,8 +223,14 @@ interface LibraryState {
   revision: number;
   /** Keep failed/offline favorite mutations until the server acknowledges them. */
   pendingFavorites: Record<string, boolean>;
-  /** Preserve old imports even though the upstream UI only exposes favorites/recent. */
+  /** 歌单（自建 + 链接导入），分卷已拼好；云端格式见 playlists.ts */
   importedPlaylists: Record<string, ImportedPlaylist>;
+  /** 本机改了还没同步上去的歌单 */
+  pendingPlaylists: Record<string, 'upsert' | 'delete'>;
+  /** 每张歌单在云端占了哪些记录（分卷 id） */
+  cloudParts: Record<string, string[]>;
+  /** 云端每条记录的内容签名，没变的分卷保存时跳过 */
+  cloudSigs: Record<string, string>;
 }
 
 const LIB_KEY = 'cph.library';
@@ -236,6 +243,9 @@ export const libraryStore = createStore<LibraryState>({
   revision: saved.revision ?? 0,
   pendingFavorites: saved.pendingFavorites ?? {},
   importedPlaylists: saved.importedPlaylists ?? {},
+  pendingPlaylists: saved.pendingPlaylists ?? {},
+  cloudParts: saved.cloudParts ?? {},
+  cloudSigs: saved.cloudSigs ?? {},
 });
 
 libraryStore.subscribe(() => writeJSON(LIB_KEY, libraryStore.get()));
@@ -315,6 +325,7 @@ export async function pullLibrary(opts: { merge?: boolean; force?: boolean } = {
       .slice(0, api.recentLimit);
 
     libraryStore.set({ favorites, favoriteOrder: [...new Set(order)].filter((id) => id in favorites), recent, revision: snap.revision });
+    void mergeCloudPlaylists(snap.importedPlaylists ?? {}, !!opts.merge);
 
     const pending = { ...Object.fromEntries(localOnly.map((id) => [id, true])), ...local.pendingFavorites };
     for (const [id, liked] of Object.entries(pending)) {

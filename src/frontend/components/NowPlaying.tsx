@@ -28,6 +28,12 @@ export function NowPlaying() {
   const unsynced = isUnsynced(lines);
   const [active, setActive] = useState(-1);
   const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  // 收起时整个面板不可聚焦、不可点。直接设 DOM 属性：React 18 的类型里没有 inert，
+  // React 19 又把 inert="" 当成 false，两边都靠不住
+  useEffect(() => {
+    if (panelRef.current) panelRef.current.inert = !open;
+  }, [open]);
   const userScrolledAt = useRef(0);
   const cancelTween = useRef<() => void>(() => undefined);
 
@@ -77,8 +83,7 @@ export function NowPlaying() {
       className={`nowplaying ${open ? 'open' : ''}`}
       aria-label="正在播放"
       aria-hidden={!open}
-      // React 18 的类型里还没有 inert，按原生属性传
-      {...(open ? {} : ({ inert: '' } as Record<string, string>))}
+      ref={panelRef}
       style={tintVars(tint)}
     >
       <div className="np-glow" aria-hidden="true">

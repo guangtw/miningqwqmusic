@@ -86,6 +86,17 @@ html[data-vt='np-close']::view-transition-new(np-panel) {
   animation-timing-function: cubic-bezier(0.3, 1.05, 0.3, 1);
   z-index: 50;
 }
+/* 唱臂在真实页面里压在唱片上面，过渡里也一样：单独一层放在飞行唱片之上，
+   跟着面板一起升起 / 落下（面板高度就是 100vh，用 translate 不碰 group 自己的定位） */
+::view-transition-group(np-arm) {
+  z-index: 55;
+}
+html[data-vt='np-open']::view-transition-new(np-arm) {
+  animation: vt-arm-rise 0.62s var(--ease-out) both;
+}
+html[data-vt='np-close']::view-transition-old(np-arm) {
+  animation: vt-arm-sink 0.48s var(--ease-soft) both;
+}
 
 /* 过渡进行中关掉面板自己的 CSS 过渡，避免两套动画打架 */
 html[data-vt] .nowplaying {
@@ -120,6 +131,16 @@ html:not([data-vt]) .player {
   from {
     opacity: 0;
     transform: translateY(22px);
+  }
+}
+@keyframes vt-arm-rise {
+  from {
+    translate: 0 100vh;
+  }
+}
+@keyframes vt-arm-sink {
+  to {
+    translate: 0 100vh;
   }
 }
 @keyframes vt-rise {
@@ -296,44 +317,51 @@ html:not([data-vt]) .player {
 }
 
 /* ============ 唱机换唱片 ============ */
-/* 旧唱片：先被拿起来一点（放大 = 离镜头更近），带着余转往左上方抽走 */
+/* 按真的换黑胶来：唱片是实物，不淡入淡出。
+   旧唱片先被托起（放大一点 = 离镜头更近，影子拉远），再朝观众这一侧（屏幕下方）拿走；
+   唱盘空出来一瞬，新唱片从下方送进来，对准中心轴放平，最后轻轻一沉。 */
 .deck-vinyl.leaving {
   pointer-events: none;
-  animation: record-out 0.62s cubic-bezier(0.45, 0, 0.7, 0.2) 0.12s both;
+  animation: record-out 0.62s linear 0.08s both;
 }
-/* 新唱片：从右上方放进来，落到唱盘上轻轻一沉再回弹 */
 .deck-vinyl.entering {
-  animation: record-in 0.78s cubic-bezier(0.2, 0.75, 0.25, 1) 0.34s both;
+  animation: record-in 0.78s linear 0.66s both;
 }
 @keyframes record-out {
   0% {
     transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
   }
-  28% {
-    transform: translate(0, -1%) scale(1.045);
-    opacity: 1;
+  26% {
+    transform: translate(0, -1.5%) scale(1.05);
+    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
+    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
   }
   100% {
-    transform: translate(-58%, -16%) scale(1.045);
-    opacity: 0;
+    transform: translate(-5%, 150%) scale(1.05);
+    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
   }
 }
 @keyframes record-in {
   0% {
-    transform: translate(46%, -26%) scale(1.05);
-    opacity: 0;
+    transform: translate(5%, 150%) scale(1.05);
+    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
+    animation-timing-function: cubic-bezier(0.12, 0.7, 0.3, 1);
   }
-  22% {
-    opacity: 1;
+  64% {
+    transform: translate(0, -1.5%) scale(1.05);
+    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.6, 1);
   }
-  68% {
-    transform: translate(0, -0.5%) scale(1.045);
-  }
-  86% {
-    transform: translate(0, 0) scale(0.992);
+  88% {
+    transform: translate(0, 0) scale(0.994);
+    box-shadow: 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
   }
   100% {
     transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
   }
 }
 
@@ -444,6 +472,12 @@ html:not([data-vt]) .player {
 .suggest {
   animation: pop-in 0.3s var(--ease-out) both;
 }
+.q-menu {
+  animation: q-in 0.32s var(--ease-spring) both;
+}
+.q-menu[data-state='closing'] {
+  animation: q-out 0.18s var(--ease-soft) both;
+}
 .suggest li {
   animation: reveal 0.35s var(--ease-out) both;
 }
@@ -496,6 +530,18 @@ html:not([data-vt]) .player {
   to {
     opacity: 0;
     transform: translateY(8px);
+  }
+}
+@keyframes q-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.94);
+  }
+}
+@keyframes q-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
   }
 }
 @keyframes pop-in {

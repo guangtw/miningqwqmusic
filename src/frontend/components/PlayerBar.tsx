@@ -8,6 +8,7 @@ import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume
 import { uiStore } from '../player/ui';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
+import { QualityMenu } from './QualityMenu';
 import { SeekBar } from './SeekBar';
 import { Slider } from './Slider';
 import { Vinyl } from './Vinyl';
@@ -94,14 +95,8 @@ export function PlayerBar() {
           <button className="icon-btn nudge-right" onClick={() => next()} aria-label="下一首">
             <Icon name="next" />
           </button>
-          <button
-            className={`icon-btn hide-sm ${npOpen ? 'on' : ''}`}
-            onClick={() => toggleNowPlaying()}
-            aria-label="歌词"
-            title="歌词（L）"
-          >
-            <Icon name="lyrics" />
-          </button>
+          {/* 和左边的播放模式对称：一边是怎么放，一边是放多好 */}
+          <QualityMenu />
         </div>
         <SeekBar />
       </div>

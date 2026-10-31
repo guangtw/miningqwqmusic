@@ -110,7 +110,7 @@ img {
   scrollbar-color: var(--line) transparent;
 }
 .page {
-  max-width: 1240px;
+  max-width: 1480px;
   margin: 0 auto;
   padding: 36px var(--gutter) calc(var(--deck-h) + var(--deck-gap) * 2 + 56px);
 }
@@ -119,7 +119,7 @@ img {
 .side {
   display: flex;
   flex-direction: column;
-  padding: 28px 18px 22px 22px;
+  padding: 28px 18px calc(var(--deck-h) + var(--deck-gap) * 2 + 10px) 22px;
   min-height: 0;
 }
 .brand {
@@ -1362,8 +1362,11 @@ img {
 /* ============ 浮动播放台 ============ */
 .player {
   position: fixed;
-  left: calc(var(--sidebar) + var(--deck-gap));
-  right: var(--deck-gap);
+  /* 在窗口里水平居中，播放键落在窗口正中；大屏上限宽，不拉成一长条。侧栏底部留出了它的位置 */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(calc(100% - var(--deck-gap) * 2), 1240px);
   bottom: var(--deck-gap);
   height: var(--deck-h);
   z-index: 40;
@@ -1419,9 +1422,107 @@ img {
   gap: 2px;
 }
 .transport-btns {
-  display: flex;
+  /* 左右两侧等宽，播放键永远在正中（两边按钮宽度不同也不偏） */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
   align-items: center;
   gap: 10px;
+  width: 100%;
+}
+.transport-btns > :first-child {
+  justify-self: end;
+}
+.transport-btns > :last-child {
+  justify-self: start;
+}
+
+/* 音质：一个小标签，点开从上方弹出列表 */
+.quality {
+  position: relative;
+}
+.q-chip {
+  height: 26px;
+  min-width: 46px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+  transition: color 0.2s, border-color 0.2s, background 0.2s, transform 0.25s var(--ease-spring);
+}
+.q-chip:hover,
+.q-chip.on {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.q-chip.high {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.q-chip:active {
+  transform: scale(0.94);
+}
+.q-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 18px);
+  width: 188px;
+  margin-left: -94px;
+  padding: 8px;
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+  transform-origin: 50% 100%;
+  z-index: 2;
+}
+.q-head {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--ink-3);
+}
+.q-item {
+  display: flex;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.q-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.q-item.on {
+  color: var(--accent);
+  font-weight: 650;
+}
+.q-item.on::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.q-item:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+.q-note {
+  font-size: 11px;
+}
+.q-hint {
+  margin: 6px 10px 2px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
 }
 .play-btn {
   position: relative;
@@ -1621,7 +1722,10 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 18px var(--gutter) 0;
+  width: 100%;
+  max-width: 2160px;
+  margin: 0 auto;
+  padding: 18px clamp(var(--gutter), 5vw, 140px) 0;
   color: var(--ink-2);
 }
 .np-body {
@@ -1631,11 +1735,12 @@ img {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  gap: 64px;
+  /* 大屏上整体放开：栏宽、间距、边距都随窗口变大，不缩在中间 */
+  gap: clamp(48px, 6vw, 160px);
   width: 100%;
-  max-width: 1320px;
+  max-width: 2160px;
   margin: 0 auto;
-  padding: 8px var(--gutter) calc(var(--deck-h) + var(--deck-gap) * 2 + 12px);
+  padding: 8px clamp(var(--gutter), 5vw, 140px) calc(var(--deck-h) + var(--deck-gap) * 2 + 12px);
 }
 .np-deck-col {
   display: grid;
@@ -1649,7 +1754,7 @@ img {
   padding-top: 6vh;
 }
 .np-name {
-  font-size: clamp(30px, 3.6vw, 52px);
+  font-size: clamp(30px, 3.4vw, 68px);
   font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1.05;
@@ -1683,7 +1788,7 @@ img {
   width: 100%;
   text-align: left;
   padding: 9px 0;
-  font-size: clamp(20px, 2vw, 28px);
+  font-size: clamp(20px, 1.8vw, 36px);
   font-weight: 650;
   letter-spacing: -0.02em;
   line-height: 1.32;
@@ -1730,7 +1835,7 @@ img {
 /* 唱机 */
 .deck {
   position: relative;
-  width: min(100%, 62vh, 620px);
+  width: min(100%, 64vh, 860px);
   aspect-ratio: 1;
   border-radius: 34px;
   background: linear-gradient(145deg, var(--surface), var(--surface-2));
@@ -1744,7 +1849,11 @@ img {
   width: 76%;
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, #2b2b2e, #18181a 70%, #0d0d0e);
+  /* 唱盘：金属边圈 + 橡胶垫的细纹 + 中心轴。平时大半被唱片盖住，换唱片的那一下会露出来 */
+  background:
+    radial-gradient(circle closest-side, #dcd9d2 0 2%, #8d8a83 2.4% 3.2%, transparent 3.5%),
+    repeating-radial-gradient(circle closest-side, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 7px),
+    radial-gradient(circle closest-side, #2c2c2f 0 93%, #a19e96 94% 96.5%, #55534e 97.5% 100%);
   box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(255, 255, 255, 0.04);
 }
 .deck-vinyl {
@@ -1814,11 +1923,6 @@ img {
 }
 .arm-cartridge {
   fill: var(--accent);
-}
-.arm-lift {
-  stroke: var(--arm-metal);
-  stroke-width: 0.9;
-  stroke-linecap: round;
 }
 .arm-head {
   pointer-events: all;
@@ -2123,6 +2227,16 @@ img {
 }
 
 @media (max-width: 860px) {
+  .transport-btns {
+    display: flex;
+    width: auto;
+  }
+  .quality {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
@@ -2243,7 +2357,6 @@ img {
     grid-template-columns: minmax(0, 1fr);
   }
   .player {
-    left: var(--deck-gap);
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 6px;
     padding: 0 8px;

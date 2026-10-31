@@ -2,7 +2,7 @@
 
 来源：[guangtw/chang-pian-hang](https://github.com/guangtw/chang-pian-hang)，提交 `5d9b95ae2b12cd4b75e60eed34572964df662b49`（2026-10-31 同步）。
 
-`src/frontend/components/`、`views/` 和 `styles/` 与该提交内容一致（仅允许换行格式差异）。字体沿用原版的 Space Grotesk Variable 与 IBM Plex Mono。本项目不再加载或保留旧版 studio、immersive 或 player-app 界面。新版细栏刊头、每日歌词卷首语、Mining 双行站标、唱臂/换片动画、歌词定位和返回时的滚动恢复均沿用上游实现。
+此后前端直接在本仓库的 `src/frontend/` 里继续开发，不再与来源仓库逐文件保持一致。字体沿用原版的 Space Grotesk Variable 与 IBM Plex Mono。本项目不再加载或保留旧版 studio、immersive 或 player-app 界面。新版细栏刊头、每日歌词卷首语、Mining 双行站标、唱臂/换片动画、歌词定位和返回时的滚动恢复均沿用上游实现。
 
 ## 运行与部署
 

@@ -1,7 +1,8 @@
 import { ApiError, coverOf, music, type Track, type TrackLyric } from '../api';
 import { api } from '../config/site';
 import { authStore, pushRecent } from '../lib/account';
-import { getSettings } from '../lib/settings';
+import type { PlayQualityLevel } from '../api/types';
+import { getSettings, updateSettings } from '../lib/settings';
 import { readJSON, writeJSON } from '../lib/storage';
 import { createStore } from '../lib/store';
 import { toast } from '../lib/toast';
@@ -22,6 +23,8 @@ export interface PlayerState {
   lyric: TrackLyric | null;
   /** 当前是试听片段 */
   preview: boolean;
+  /** 后端实际给的音质（账号权限不够时会比设置的低）；还没取到地址时为 null */
+  level: PlayQualityLevel | null;
 }
 
 const SAVE_KEY = 'cph.player.v2';
@@ -39,6 +42,7 @@ export const playerStore = createStore<PlayerState>({
   mode: saved.mode ?? 'order',
   lyric: null,
   preview: false,
+  level: null,
 });
 
 const audio = new Audio();
@@ -165,7 +169,7 @@ async function resolveAndPlay(
     audio.src = src.url;
     if (opts.resumeAt) audio.currentTime = opts.resumeAt / 1000;
     else if (opts.startAt) audio.currentTime = opts.startAt / 1000;
-    set({ preview: src.preview });
+    set({ preview: src.preview, level: src.level ?? null });
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
     if (opts.autoplay !== false) await audio.play().catch(() => {
@@ -367,4 +371,13 @@ if ('mediaSession' in navigator) {
 {
   const restored = currentTrack();
   if (restored) loadLyric(restored.id, loadToken);
+}
+
+/** 换音质：记进设置，正在放的这首立刻按新音质重取地址，从当前位置接着放 */
+export function setQuality(level: PlayQualityLevel) {
+  if (getSettings().quality === level) return;
+  updateSettings({ quality: level });
+  const s = get();
+  if (!loaded || !currentTrack(s)) return;
+  void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: s.playing });
 }

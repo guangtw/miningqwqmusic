@@ -28,7 +28,7 @@ const TRAVEL_END = 0.2;
 const REV_MS = 1800;
 const SWAY_DEG = 0.28;
 /** 换唱片的整段时长：唱臂退回臂架 → 旧唱片拿走 → 新唱片放上 → 唱臂再摆回来 */
-const SWAP_MS = 1100;
+const SWAP_MS = 1500;
 
 interface DeckRecord {
   key: string;
@@ -86,7 +86,7 @@ export function Turntable({ vtName }: { vtName?: string }) {
     if (!records.some((r) => r.leaving || r.entering)) return;
     const t = setTimeout(
       () => setRecords((prev) => prev.filter((r) => !r.leaving).map((r) => ({ ...r, entering: false }))),
-      motionEnabled() ? SWAP_MS - 150 : 0,
+      motionEnabled() ? SWAP_MS : 0,
     );
     return () => clearTimeout(t);
   }, [records]);
@@ -194,7 +194,14 @@ export function Turntable({ vtName }: { vtName?: string }) {
       <svg className="tonearm-base" viewBox="0 0 100 100" aria-hidden="true">
         <circle cx={PIVOT.x} cy={PIVOT.y} r="6.2" className="arm-base" />
       </svg>
-      <svg className="tonearm" viewBox="0 0 100 100" aria-hidden="true" ref={svgRef}>
+      <svg
+        className="tonearm"
+        viewBox="0 0 100 100"
+        aria-hidden="true"
+        ref={svgRef}
+        // 打开唱机的过渡里唱臂单独成一层、压在飞来的唱片之上，否则过渡结束时唱臂会从唱片下面「跳」上来
+        style={{ viewTransitionName: vtName ? 'np-arm' : undefined } as React.CSSProperties}
+      >
         <g ref={armRef}>
           <rect x={PIVOT.x - 2.4} y={PIVOT.y - 11} width="4.8" height="7" rx="1.2" className="arm-weight" />
           <line x1={PIVOT.x} y1={PIVOT.y} x2={PIVOT.x} y2={PIVOT.y + 58} className="arm-tube" />
@@ -223,7 +230,6 @@ export function Turntable({ vtName }: { vtName?: string }) {
             <g transform={`rotate(28 ${PIVOT.x - 3.2} ${PIVOT.y + 68})`}>
               <rect x={PIVOT.x - 6.6} y={PIVOT.y + 63} width="7" height="10" rx="1.6" className="arm-shell" />
               <rect x={PIVOT.x - 5.3} y={PIVOT.y + 67.6} width="4.4" height="4.2" rx="0.8" className="arm-cartridge" />
-              <line x1={PIVOT.x - 6.4} y1={PIVOT.y + 64.6} x2={PIVOT.x - 8.6} y2={PIVOT.y + 63.4} className="arm-lift" />
             </g>
             <circle cx={PIVOT.x - 3.2} cy={PIVOT.y + 68} r="9" className="arm-grab" />
           </g>

@@ -176,6 +176,7 @@ test('search categories, login, cloud sync and logout use the BFF contract', asy
   const state = await backend(page);
   await page.goto('/#/search?q=晨光');
   await page.getByRole('tab', { name: '艺人', exact: true }).click();
+  await expect(page.locator('.card-title')).toHaveCount(1);
   await expect(page.locator('.card-title')).toHaveText('测试艺人');
   await page.getByRole('tab', { name: '歌单', exact: true }).click();
   await expect(page.locator('.card-title')).toHaveText('本期精选');

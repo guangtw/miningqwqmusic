@@ -29,7 +29,7 @@ function committedPaths(repo, names) {
 }
 function exportCommit(repo, prefix, names, stage) {
   const archive = path.join(stage, prefix + '.tar');
-  run('git', ['archive', '--format=tar', '--prefix=' + prefix + '/', '--output=' + archive, 'HEAD', ...committedPaths(repo, names), ':(exclude)public/uploads'], repo);
+  run('git', ['-c', 'core.autocrlf=false', 'archive', '--format=tar', '--prefix=' + prefix + '/', '--output=' + archive, 'HEAD', ...committedPaths(repo, names), ':(exclude)public/uploads'], repo);
   run('tar', ['-xf', archive, '-C', stage]);
 }
 function copyPaths(from, to, names) {
@@ -110,7 +110,7 @@ try {
   run('ssh', [host, 'mkdir -p ' + remote]);
   run('scp', [archive, host + ':' + remote + '/release.tar.gz']);
   // The transport hash is checked before any release code is extracted/executed.
-  run('ssh', [host, 'cd ' + remote + ' && echo "' + digest + '  release.tar.gz" | sha256sum -c - && tar -xzf release.tar.gz && (umask 077; nohup /bin/bash ' + remote + '/ops/run-echo-release.sh > job.log 2>&1 < /dev/null & echo DEPLOY_PID=$!)']);
+  run('ssh', [host, 'cd ' + remote + ' && echo "' + digest + '  release.tar.gz" | sha256sum -c - && tar -xzf release.tar.gz && /bin/bash -n ops/run-echo-release.sh && /usr/bin/node --check ops/deploy-echo.cjs && /usr/bin/node --check ops/verify-account-session.cjs && (umask 077; nohup /bin/bash ' + remote + '/ops/run-echo-release.sh > job.log 2>&1 < /dev/null & echo DEPLOY_PID=$!)']);
   phase = 'server';
   const deadline = Date.now() + 15 * 60 * 1000;
   let complete = false;

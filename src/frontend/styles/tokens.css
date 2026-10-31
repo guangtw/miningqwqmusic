@@ -37,6 +37,15 @@
   /* 毛玻璃叠在页面底色上的近似实色，视图过渡期间代替毛玻璃（见 motion.css） */
   --glass-solid: color-mix(in srgb, #ffffff 74%, var(--bg));
   --scrim: rgba(17, 17, 17, 0.28);
+  --gold-ink: #9a7330;
+  --gold-line: rgba(176, 134, 58, 0.62);
+  --q-glass: rgba(255, 255, 255, 0.58);
+  --q-edge: rgba(255, 255, 255, 0.7);
+  --q-sheen: rgba(255, 255, 255, 0.65);
+  --q-grain: 0.5;
+  --q-card: rgba(255, 255, 255, 0.5);
+  --q-card-hover: rgba(255, 255, 255, 0.8);
+  --q-card-solid: #fbfaf7;
   --arm-metal: #c9c6bd;
   --arm-metal-light: #efede7;
   --arm-metal-dark: #8d8a82;
@@ -90,6 +99,15 @@
     --glass: rgba(24, 24, 26, 0.7);
     --glass-solid: color-mix(in srgb, #18181a 72%, var(--bg));
     --scrim: rgba(0, 0, 0, 0.5);
+    --gold-ink: #e2c27e;
+    --gold-line: rgba(226, 194, 126, 0.55);
+    --q-glass: rgba(30, 30, 33, 0.56);
+    --q-edge: rgba(255, 255, 255, 0.09);
+    --q-sheen: rgba(255, 255, 255, 0.07);
+    --q-grain: 0.35;
+    --q-card: rgba(255, 255, 255, 0.04);
+    --q-card-hover: rgba(255, 255, 255, 0.08);
+    --q-card-solid: #232326;
     --arm-metal: #b9b6ae;
     --arm-metal-light: #dcd9d1;
     --arm-metal-dark: #7c7973;
@@ -115,6 +133,15 @@
   --glass: rgba(24, 24, 26, 0.7);
   --glass-solid: color-mix(in srgb, #18181a 72%, var(--bg));
   --scrim: rgba(0, 0, 0, 0.5);
+  --gold-ink: #e2c27e;
+  --gold-line: rgba(226, 194, 126, 0.55);
+  --q-glass: rgba(30, 30, 33, 0.56);
+  --q-edge: rgba(255, 255, 255, 0.09);
+  --q-sheen: rgba(255, 255, 255, 0.07);
+  --q-grain: 0.35;
+  --q-card: rgba(255, 255, 255, 0.04);
+  --q-card-hover: rgba(255, 255, 255, 0.08);
+  --q-card-solid: #232326;
   --arm-metal: #b9b6ae;
   --arm-metal-light: #dcd9d1;
   --arm-metal-dark: #7c7973;

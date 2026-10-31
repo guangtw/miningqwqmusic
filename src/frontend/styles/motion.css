@@ -472,11 +472,28 @@ html:not([data-vt]) .player {
 .suggest {
   animation: pop-in 0.3s var(--ease-out) both;
 }
-.q-menu {
-  animation: q-in 0.32s var(--ease-spring) both;
+.q-panel {
+  animation: q-in 0.42s var(--ease-spring) both;
 }
-.q-menu[data-state='closing'] {
-  animation: q-out 0.18s var(--ease-soft) both;
+.q-panel[data-state='closing'] {
+  animation: q-out 0.2s var(--ease-soft) both;
+}
+/* 面板里三档依次浮上来 */
+.q-panel .qp-sec {
+  animation: reveal 0.45s var(--ease-out) both;
+  animation-delay: calc(60ms + var(--i) * 55ms);
+}
+/* 母带标识的金箔流光 */
+.qm-master {
+  animation: foil 4.5s ease-in-out infinite alternate;
+}
+@keyframes foil {
+  from {
+    background-position: 0% 0;
+  }
+  to {
+    background-position: 100% 0;
+  }
 }
 .suggest li {
   animation: reveal 0.35s var(--ease-out) both;
@@ -535,7 +552,7 @@ html:not([data-vt]) .player {
 @keyframes q-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.94);
+    transform: translateY(12px) scale(0.92);
   }
 }
 @keyframes q-out {

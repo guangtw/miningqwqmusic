@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { music } from '../api';
-import { api, qualities } from '../config/site';
+import { api } from '../config/site';
+import { QualityPicker } from '../components/QualityPicker';
+import { setQuality } from '../player/player';
 import { authStore, displayName, logout } from '../lib/account';
 import { transition } from '../lib/motion';
 import { getSettings, subscribeSettings, updateSettings, type Settings, type Theme } from '../lib/settings';
@@ -49,8 +51,10 @@ export function SettingsView() {
         <div className="field reveal" style={{ '--i': 0 } as React.CSSProperties}>
           <span className="label">音质</span>
           <div>
-            <Seg value={s.quality} options={qualities} onChange={(quality) => updateSettings({ quality })} label="音质" />
-            <p className="help">下一首开始生效。账号没有对应权限时，后端会自动降到可用的音质。</p>
+            <div className="qp-standalone">
+              <QualityPicker value={s.quality} onPick={setQuality} />
+            </div>
+            <p className="help">立即生效：正在放的歌会从当前位置按新音质接着放。账号权限或音源不够时，后端会自动降到可用的最高一档。</p>
           </div>
         </div>
 

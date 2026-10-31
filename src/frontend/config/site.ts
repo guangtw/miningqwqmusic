@@ -1,5 +1,6 @@
 // 站点配置：文案、导航、首页版式、接口路径都在这里改，组件里不写死。
 // 构建时可用 VITE_* 环境变量覆盖其中几项（见 .env.example）。
+import { PLAY_QUALITY_LABELS, PLAY_QUALITY_LEVELS } from '@/src/lib/play-quality';
 import type { DiscoverItemType, PlayQualityLevel } from '../api/types';
 
 const env = {
@@ -119,12 +120,33 @@ export const homeLayout = {
   limits: { banner: 8, grid: 8, shelf: 12, chart: 8, list: 10 } as Record<BlockLayout, number>,
 };
 
-export const qualities: { key: PlayQualityLevel; label: string }[] = [
-  { key: 'standard', label: '标准' },
-  { key: 'higher', label: '较高' },
-  { key: 'exhigh', label: '极高' },
-  { key: 'lossless', label: '无损' },
-  { key: 'hires', label: 'Hi-Res' },
+/** 音质分三档：常规（有损码率）、无损、臻品（环绕声 / 母带） */
+export type QualityTier = 'standard' | 'lossless' | 'premium';
+
+/**
+ * 音质的展示信息。档位、名字、顺序都以后端 src/lib/play-quality.ts 为准，
+ * 这里只补前端排版要用的：归哪一档、一行规格说明、标识样式。
+ * mark：标识的样式类名，同一类共用一种视觉（sq 金描边、hr 金色实心、spatial 彩虹声场、master 金箔）。
+ */
+const QUALITY_PRESENTATION: Record<PlayQualityLevel, { tier: QualityTier; spec: string; mark?: { text: string; kind: 'sq' | 'hr' | 'spatial' | 'master' } }> = {
+  standard: { tier: 'standard', spec: '128 kbps' },
+  higher: { tier: 'standard', spec: '192 kbps' },
+  exhigh: { tier: 'standard', spec: '320 kbps' },
+  lossless: { tier: 'lossless', spec: 'FLAC · 16 bit', mark: { text: 'SQ', kind: 'sq' } },
+  hires: { tier: 'lossless', spec: '24 bit · 最高 192 kHz', mark: { text: 'Hi-Res', kind: 'hr' } },
+  jyeffect: { tier: 'premium', spec: '环绕声效', mark: { text: '5.1', kind: 'spatial' } },
+  sky: { tier: 'premium', spec: '空间音频', mark: { text: '360°', kind: 'spatial' } },
+  dolby: { tier: 'premium', spec: 'Dolby Atmos', mark: { text: '3D', kind: 'spatial' } },
+  jymaster: { tier: 'premium', spec: '母带级 · 24 bit', mark: { text: 'MASTER', kind: 'master' } },
+};
+
+export const qualities = PLAY_QUALITY_LEVELS.map((key) => ({ key, label: PLAY_QUALITY_LABELS[key], ...QUALITY_PRESENTATION[key] }));
+export type QualityOption = (typeof qualities)[number];
+
+export const qualityTiers: { key: QualityTier; label: string; note: string }[] = [
+  { key: 'standard', label: '常规', note: '省流量' },
+  { key: 'lossless', label: '无损', note: '原汁原味' },
+  { key: 'premium', label: '臻品', note: '环绕与母带' },
 ];
 
 export const defaultQuality: PlayQualityLevel = ((env.VITE_DEFAULT_QUALITY as PlayQualityLevel) || 'exhigh');

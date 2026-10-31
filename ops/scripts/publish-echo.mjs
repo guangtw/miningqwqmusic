@@ -23,10 +23,8 @@ const loginRuntime = [...runtime, 'prisma/schema.prisma', 'prisma/migrations', '
 const checkFiles = ['tests', 'vitest.config.ts', 'vitest.setup.ts', 'playwright.config.ts'];
 
 function committedPaths(repo, names) {
-  return names.filter(name => {
-    try { read('git', ['cat-file', '-e', 'HEAD:' + name], repo); return true; }
-    catch { return false; }
-  });
+  const tracked = read('git', ['ls-tree', '-r', '--name-only', 'HEAD'], repo).split('\n');
+  return names.filter(name => tracked.some(file => file === name || file.startsWith(name + '/')));
 }
 function exportCommit(repo, prefix, names, stage) {
   const archive = path.join(stage, prefix + '.tar');

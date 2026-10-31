@@ -14,6 +14,8 @@ const discover = { blocks: [
   { id: 'discover-toplist', title: '本周榜单', items: [{ id: 't1', targetId: 't1', title: '飙升榜', type: 'toplist', coverUrl: cover }] },
 ], searchAssist: assist };
 const user = { id: 'u1', email: 'listener@example.com', nickname: '唱片听众' };
+const friend = { id: 'u2', email: 'friend@example.com', nickname: '同桌' };
+const listenRoom = { id: 'room1', inviteCode: 'ABC123', hostUserId: 'u1', status: 'open', version: 1, playbackState: { queue: tracks, currentIndex: 0, currentTimeMs: 0, isPlaying: false, mode: 'sequence', updatedAt: new Date().toISOString() }, members: [{ user, role: 'host', joinedAt: '', lastSeenAt: '', online: true }, { user: friend, role: 'member', joinedAt: '', lastSeenAt: '', online: true }], lastActor: user, expiresAt: '', createdAt: '', updatedAt: '' };
 
 function wav() {
   const length = 8000 * 30 * 2;
@@ -81,6 +83,17 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
       const tag = url.searchParams.get('tag') ?? 'sleep';
       return ok({ tags: [{ id: 'sleep', name: '助眠' }, { id: 'rain', name: '雨声' }], resources: [{ id: `r-${tag}`, title: tag === 'rain' ? '窗外的雨' : '向晚', trackId: tag === 'rain' ? '102' : '101', coverUrl: cover, tag }] });
     }
+    if (p.endsWith('/account/friends')) return ok([{ user: friend, since: '2026-10-01T00:00:00.000Z' }]);
+    if (p.endsWith('/friends/requests')) return ok({ incoming: [], outgoing: [] });
+    if (p.endsWith('/listen/invites')) return ok([]);
+    if (p.endsWith('/listen/rooms') && request.method() === 'POST') return ok(listenRoom);
+    if (p.endsWith(`/listen/rooms/${listenRoom.id}/stream`)) {
+      // 房间里的另一个人切到了第二首，停在 0:05
+      const event = { version: 2, type: 'playback', actor: friend, createdAt: new Date().toISOString(), payload: { queue: tracks, currentIndex: 1, currentTimeMs: 5000, isPlaying: false, mode: 'sequence', updatedAt: new Date().toISOString() } };
+      return route.fulfill({ status: 200, contentType: 'text/event-stream', body: `event: ready\ndata: {}\n\nevent: state\ndata: ${JSON.stringify(event)}\n\n` });
+    }
+    if (p.endsWith(`/listen/rooms/${listenRoom.id}/invites`)) return ok({ id: 'inv1', status: 'pending' });
+    if (p.includes(`/listen/rooms/${listenRoom.id}`)) return ok(listenRoom);
     if (p.endsWith('/insight')) return ok({ trackId: '101', creators: [{ name: '某人', role: '作词' }], wikiSummary: '流行-华语流行', chorusStartMs: 12000, alternatives: [] });
     if (p.endsWith('/toplist')) return ok([{ id: 't1', name: '飙升榜', coverUrl: cover, tracksPreview: tracks }]);
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
@@ -222,6 +235,32 @@ test('radio picks songs by pace, sati tags switch and liner notes show credits',
   await expect(page.locator('.notes-credits')).toContainText('某人');
   await expect(page.locator('.notes-tag')).toHaveText(['流行', '华语流行']);
   expect(state.calls.filter((c) => c.path.includes('/scene/sport')).length).toBe(11);
+  expect(state.errors).toEqual([]);
+});
+
+test('listen together: open a room and follow what a friend plays', async ({ page }) => {
+  const state = await backend(page);
+  await page.goto('/#/search?q=晨光&type=track');
+  await page.locator('.track .t').first().click();
+  await page.goto('/#/account');
+  await page.locator('.main').getByRole('button', { name: '登录同步', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('input[type="email"]').fill(user.email);
+  await dialog.locator('input[type="password"]').fill('test-password');
+  await dialog.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // 手机布局把播放栏的工具按钮收起来了，从正在播放面板进
+  await page.locator('.player .np-text').click();
+  await page.locator('.np-actions').getByRole('button', { name: /一起听/ }).click();
+  await page.getByRole('button', { name: /开一个房间/ }).click();
+  await expect(page.locator('.listen-code-big')).toContainText('ABC123'.split('').join(''));
+  await expect(page.locator('.listen-room .person-text b')).toHaveText(['唱片听众（我）', '同桌']);
+  // 推送流里同桌切到了第二首
+  await expect(page.locator('.player .np-text')).toContainText('夜间列车');
+  await expect(page.locator('.listen-last')).toContainText('同桌');
+  const created = state.calls.find((c) => c.path === '/api/account/listen/rooms' && c.method === 'POST');
+  expect((created?.body as { playbackState: { queue: unknown[] } }).playbackState.queue).toHaveLength(2);
+  expect(state.calls.some((c) => c.path.startsWith('/api/account/listen/rooms/room1/stream') && c.authorization === 'Bearer login-token')).toBe(true);
   expect(state.errors).toEqual([]);
 });
 

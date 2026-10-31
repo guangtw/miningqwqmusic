@@ -8,6 +8,7 @@ import { ApiError } from '../api';
 import { authStore, changePassword, displayName, logout, logoutAll } from '../lib/account';
 import { navigate, href } from '../lib/router';
 import { avatarProblem, passwordProblem, removeAvatar, updateNickname, uploadAvatar } from '../lib/profile';
+import { socialStore } from '../lib/friends';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
@@ -261,7 +262,26 @@ function SessionsField() {
   );
 }
 
-/** 个人中心：头像、昵称、会员卡、密码、登录设备 */
+function FriendsField() {
+  const friends = useStore(socialStore, (s) => s.friends.length);
+  const incoming = useStore(socialStore, (s) => s.requests.incoming.length);
+  return (
+    <div>
+      <div className="field-inline">
+        <a className="btn sm" href={href.friends()}>
+          <Icon name="people" size={16} /> 管理好友
+        </a>
+        <span className="muted small">
+          {friends} 位好友
+          {incoming > 0 && <span className="accent"> · {incoming} 条请求待处理</span>}
+        </span>
+      </div>
+      <p className="help">加了好友就能互相邀请进房间一起听。房间在播放栏右边的「一起听」里开。</p>
+    </div>
+  );
+}
+
+/** 个人中心：头像、昵称、会员卡、好友、密码、登录设备 */
 export function AccountView() {
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
@@ -294,6 +314,7 @@ export function AccountView() {
     ['头像', <AvatarField key="a" />],
     ['昵称', <NicknameField key="n" />],
     ['会员卡', <MemberCard key="m" />],
+    ['好友', <FriendsField key="f" />],
     ['密码', <PasswordField key="p" />],
     ['登录设备', <SessionsField key="s" />],
   ];

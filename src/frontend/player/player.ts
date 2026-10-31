@@ -60,6 +60,18 @@ const history: number[] = [];
 const set = playerStore.set;
 const get = playerStore.get;
 
+/**
+ * 播放器上发生了一次「操作」：换歌、播放暂停、拖进度、换模式、改队列。
+ * 一起听只把这些同步出去；照着房间状态摆播放器（applyRemote）、续签地址都不算操作，不会被回传。
+ */
+export type PlayerAction = 'queue' | 'playback' | 'seek' | 'mode';
+const actionListeners = new Set<(type: PlayerAction) => void>();
+export function onPlayerAction(fn: (type: PlayerAction) => void) {
+  actionListeners.add(fn);
+  return () => void actionListeners.delete(fn);
+}
+const emit = (type: PlayerAction) => actionListeners.forEach((fn) => fn(type));
+
 // A cached guest/authorized URL must not survive an account or entitlement change.
 const authorizationKey = () => {
   const auth = authStore.get();
@@ -167,8 +179,12 @@ async function resolveAndPlay(
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
     loaded = { id: track.id, expiresAt: expiryOf(src) };
     audio.src = src.url;
-    if (opts.resumeAt) audio.currentTime = opts.resumeAt / 1000;
-    else if (opts.startAt) audio.currentTime = opts.startAt / 1000;
+    // 暂停状态下不会触发 timeupdate，进度条的位置要自己同步一下
+    const at = opts.resumeAt || opts.startAt;
+    if (at) {
+      audio.currentTime = at / 1000;
+      set({ position: at });
+    }
     set({ preview: src.preview, level: src.level ?? null });
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
@@ -213,6 +229,7 @@ export function playList(tracks: Track[], start = 0) {
   history.length = 0;
   set({ queue: tracks, index: start });
   void resolveAndPlay(start);
+  emit('queue');
 }
 
 /** 播放一首歌；startAt（毫秒）给了就从那里开始，例如首页卷首语「从这句开始听」 */
@@ -230,6 +247,7 @@ export function playTrack(track: Track, startAt?: number) {
   q.splice(index + 1, 0, track);
   set({ queue: q });
   jumpTo(index + 1, startAt);
+  emit('queue');
 }
 
 /** 只知道 id 时（例如首页推荐里的单曲）先取详情再播 */
@@ -249,17 +267,20 @@ export function addNext(track: Track) {
   q.splice(at, 0, track);
   set({ queue: q, index: cur ? at - 1 : get().index });
   toast(`《${track.name}》会在下一首播放。`);
+  emit('queue');
 }
 
 export function jumpTo(i: number, startAt?: number) {
   if (get().index >= 0) history.push(get().index);
   void resolveAndPlay(i, { startAt });
+  emit('playback');
 }
 
 export function toggle() {
   const s = get();
   const track = currentTrack(s);
   if (!track) return;
+  emit('playback');
   if (loaded?.id !== track.id) return void resolveAndPlay(s.index);
   if (!audio.paused) return audio.pause();
   // 暂停太久地址可能过期，先续签
@@ -276,6 +297,7 @@ export function next(auto = false) {
   }
   history.push(index);
   void resolveAndPlay(nextIndex(index));
+  emit('playback');
 }
 
 export function prev() {
@@ -283,10 +305,12 @@ export function prev() {
   if (!queue.length) return;
   if (audio.currentTime > 4) {
     audio.currentTime = 0;
+    emit('seek');
     return;
   }
   const back = mode === 'shuffle' ? history.pop() : undefined;
   void resolveAndPlay(back ?? (index - 1 + queue.length) % queue.length);
+  emit('playback');
 }
 
 export function seek(ms: number) {
@@ -294,6 +318,34 @@ export function seek(ms: number) {
   if (!track || loaded?.id !== track.id) return;
   audio.currentTime = Math.max(0, ms / 1000);
   set({ position: ms });
+  emit('seek');
+}
+
+/**
+ * 一起听：照着房间里的状态摆好播放器。
+ * 换了歌就按新位置重新取地址；同一首只在差得多时才挪进度，免得来回抖。
+ */
+export function applyRemote(r: { queue: Track[]; index: number; positionMs: number; playing: boolean; mode?: PlayMode }) {
+  const s = get();
+  const sameQueue = s.queue.length === r.queue.length && s.queue.every((t, i) => t.id === r.queue[i]?.id);
+  if (!sameQueue) history.length = 0;
+  set({ ...(sameQueue ? {} : { queue: r.queue }), ...(r.mode ? { mode: r.mode } : {}) });
+  const track = r.queue[r.index];
+  if (!track) return;
+  // 房间里的队列只带当前这首前后一段，传来传去序号会挪：认歌不认序号，同一首就只改序号、不重新加载
+  if (loaded?.id !== track.id || currentTrack(s)?.id !== track.id) {
+    void resolveAndPlay(r.index, { startAt: Math.max(1, r.positionMs), autoplay: r.playing });
+    return;
+  }
+  if (s.index !== r.index) set({ index: r.index });
+  if (Math.abs(audio.currentTime * 1000 - r.positionMs) > 1500) {
+    audio.currentTime = r.positionMs / 1000;
+    set({ position: r.positionMs });
+  }
+  if (r.playing && audio.paused) {
+    if (expiringSoon()) void resolveAndPlay(r.index, { resumeAt: r.positionMs, autoplay: true });
+    else void audio.play().catch(() => toast('浏览器拦下了自动播放，点一下播放键跟上大家。'));
+  } else if (!r.playing && !audio.paused) audio.pause();
 }
 
 export function setVolume(v: number) {
@@ -319,6 +371,7 @@ export function cycleMode() {
   const mode = MODES[(MODES.indexOf(get().mode) + 1) % MODES.length];
   set({ mode });
   toast(MODE_LABEL[mode]);
+  emit('mode');
 }
 
 function unload() {
@@ -339,12 +392,14 @@ export function removeAt(i: number) {
   } else {
     set({ queue: q, index: i < index ? index - 1 : index });
   }
+  emit('queue');
 }
 
 export function clearQueue() {
   unload();
   history.length = 0;
   set({ queue: [], index: -1, playing: false, position: 0, duration: 0, lyric: null });
+  emit('queue');
 }
 
 // ---- 系统媒体控制 ----
@@ -361,7 +416,10 @@ function updateMediaSession(track: Track) {
 
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', () => { if (audio.paused) toggle(); });
-  navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+  navigator.mediaSession.setActionHandler('pause', () => {
+    audio.pause();
+    emit('playback');
+  });
   navigator.mediaSession.setActionHandler('previoustrack', prev);
   navigator.mediaSession.setActionHandler('nexttrack', () => next());
   navigator.mediaSession.setActionHandler('seekto', (d) => d.seekTime != null && seek(d.seekTime * 1000));

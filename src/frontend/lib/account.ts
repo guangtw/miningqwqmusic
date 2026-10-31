@@ -112,6 +112,16 @@ async function refresh(): Promise<boolean> {
   return refreshing;
 }
 
+/**
+ * 给自己发请求的地方（一起听的推送流）用：拿一个还没过期的 token。
+ * force 为 true 表示刚收到 401，强制换一次。
+ */
+export async function accessToken(force = false): Promise<string | null> {
+  const s = authStore.get();
+  if (force || s.status === 'checking' || expiresSoon(s.token)) await refresh();
+  return authStore.get().token;
+}
+
 /** 带登录态的请求：401 时刷新一次 token 再重试 */
 export async function authed<T>(urlPath: string, init: RequestInitEx = {}): Promise<T> {
   const generation = authGeneration;

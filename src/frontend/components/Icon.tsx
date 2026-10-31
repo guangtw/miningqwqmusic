@@ -73,6 +73,9 @@ const paths = {
   notes: <path d="M6 4h9l3 3v13H6zM9 9h6M9 12.5h6M9 16h3" />,
   chorus: <path d="M4 12h2l2-5 3 10 3-8 2 5 2-2h2" />,
   pulse: <path d="M3 12h4l2-6 4 12 2-6h6" />,
+  people: <path d="M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.8c2 .7 3.2 2.5 3.5 5.2" />,
+  copy: <path d="M8 8h11v12H8zM5 16V4h11" />,
+  userAdd: <path d="M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM3.5 20c.6-3.4 3.2-5.5 6.5-5.5 1.3 0 2.5.3 3.5.9M18 14v6M15 17h6" />,
 } as const;
 
 export type IconName = keyof typeof paths;

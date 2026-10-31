@@ -78,4 +78,5 @@ export const href = {
   settings: () => '#/settings',
   admin: () => '#/admin',
   account: () => '#/account',
+  friends: () => '#/friends',
 };

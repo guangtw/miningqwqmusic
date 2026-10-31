@@ -45,7 +45,7 @@ const cloudTrack = (t: Track): Track => {
 // ---------------- 分卷 ----------------
 
 /** 和账户服务一样数字段：对象的每个键算一个，数组本身不算 */
-function countFields(node: unknown): number {
+export function countFields(node: unknown): number {
   if (node === null || typeof node !== 'object') return 0;
   if (Array.isArray(node)) return node.reduce<number>((n, x) => n + countFields(x), 0);
   const entries = Object.values(node as Record<string, unknown>);

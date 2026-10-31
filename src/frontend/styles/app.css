@@ -4079,3 +4079,275 @@ mark.hl {
     padding: 6px 8px;
   }
 }
+
+/* ============ 好友与一起听 ============ */
+.accent {
+  color: var(--accent);
+}
+.who-avatar {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+}
+.who-dot {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.people {
+  display: grid;
+  gap: 2px;
+  max-width: 720px;
+}
+.person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: 14px;
+  transition: background 0.2s;
+}
+.person:hover {
+  background: var(--surface);
+}
+.person-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.person-text b {
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.person-text small {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.person .text-btn.danger {
+  color: #d64545;
+}
+.person-avatar {
+  position: relative;
+  display: inline-grid;
+}
+.person-avatar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.person-avatar.online::after {
+  background: #2fb36b;
+}
+.people-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 480px;
+  height: 46px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-bottom: 14px;
+  transition: border-color 0.2s;
+}
+.people-search:focus-within {
+  border-color: var(--accent);
+}
+.people-search svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-3);
+}
+.people-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-size: 15px;
+  color: var(--ink);
+}
+.people-search input:focus {
+  outline: none;
+}
+.people-empty {
+  margin-top: 4px;
+}
+
+.listen-live {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: #fff;
+  background: var(--accent);
+  animation: live-blink 2.4s var(--ease-soft) infinite;
+}
+@keyframes live-blink {
+  50% {
+    opacity: 0.55;
+  }
+}
+.listen-body {
+  padding: 4px 22px 22px;
+}
+.listen-lobby,
+.listen-room {
+  display: grid;
+  gap: 22px;
+}
+.listen-open {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 20px;
+  text-align: left;
+  background: linear-gradient(135deg, var(--accent-soft), transparent 80%), var(--surface-2);
+  border: 1px solid var(--line);
+  transition: transform 0.4s var(--ease-spring), border-color 0.2s;
+}
+.listen-open:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+.listen-open:disabled {
+  opacity: 0.6;
+}
+.listen-open-art {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  color: var(--accent);
+  box-shadow: var(--shadow-1);
+}
+.listen-open-art svg {
+  width: 30px;
+  height: 30px;
+}
+.listen-open b {
+  display: block;
+  font-size: 17px;
+  font-weight: 700;
+}
+.listen-open small {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.listen-join-row {
+  display: flex;
+  gap: 8px;
+}
+.listen-code-input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  font-size: 18px;
+  letter-spacing: 0.3em;
+  color: var(--ink);
+}
+.listen-code-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.listen-code-big {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+.listen-code-big span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 48px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  font-size: 24px;
+  font-weight: 600;
+}
+.listen-code-big svg {
+  margin-left: 6px;
+  color: var(--ink-3);
+  transition: color 0.2s;
+}
+.listen-code-big:hover svg {
+  color: var(--accent);
+}
+.listen-last {
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+.listen-block {
+  display: grid;
+  gap: 2px;
+}
+.listen-block .person {
+  margin: 0 -10px;
+}
+
+.invite-card {
+  position: fixed;
+  right: var(--deck-gap);
+  bottom: calc(var(--deck-h) + var(--deck-gap) * 2);
+  z-index: 46;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(380px, calc(100% - var(--deck-gap) * 2));
+  padding: 14px 14px 14px 16px;
+  border-radius: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-2);
+  animation: drawer-in 0.5s var(--ease-spring) both;
+}
+.invite-card[data-state='closing'] {
+  animation: drawer-out 0.26s var(--ease-soft) both;
+}
+.invite-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.invite-text b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.invite-text small {
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

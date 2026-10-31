@@ -6,6 +6,7 @@ import { href } from '../lib/router';
 import { useStore } from '../lib/store';
 import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume, toggle, toggleMute } from '../player/player';
 import { uiStore } from '../player/ui';
+import { listenStore } from '../lib/listen';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 import { QualityMenu } from './QualityMenu';
@@ -29,6 +30,8 @@ export function PlayerBar() {
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
   const npOpen = useStore(uiStore, (s) => s.nowPlaying);
   const qOpen = useStore(uiStore, (s) => s.queue);
+  const lOpen = useStore(uiStore, (s) => s.listen);
+  const listeners = useStore(listenStore, (s) => s.room?.members.length ?? 0);
 
   return (
     <footer className="player" aria-label="播放控制">
@@ -115,11 +118,20 @@ export function PlayerBar() {
           format={(v) => `${Math.round(v * 100)}%`}
         />
         <button
+          className={`icon-btn ${lOpen || listeners ? 'on' : ''}`}
+          onClick={() => uiStore.set({ listen: !lOpen, queue: false })}
+          aria-label="一起听"
+          title={listeners ? `一起听（${listeners} 人）` : '一起听'}
+          style={{ marginLeft: 8 }}
+        >
+          <Icon name="people" />
+          {listeners > 0 && <span className="badge mono">{listeners}</span>}
+        </button>
+        <button
           className={`icon-btn ${qOpen ? 'on' : ''}`}
-          onClick={() => uiStore.set({ queue: !qOpen })}
+          onClick={() => uiStore.set({ queue: !qOpen, listen: false })}
           aria-label="播放队列"
           title={`播放队列（${queueLen}）`}
-          style={{ marginLeft: 8 }}
         >
           <Icon name="queue" />
           {queueLen > 0 && <span className="badge mono">{queueLen}</span>}

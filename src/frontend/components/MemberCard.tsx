@@ -13,7 +13,7 @@ const day = (iso?: string) => {
 };
 
 /**
- * 会员卡：播放授权的状态和兑换码入口。
+ * 会员卡：播放授权的状态和会员邀请码入口。
  * 没开通是一张黑色唱片纹的卡；开通后换成香槟金箔卡，写上来源和开通日期。
  */
 export function MemberCard() {
@@ -35,7 +35,7 @@ export function MemberCard() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const c = code.trim();
-    if (c.length < 4) return setError('兑换码至少 4 位。');
+    if (c.length < 4) return setError('邀请码至少 4 位。');
     setBusy(true);
     setError(null);
     try {
@@ -43,7 +43,7 @@ export function MemberCard() {
       if (r.enabled) {
         toast('开通了。正在放的歌会按新权限重新取音源。');
         setCode('');
-      } else setError('兑换已处理，但账号暂时没有拿到授权，稍后刷新看看。');
+      } else setError('邀请码已提交，但账号暂时没有拿到授权，稍后刷新看看。');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -51,7 +51,7 @@ export function MemberCard() {
     }
   };
 
-  const source = auth?.source === 'invite' ? `兑换码${auth.inviteLabel ? `「${auth.inviteLabel}」` : ''}` : auth?.source === 'manual' ? '管理员开通' : '';
+  const source = auth?.source === 'invite' ? `邀请码${auth.inviteLabel ? `「${auth.inviteLabel}」` : ''}` : auth?.source === 'manual' ? '管理员开通' : '';
 
   return (
     <div className="member">
@@ -66,7 +66,7 @@ export function MemberCard() {
         </div>
         <div className="member-title">播放授权</div>
         <div className="member-bottom mono">
-          <span>{signedIn ? displayName(user!) : '登录后兑换'}</span>
+          <span>{signedIn ? displayName(user!) : '登录后开通'}</span>
           {enabled && (
             <span>
               {source}
@@ -84,11 +84,11 @@ export function MemberCard() {
         {!signedIn ? (
           status === 'guest' ? (
             <button className="btn sm" onClick={() => uiStore.set({ login: true })}>
-              登录后兑换
+              登录后填邀请码
             </button>
           ) : null
         ) : enabled ? (
-          <p className="muted small">已开通，不需要再兑换。授权被撤销时这里会变回未开通。</p>
+          <p className="muted small">已开通，不需要再填邀请码。授权被撤销时这里会变回未开通。</p>
         ) : (
           <form className="member-form" onSubmit={submit} noValidate>
             <input
@@ -98,15 +98,15 @@ export function MemberCard() {
                 setCode(e.target.value.toUpperCase());
                 setError(null);
               }}
-              placeholder="输入兑换码"
+              placeholder="填会员邀请码"
               autoComplete="off"
               spellCheck={false}
               maxLength={64}
-              aria-label="兑换码"
+              aria-label="会员邀请码"
               aria-invalid={!!error}
             />
             <button className="btn solid sm" disabled={busy || !code.trim()}>
-              {busy ? '兑换中…' : '兑换'}
+              {busy ? '开通中…' : '开通'}
             </button>
           </form>
         )}

@@ -1,18 +1,21 @@
 import { useLayoutEffect, useRef } from 'react';
 import { nav, site } from '../config/site';
 import { authStore, displayName } from '../lib/account';
+import { socialStore } from '../lib/friends';
 import { shortDate } from '../lib/format';
 import { href, useRoute } from '../lib/router';
 import { useStore } from '../lib/store';
 import { uiStore } from '../player/ui';
 import { Avatar } from './Avatar';
 
-const SECTION_ALIAS: Record<string, string> = { mine: 'library' };
+const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'account' };
 
 export function Sidebar() {
   const route = useRoute();
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
+  // 有人加你好友或邀请你一起听：头像上亮个小点
+  const waiting = useStore(socialStore, (s) => s.requests.incoming.length + s.invites.length);
   // 自建歌单归在唱片架下
   const section = SECTION_ALIAS[route.parts[0] ?? ''] ?? route.parts[0] ?? '';
   const navRef = useRef<HTMLDivElement>(null);
@@ -63,7 +66,10 @@ export function Sidebar() {
             aria-current={section === 'account' ? 'page' : undefined}
             title="个人中心"
           >
-            <Avatar user={user} size={30} />
+            <span className="who-avatar">
+              <Avatar user={user} size={30} />
+              {waiting > 0 && <span className="who-dot" aria-label={`${waiting} 条新消息`} />}
+            </span>
             <span className="who-name">{displayName(user)}</span>
           </a>
         ) : status === 'guest' ? (

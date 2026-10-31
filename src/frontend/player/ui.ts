@@ -17,7 +17,7 @@ export interface TrackMenu {
   anchor?: Element;
 }
 
-/** 浮层开关：正在播放页、队列抽屉、登录框、歌单对话框、导入框、曲目菜单 */
+/** 浮层开关：正在播放页、队列抽屉、登录框、歌单对话框、导入框、曲目菜单、一起听 */
 export const uiStore = createStore({
   nowPlaying: false,
   queue: false,
@@ -25,6 +25,8 @@ export const uiStore = createStore({
   playlist: null as PlaylistDialog | null,
   importing: false,
   menu: null as TrackMenu | null,
+  /** 一起听抽屉 */
+  listen: false,
 });
 
 /** 从一个按钮（或右键位置）弹出曲目菜单 */

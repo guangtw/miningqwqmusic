@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { login, register } from '../lib/account';
+import { redeemCode } from '../lib/membership';
 import { usePresence } from '../lib/motion';
 import { passwordProblem } from '../lib/profile';
 import { useStore } from '../lib/store';
@@ -18,6 +19,7 @@ export function LoginDialog() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
+  const [invite, setInvite] = useState('');
   const [error, setError] = useState<{ field?: 'email' | 'password'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
@@ -45,9 +47,24 @@ export function LoginDialog() {
     setBusy(true);
     setError(null);
     try {
-      if (mode === 'login') await login(email.trim(), password);
-      else await register(email.trim(), password, nickname.trim());
-      toast(mode === 'login' ? '欢迎回来。' : '注册好了，唱片架会自动同步。');
+      if (mode === 'login') {
+        await login(email.trim(), password);
+        toast('欢迎回来。');
+      } else {
+        await register(email.trim(), password, nickname.trim());
+        // 注册成功后顺手兑换会员邀请码；没兑上也不影响注册，去个人中心还能再填
+        const code = invite.trim();
+        if (!code) toast('注册好了，唱片架会自动同步。');
+        else {
+          try {
+            const r = await redeemCode(code);
+            toast(r.enabled ? '注册好了，会员也开通了。' : '注册好了。邀请码已提交，会员暂时没生效，稍后去个人中心看看。');
+          } catch (err) {
+            toast(`注册好了，但邀请码没兑上：${(err as Error).message}可以去个人中心再填一次。`);
+          }
+        }
+        setInvite('');
+      }
       setPassword('');
       close();
     } catch (err) {
@@ -121,6 +138,20 @@ export function LoginDialog() {
             <span>密码</span>
           </label>
           {mode === 'register' && <PasswordRules value={password} />}
+          {mode === 'register' && (
+            <label className="float">
+              <input
+                className="mono"
+                value={invite}
+                onChange={(e) => setInvite(e.target.value.toUpperCase())}
+                placeholder=" "
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={64}
+              />
+              <span>会员邀请码（可选）</span>
+            </label>
+          )}
           {error?.field === 'password' && <p className="field-error">{error.text}</p>}
           {error && !error.field && <p className="field-error">{error.text}</p>}
           <button className="btn solid wide" disabled={busy}>

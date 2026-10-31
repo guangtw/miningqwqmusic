@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { coverOf } from './api';
+import { ListenDrawer, ListenInviteCard } from './components/ListenDrawer';
 import { LoginDialog } from './components/LoginDialog';
 import { NowPlaying } from './components/NowPlaying';
 import { ImportDialog, PlaylistDialog } from './components/PlaylistDialogs';
@@ -10,6 +11,8 @@ import { Empty } from './components/States';
 import { Toast } from './components/Toast';
 import { TrackMenu } from './components/TrackMenu';
 import { restoreSession, watchSessionRecovery } from './lib/account';
+import { watchSocial } from './lib/friends';
+import { watchListen } from './lib/listen';
 import { applyGlobalTint, DEFAULT_TINT, tintOf } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
 import { getSettings, subscribeSettings } from './lib/settings';
@@ -22,6 +25,7 @@ import { Home } from './views/Home';
 import { AccountView } from './views/AccountView';
 import { AdminView } from './views/Admin';
 import { Library } from './views/Library';
+import { FriendsView } from './views/Friends';
 import { MyPlaylistView } from './views/MyPlaylist';
 import { RadioView } from './views/Radio';
 import { SearchView } from './views/SearchView';
@@ -56,6 +60,8 @@ function View({ route }: { route: Route }) {
       return <AdminView />;
     case 'account':
       return <AccountView />;
+    case 'friends':
+      return <FriendsView />;
     default:
       return (
         <div className="page">
@@ -112,6 +118,8 @@ export function App() {
   useEffect(() => {
     const stop = watchSessionRecovery();
     void restoreSession();
+    watchSocial();
+    watchListen();
     return stop;
   }, []);
 
@@ -136,7 +144,7 @@ export function App() {
   // 用 layout effect：要在视图过渡拍新快照之前滚好
   useLayoutEffect(() => {
     mainRef.current?.scrollTo(0, route.scrollY);
-    uiStore.set({ nowPlaying: false, queue: false, menu: null });
+    uiStore.set({ nowPlaying: false, queue: false, listen: false, menu: null });
   }, [route.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -148,6 +156,8 @@ export function App() {
       <PlayerBar />
       <NowPlaying />
       <QueueDrawer />
+      <ListenDrawer />
+      <ListenInviteCard />
       <LoginDialog />
       <PlaylistDialog />
       <ImportDialog />

@@ -3,6 +3,7 @@ import { coverOf, hasId } from '../api';
 import { downloadTrack } from '../lib/download';
 import { formatTime } from '../lib/format';
 import { useInsight } from '../lib/insight';
+import { listenStore } from '../lib/listen';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame } from '../lib/motion';
 import { tintVars, useTint } from '../lib/palette';
@@ -27,6 +28,7 @@ export function NowPlaying() {
   const lyric = useStore(playerStore, (s) => s.lyric);
   const position = useStore(playerStore, (s) => s.position);
   const tint = useTint(track ? coverOf(track) : undefined);
+  const listeners = useStore(listenStore, (s) => s.room?.members.length ?? 0);
   // 歌词 / 唱片内页二选一；百科只在面板打开时去问
   const [view, setView] = useState<'lyrics' | 'notes'>('lyrics');
   const insight = useInsight(track?.id, open);
@@ -159,6 +161,9 @@ export function NowPlaying() {
                     <Icon name="chorus" size={16} /> 副歌 <span className="mono">{formatTime(chorus)}</span>
                   </button>
                 )}
+                <button className={`np-chip ${listeners ? 'on' : ''}`} onClick={() => uiStore.set({ listen: true })}>
+                  <Icon name="people" size={16} /> {listeners ? `一起听 · ${listeners} 人` : '一起听'}
+                </button>
                 <button className={`np-chip ${view === 'notes' ? 'on' : ''}`} aria-pressed={view === 'notes'} onClick={() => setView(view === 'notes' ? 'lyrics' : 'notes')}>
                   <Icon name="notes" size={16} /> 唱片内页
                 </button>

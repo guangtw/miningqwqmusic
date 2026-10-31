@@ -1,6 +1,7 @@
 import { coverOf, type SongInsight, type Track } from '../api';
 import { authStore } from '../lib/account';
 import { formatTime } from '../lib/format';
+import { href } from '../lib/router';
 import { groupCreators, styleTags } from '../lib/insight';
 import { useStore } from '../lib/store';
 import { playTrack } from '../player/player';
@@ -82,7 +83,13 @@ export function LinerNotes({ track, insight, loading, onChorus }: { track: Track
       )}
 
       {insight?.playable === false && !authorized && (
-        <p className="notes-warn">原平台把这首标成了不能完整播放。开通会员卡后，会尝试换其他音源放完整版。</p>
+        <p className="notes-warn">
+          原平台把这首标成了不能完整播放。开通会员后，会尝试换其他音源放完整版。
+          <a className="text-btn" href={href.account()}>
+            {' '}
+            填会员邀请码 →
+          </a>
+        </p>
       )}
 
       {empty && <p className="lyrics-empty">这张唱片的内页是空白的。</p>}

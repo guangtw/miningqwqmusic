@@ -13,7 +13,7 @@ function stateText(u: AuthorizedUser) {
   const a = u.playbackAuthorization;
   if (!a.enabled) return '未授权';
   const when = a.grantedAt ? ` · ${a.grantedAt.slice(0, 10)}` : '';
-  return a.source === 'invite' ? `兑换码${a.inviteLabel ? `「${a.inviteLabel}」` : ''}${when}` : `手动开通${when}`;
+  return a.source === 'invite' ? `邀请码${a.inviteLabel ? `「${a.inviteLabel}」` : ''}${when}` : `手动开通${when}`;
 }
 
 /** 授权管理（仅管理员）：按邮箱或昵称找人，开通 / 撤销播放授权 */

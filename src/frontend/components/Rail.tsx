@@ -94,15 +94,10 @@ function RailControls(p: {
   );
 }
 
-/**
- * 网格只露整行：按容器实际排得下几列，把条目数截到列数的整数倍，
- * 最多 maxRows 行，剩下的用「展开全部」看。窄屏两列时多给一行。
- */
-export function useFullRows(count: number, maxRows = 2) {
+/** 网格实际排了几列（auto-fill 的列数随宽度变），跟着容器尺寸更新 */
+export function useColumns() {
   const ref = useRef<HTMLDivElement>(null);
   const [cols, setCols] = useState(0);
-  const [expanded, setExpanded] = useState(false);
-
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -112,6 +107,16 @@ export function useFullRows(count: number, maxRows = 2) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+  return { ref, cols };
+}
+
+/**
+ * 网格只露整行：按容器实际排得下几列，把条目数截到列数的整数倍，
+ * 最多 maxRows 行，剩下的用「展开全部」看。窄屏两列时多给一行。
+ */
+export function useFullRows(count: number, maxRows = 2) {
+  const { ref, cols } = useColumns();
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => setExpanded(false), [count]);
 

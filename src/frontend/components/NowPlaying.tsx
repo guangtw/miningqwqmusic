@@ -1,13 +1,17 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { coverOf, hasId } from '../api';
+import { downloadTrack } from '../lib/download';
+import { formatTime } from '../lib/format';
+import { useInsight } from '../lib/insight';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame } from '../lib/motion';
 import { tintVars, useTint } from '../lib/palette';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
-import { audioTime, currentTrack, playerStore, seek } from '../player/player';
+import { audioTime, currentTrack, playerStore, seek, toggle } from '../player/player';
 import { openTrackMenu, uiStore } from '../player/ui';
 import { Icon } from './Icon';
+import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
 import { Turntable } from './Turntable';
 
@@ -23,6 +27,16 @@ export function NowPlaying() {
   const lyric = useStore(playerStore, (s) => s.lyric);
   const position = useStore(playerStore, (s) => s.position);
   const tint = useTint(track ? coverOf(track) : undefined);
+  // 歌词 / 唱片内页二选一；百科只在面板打开时去问
+  const [view, setView] = useState<'lyrics' | 'notes'>('lyrics');
+  const insight = useInsight(track?.id, open);
+  const chorus = insight.data?.chorusStartMs;
+  const fromChorus = () => {
+    if (chorus == null) return;
+    seek(chorus);
+    if (!playing) toggle();
+    setView('lyrics');
+  };
 
   const lines = useMemo(() => displayLines(lyric), [lyric]);
   const unsynced = isUnsynced(lines);
@@ -53,7 +67,8 @@ export function NowPlaying() {
   const placedFor = useRef<string | null>(null);
   useEffect(() => {
     const box = listRef.current;
-    if (!open) placedFor.current = null;
+    // 面板收起或切到唱片内页后，再回到歌词时直接定位到当前行
+    if (!open || view !== 'lyrics') placedFor.current = null;
     if (!open || !box || active < 0 || Date.now() - userScrolledAt.current < 2500) return;
     const el = box.children[active] as HTMLElement | undefined;
     if (!el) return;
@@ -63,7 +78,7 @@ export function NowPlaying() {
       placedFor.current = lyric?.trackId ?? null;
       box.scrollTop = to;
     } else cancelTween.current = tweenScroll(box, to, 700);
-  }, [active, open, lyric]);
+  }, [active, open, lyric, view]);
 
   useEffect(() => {
     if (!open) return;
@@ -132,12 +147,27 @@ export function NowPlaying() {
                   </>
                 )}
               </p>
-              <button className="text-btn np-add" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
-                <Icon name="listAdd" size={16} /> 加到歌单
-              </button>
+              <div className="np-actions">
+                <button className="np-chip" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
+                  <Icon name="listAdd" size={16} /> 加到歌单
+                </button>
+                <button className="np-chip" onClick={() => void downloadTrack(track)}>
+                  <Icon name="download" size={16} /> 下载
+                </button>
+                {chorus != null && (
+                  <button className="np-chip" onClick={fromChorus} title="跳到副歌">
+                    <Icon name="chorus" size={16} /> 副歌 <span className="mono">{formatTime(chorus)}</span>
+                  </button>
+                )}
+                <button className={`np-chip ${view === 'notes' ? 'on' : ''}`} aria-pressed={view === 'notes'} onClick={() => setView(view === 'notes' ? 'lyrics' : 'notes')}>
+                  <Icon name="notes" size={16} /> 唱片内页
+                </button>
+              </div>
             </div>
 
-            {lines.length ? (
+            {view === 'notes' ? (
+              <LinerNotes track={track} insight={insight.data} loading={insight.loading} onChorus={fromChorus} />
+            ) : lines.length ? (
               <div
                 ref={listRef}
                 className={`lyrics ${unsynced ? 'unsynced' : ''}`}

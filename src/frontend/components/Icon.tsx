@@ -69,6 +69,10 @@ const paths = {
     </g>
   ),
   trash: <path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13" />,
+  download: <path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" />,
+  notes: <path d="M6 4h9l3 3v13H6zM9 9h6M9 12.5h6M9 16h3" />,
+  chorus: <path d="M4 12h2l2-5 3 10 3-8 2 5 2-2h2" />,
+  pulse: <path d="M3 12h4l2-6 4 12 2-6h6" />,
 } as const;
 
 export type IconName = keyof typeof paths;

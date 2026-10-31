@@ -7,12 +7,15 @@ import type {
   ArtistDetail,
   ArtistSearchItem,
   DiscoverData,
+  DownloadSource,
   PagedResult,
   Playlist,
   PlayQualityLevel,
   PlaySource,
   PlaylistResolveResult,
+  SceneData,
   SearchAssist,
+  SongInsight,
   ToplistItem,
   Track,
   TrackLyric,
@@ -77,6 +80,10 @@ export const music = {
   lyric: (id: string) => request<TrackLyric>(path(p.lyric, { id })),
   qualityOptions: (id: string, token?: string | null) =>
     authed<TrackQualityAvailability>(path(p.qualityOptions, { id }), { token }),
+  insight: (id: string) => request<SongInsight>(path(p.insight, { id })),
+  downloadUrl: (id: string, level: PlayQualityLevel) => request<DownloadSource>(path(p.downloadUrl, { id }), { query: { level } }),
+  sati: (tag?: string) => request<SceneData>(p.sceneSati, { query: { tag } }),
+  sport: (bpm: number) => request<SceneData>(p.sceneSport, { query: { bpm } }),
 
   async playlist(id: string) {
     return withToplistCover(await request<Playlist>(path(p.playlist, { id })));

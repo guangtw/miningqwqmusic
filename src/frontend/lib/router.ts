@@ -73,6 +73,7 @@ export const href = {
     `#/search${q ? `?q=${encodeURIComponent(q)}${type ? `&type=${type}` : ''}` : ''}`,
   mine: (id: string) => `#/mine/${encodeURIComponent(id)}`,
   charts: () => '#/charts',
+  radio: () => '#/radio',
   library: () => '#/library',
   settings: () => '#/settings',
   admin: () => '#/admin',

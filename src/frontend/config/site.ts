@@ -52,6 +52,10 @@ export const api = {
     playUrl: '/api/music/track/:id/play-url',
     lyric: '/api/music/track/:id/lyric',
     qualityOptions: '/api/music/track/:id/quality-options',
+    insight: '/api/music/track/:id/insight',
+    downloadUrl: '/api/music/track/:id/download-url',
+    sceneSati: '/api/music/scene/sati',
+    sceneSport: '/api/music/scene/sport',
     playlist: '/api/music/playlist/:id',
     playlistResolve: '/api/music/playlist/resolve',
     toplists: '/api/music/toplist',
@@ -115,6 +119,7 @@ export const nav: { key: string; label: string; to: string }[] = [
   { key: '', label: '本期', to: '#/' },
   { key: 'search', label: '搜索', to: '#/search' },
   { key: 'charts', label: '榜单', to: '#/charts' },
+  { key: 'radio', label: '电台', to: '#/radio' },
   { key: 'library', label: '唱片架', to: '#/library' },
   { key: 'settings', label: '设置', to: '#/settings' },
 ];

@@ -72,6 +72,16 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.endsWith('/search/artists')) return ok({ items: [{ id: 'a1', name: '测试艺人', coverUrl: cover }], page: 1, pageSize: 30, total: 1 });
     if (p.endsWith('/search/playlists')) return ok({ items: [playlist], page: 1, pageSize: 30, total: 1 });
     if (p.endsWith('/search')) return ok({ items: url.searchParams.get('page') === '2' ? [tracks[1]] : tracks, page: Number(url.searchParams.get('page')), pageSize: 30, total: 31 });
+    if (p.endsWith('/scene/sport')) {
+      // 每个步频一首，奇数档和偶数档各给一首，拼出来是两首
+      const id = Number(url.searchParams.get('bpm')) % 4 ? '102' : '101';
+      return ok({ tags: [], resources: [{ id, title: '场景歌', trackId: id, coverUrl: cover }] });
+    }
+    if (p.endsWith('/scene/sati')) {
+      const tag = url.searchParams.get('tag') ?? 'sleep';
+      return ok({ tags: [{ id: 'sleep', name: '助眠' }, { id: 'rain', name: '雨声' }], resources: [{ id: `r-${tag}`, title: tag === 'rain' ? '窗外的雨' : '向晚', trackId: tag === 'rain' ? '102' : '101', coverUrl: cover, tag }] });
+    }
+    if (p.endsWith('/insight')) return ok({ trackId: '101', creators: [{ name: '某人', role: '作词' }], wikiSummary: '流行-华语流行', chorusStartMs: 12000, alternatives: [] });
     if (p.endsWith('/toplist')) return ok([{ id: 't1', name: '飙升榜', coverUrl: cover, tracksPreview: tracks }]);
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
     if (p.includes('/album/')) return ok({ id: 'b1', name: '测试专辑', coverUrl: cover, artists: tracks[0].artists, tracks });
@@ -195,6 +205,23 @@ test('disabled account, retry, theme persistence and old device data migration',
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
   await expect(page.getByText('后端未启用账户服务，收藏只保存在本机。')).toBeVisible();
+  expect(state.errors).toEqual([]);
+});
+
+test('radio picks songs by pace, sati tags switch and liner notes show credits', async ({ page }) => {
+  const state = await backend(page);
+  await page.goto('/#/radio');
+  await page.getByRole('radio', { name: /跑步/ }).click();
+  await page.getByRole('button', { name: '按 160 步频开跑' }).click();
+  await expect(page.locator('.sport-mix .track')).toHaveCount(2);
+  await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: '雨声', exact: true }).click();
+  await expect(page.locator('.sound-title')).toHaveText('窗外的雨');
+  await page.locator('.player .np-text').click();
+  await page.getByRole('button', { name: '唱片内页' }).click();
+  await expect(page.locator('.notes-credits')).toContainText('某人');
+  await expect(page.locator('.notes-tag')).toHaveText(['流行', '华语流行']);
+  expect(state.calls.filter((c) => c.path.includes('/scene/sport')).length).toBe(11);
   expect(state.errors).toEqual([]);
 });
 

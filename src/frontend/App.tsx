@@ -23,6 +23,7 @@ import { AccountView } from './views/AccountView';
 import { AdminView } from './views/Admin';
 import { Library } from './views/Library';
 import { MyPlaylistView } from './views/MyPlaylist';
+import { RadioView } from './views/Radio';
 import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
 
@@ -45,6 +46,8 @@ function View({ route }: { route: Route }) {
       return <SearchView q={route.query.get('q') ?? ''} type={route.query.get('type') ?? ''} />;
     case 'charts':
       return <Charts />;
+    case 'radio':
+      return <RadioView />;
     case 'library':
       return <Library />;
     case 'settings':

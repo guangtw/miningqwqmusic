@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { libraryStore } from '../lib/account';
 import { usePresence } from '../lib/motion';
+import { downloadTrack } from '../lib/download';
 import { addToPlaylist, isMine, playlistCover, removeFromPlaylist } from '../lib/playlists';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
@@ -13,7 +14,7 @@ import { Icon } from './Icon';
 const W = 272;
 
 /**
- * 曲目菜单：下一首播放、加到歌单（列出自建歌单）、从当前歌单移除。
+ * 曲目菜单：下一首播放、下载、加到歌单（列出自建歌单）、从当前歌单移除。
  * 和音质面板一样是挂到 body 上的磨砂玻璃浮层。
  */
 export function TrackMenu() {
@@ -90,6 +91,18 @@ export function TrackMenu() {
               }}
             >
               <Icon name="queue" /> 下一首播放
+            </button>
+          )}
+          {single && (
+            <button
+              role="menuitem"
+              className="t-menu-item"
+              onClick={() => {
+                void downloadTrack(single);
+                close();
+              }}
+            >
+              <Icon name="download" /> 下载
             </button>
           )}
           {from && (

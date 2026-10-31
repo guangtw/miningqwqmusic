@@ -31,6 +31,55 @@ describe('frontend device migration', () => {
 });
 
 describe('frontend account bridge', () => {
+  it('keeps a signed-in account during a temporary refresh outage and recovers', async () => {
+    let online = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/refresh')) return online ? success({ accessToken: 'recovered' })
+        : new Response(JSON.stringify({ code: 5403, message: 'unavailable' }), { status: 503 });
+      if (url.endsWith('/auth/me')) return success({ user: { id: 'u1', email: 'listener@example.com' } });
+      return success({ favorites: {}, recent: [], revision: 1 });
+    }));
+    const account = await import('@/src/frontend/lib/account');
+    account.authStore.set({ status: 'authenticated', token: 'existing', user: { id: 'u1', email: 'listener@example.com' } });
+    await account.restoreSession();
+    expect(account.authStore.get()).toMatchObject({ status: 'authenticated', token: 'existing' });
+    online = true;
+    await account.restoreSession();
+    expect(account.authStore.get()).toMatchObject({ status: 'authenticated', token: 'recovered' });
+  });
+
+  it('recovers an initially offline session on the online event', async () => {
+    let online = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (!online) throw new Error('offline');
+      if (url.endsWith('/auth/refresh')) return success({ accessToken: 'recovered', user: { id: 'u1', email: 'listener@example.com' } });
+      if (url.endsWith('/auth/me')) return success({});
+      return success({ favorites: {}, recent: [], revision: 1 });
+    }));
+    const account = await import('@/src/frontend/lib/account');
+    const stop = account.watchSessionRecovery();
+    try {
+      await account.restoreSession();
+      expect(account.authStore.get().status).toBe('checking');
+      online = true;
+      window.dispatchEvent(new Event('online'));
+      await vi.waitFor(() => expect(account.authStore.get().status).toBe('authenticated'));
+    } finally { stop(); }
+  });
+
+  it('does not resurrect a logged-out account from an in-flight refresh', async () => {
+    let resolveRefresh!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn((url: string) => url.endsWith('/auth/refresh')
+      ? new Promise<Response>((resolve) => { resolveRefresh = resolve; }) : Promise.resolve(success({}))));
+    const account = await import('@/src/frontend/lib/account');
+    const restoring = account.restoreSession();
+    await vi.waitFor(() => expect(resolveRefresh).toBeTypeOf('function'));
+    const loggingOut = account.logout();
+    resolveRefresh(success({ accessToken: 'late', user: { id: 'u1', email: 'listener@example.com' } }));
+    await Promise.all([restoring, loggingOut]);
+    expect(account.authStore.get()).toMatchObject({ status: 'guest', token: null, user: null });
+  });
+
   it('retries a playback request with the refreshed bearer token', async () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/auth/refresh')) return success({ accessToken: 'fresh' });

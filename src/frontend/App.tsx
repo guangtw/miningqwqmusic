@@ -7,7 +7,7 @@ import { QueueDrawer } from './components/QueueDrawer';
 import { Sidebar } from './components/Sidebar';
 import { Empty } from './components/States';
 import { Toast } from './components/Toast';
-import { restoreSession } from './lib/account';
+import { restoreSession, watchSessionRecovery } from './lib/account';
 import { applyGlobalTint, DEFAULT_TINT, tintOf } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
 import { getSettings, subscribeSettings } from './lib/settings';
@@ -96,7 +96,9 @@ export function App() {
   useShortcuts();
 
   useEffect(() => {
+    const stop = watchSessionRecovery();
     void restoreSession();
+    return stop;
   }, []);
 
   useEffect(() => {

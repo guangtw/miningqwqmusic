@@ -27,6 +27,39 @@ const isInvalidSession = (e: unknown) =>
   e instanceof ApiError && e.status === 401 && (api.codes.invalidSession as readonly number[]).includes(e.code);
 const isDisabled = (e: unknown) => e instanceof ApiError && e.code === api.codes.accountDisabled;
 
+let authGeneration = 0;
+let refreshError: unknown = null;
+let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+let recoveryWatching = false;
+let recoveryDelay = 1000;
+const AUTH_EVENT = 'cph.auth.event';
+
+async function sessionLock<T>(run: () => Promise<T>): Promise<T> {
+  // Shared across tabs: the browser applies Set-Cookie before releasing this lock.
+  return navigator.locks ? await navigator.locks.request('mqm-session-cookie', run) : await run();
+}
+
+function expiresSoon(token: string | null): boolean {
+  const expiry = tokenExpiry(token);
+  return expiry != null && expiry <= Date.now() + 30_000;
+}
+
+function tokenExpiry(token: string | null): number | null {
+  try {
+    const payload = JSON.parse(atob(token!.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' && Number.isFinite(payload.exp) ? payload.exp * 1000 : null;
+  } catch { return null; }
+}
+
+function scheduleRecovery(delay: number) {
+  clearTimeout(recoveryTimer);
+  if (recoveryWatching) recoveryTimer = setTimeout(() => void restoreSession(), delay);
+}
+
+function publishAuth(type: 'login' | 'logout') {
+  writeJSON(AUTH_EVENT, { type, at: Date.now(), nonce: Math.random() });
+}
+
 function apply(data: AuthTokenData | AuthPayload) {
   authStore.set((s) => ({
     token: data.accessToken ?? s.token,
@@ -34,23 +67,44 @@ function apply(data: AuthTokenData | AuthPayload) {
     status: 'authenticated',
     playbackAuthorization: data.playbackAuthorization ?? s.playbackAuthorization,
   }));
+  refreshError = null;
+  recoveryDelay = 1000;
+  const expiry = tokenExpiry(authStore.get().token);
+  if (expiry != null) scheduleRecovery(Math.max(1000, expiry - Date.now() - 30_000));
 }
 
 let refreshing: Promise<boolean> | null = null;
 
 async function refresh(): Promise<boolean> {
   // 并发请求同时 401 时只刷新一次
-  refreshing ??= request<AuthTokenData>(p.authRefresh, { method: 'POST' })
+  const generation = authGeneration;
+  refreshing ??= sessionLock(async () => {
+    if (generation !== authGeneration) return false;
+    return request<AuthTokenData>(p.authRefresh, { method: 'POST' })
     .then((d) => {
+      if (generation !== authGeneration) return false;
       apply(d);
       return true;
     })
     .catch((e) => {
-      if (isDisabled(e)) authStore.set({ status: 'unavailable', user: null, token: null, playbackAuthorization: null });
-      else if (isInvalidSession(e) || (e instanceof ApiError && e.status === 401))
+      if (generation !== authGeneration) return false;
+      refreshError = e;
+      if (isDisabled(e)) {
+        refreshError = null;
+        clearTimeout(recoveryTimer);
+        authStore.set({ status: 'unavailable', user: null, token: null, playbackAuthorization: null });
+      } else if (isInvalidSession(e) || (e instanceof ApiError && e.status === 401)) {
+        refreshError = null;
+        clearTimeout(recoveryTimer);
         authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+      } else {
+        // Network/429/5xx do not prove that the session expired.
+        scheduleRecovery(recoveryDelay);
+        recoveryDelay = Math.min(30_000, recoveryDelay * 2);
+      }
       return false;
-    })
+    });
+  })
     .finally(() => {
       refreshing = null;
     });
@@ -59,47 +113,101 @@ async function refresh(): Promise<boolean> {
 
 /** 带登录态的请求：401 时刷新一次 token 再重试 */
 export async function authed<T>(urlPath: string, init: RequestInitEx = {}): Promise<T> {
-  if (authStore.get().status === 'checking') await refresh();
+  const generation = authGeneration;
+  if (authStore.get().status === 'checking' || expiresSoon(authStore.get().token)) await refresh();
+  const sentToken = authStore.get().token;
   try {
-    return await request<T>(urlPath, { ...init, token: authStore.get().token });
+    return await request<T>(urlPath, { ...init, token: sentToken });
   } catch (e) {
     if (!(e instanceof ApiError) || e.status !== 401) throw e;
-    if (!(await refresh())) throw e;
+    if (generation !== authGeneration) throw e;
+    // A late 401 from the old token must not rotate an already renewed cookie.
+    if (sentToken === authStore.get().token && !(await refresh())) throw refreshError ?? e;
     return request<T>(urlPath, { ...init, token: authStore.get().token });
   }
 }
 
 /** 启动时恢复会话；账户服务没开就进入 unavailable，界面会隐藏登录入口 */
 export async function restoreSession() {
+  const generation = authGeneration;
   const ok = await refresh();
-  if (!ok) {
-    if (authStore.get().status === 'checking') authStore.set({ status: 'guest' });
+  if (!ok || generation !== authGeneration) {
     return;
   }
   try {
-    apply(await authed<AuthPayload>(p.authMe));
+    const data = await authed<AuthPayload>(p.authMe);
+    if (generation !== authGeneration) return;
+    apply(data);
   } catch {
     // me 失败不影响已拿到的 token
   }
-  void pullLibrary({ merge: true });
+  if (generation === authGeneration) void pullLibrary({ merge: true });
 }
 
 export async function login(email: string, password: string) {
   lastPull = 0;
-  apply(await request<AuthPayload>(p.authLogin, { method: 'POST', body: { email, password } }));
+  const generation = ++authGeneration;
+  const data = await sessionLock(() => request<AuthPayload>(p.authLogin, { method: 'POST', body: { email, password } }));
+  if (generation !== authGeneration) return;
+  apply(data);
+  publishAuth('login');
   void pullLibrary({ merge: true });
 }
 
 export async function register(email: string, password: string, nickname?: string) {
   lastPull = 0;
-  apply(await request<AuthPayload>(p.authRegister, { method: 'POST', body: { email, password, nickname: nickname || undefined } }));
+  const generation = ++authGeneration;
+  const data = await sessionLock(() => request<AuthPayload>(p.authRegister, { method: 'POST', body: { email, password, nickname: nickname || undefined } }));
+  if (generation !== authGeneration) return;
+  apply(data);
+  publishAuth('login');
   void pullLibrary({ merge: true });
 }
 
 export async function logout() {
-  await authed(p.authLogout, { method: 'POST' }).catch(() => undefined);
+  ++authGeneration;
+  refreshError = null;
+  clearTimeout(recoveryTimer);
+  const token = authStore.get().token;
   authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  await sessionLock(() => request(p.authLogout, { method: 'POST', token })).catch(() => undefined);
+  publishAuth('logout');
   lastPull = 0;
+}
+
+/** Retry after connectivity/foreground recovery; coordinate login/logout across tabs. */
+export function watchSessionRecovery() {
+  recoveryWatching = true;
+  const recover = () => {
+    if (document.visibilityState !== 'hidden' && (refreshError || authStore.get().status === 'checking' || expiresSoon(authStore.get().token)))
+      void restoreSession();
+  };
+  const storage = (event: StorageEvent) => {
+    if (event.key !== AUTH_EVENT || !event.newValue) return;
+    try {
+      const { type } = JSON.parse(event.newValue);
+      if (type === 'logout') {
+        ++authGeneration;
+        clearTimeout(recoveryTimer);
+        refreshError = null;
+        authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+      } else if (type === 'login') {
+        ++authGeneration;
+        const pending = refreshing;
+        void (pending ?? Promise.resolve()).then(() => restoreSession());
+      }
+    } catch { /* Ignore malformed device events. */ }
+  };
+  window.addEventListener('online', recover);
+  document.addEventListener('visibilitychange', recover);
+  window.addEventListener('storage', storage);
+  return () => {
+    recoveryWatching = false;
+    clearTimeout(recoveryTimer);
+    window.removeEventListener('online', recover);
+    document.removeEventListener('visibilitychange', recover);
+    window.removeEventListener('storage', storage);
+  };
 }
 
 export const displayName = (u: AccountUser) => u.nickname || u.email.split('@')[0];

@@ -1,3 +1,4 @@
+import { AppError } from "@/src/lib/errors";
 import type { PlayUnblockMode } from "@/src/types/music";
 import { PLAY_QUALITY_LEVELS, toPlayQualityLevel } from "@/src/lib/play-quality";
 import { accountServiceUrl } from "@/src/lib/account-service";
@@ -20,14 +21,6 @@ type PlaybackAuthorizationPayload = {
 type AuthMeResponse = {
   code?: number;
   data?: {
-    playbackAuthorization?: PlaybackAuthorizationPayload;
-  };
-};
-
-type AuthRefreshResponse = {
-  code?: number;
-  data?: {
-    accessToken?: string;
     playbackAuthorization?: PlaybackAuthorizationPayload;
   };
 };
@@ -70,12 +63,14 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
   const authorization = request.headers.get("authorization");
   const cookie = request.headers.get("cookie");
 
+  let accessRejected = false;
   try {
     const authResponse = await fetchAccountAuthorization("auth/me", {
       method: "GET",
       headers: forwardedHeaders,
       cache: "no-store"
     });
+    accessRejected = !!authorization && authResponse.status === 401;
     if (authResponse.ok) {
       const authPayload = (await authResponse.json()) as AuthMeResponse;
       const playbackAuthorization = authPayload.code === 0 ? authPayload.data?.playbackAuthorization : undefined;
@@ -84,37 +79,34 @@ async function fetchPlaybackAuthorization(request: Request): Promise<PlaybackAut
       }
     }
   } catch {
-    // Fall through to cookie refresh and entitlement probing.
+    // A transient outage is not an invalid session.
   }
 
-  let refreshedAccessToken: string | null = null;
+  // A server-side permission probe must never consume a browser refresh token.
   if (cookie) {
     try {
-      const refreshHeaders: Record<string, string> = { cookie };
-      const refreshResponse = await fetchAccountAuthorization("auth/refresh", {
-        method: "POST",
-        headers: refreshHeaders,
-        cache: "no-store"
+      const sessionResponse = await fetchAccountAuthorization("auth/session", {
+        method: "GET", headers: { cookie }, cache: "no-store"
       });
-      if (refreshResponse.ok) {
-        const refreshPayload = (await refreshResponse.json()) as AuthRefreshResponse;
-        const playbackAuthorization = refreshPayload.code === 0 ? refreshPayload.data?.playbackAuthorization : undefined;
-        refreshedAccessToken = refreshPayload.code === 0 ? refreshPayload.data?.accessToken ?? null : null;
-        if (isPlaybackAuthorizationPayload(playbackAuthorization)) {
-          return playbackAuthorization;
-        }
+      if (sessionResponse.ok) {
+        const payload = (await sessionResponse.json()) as AuthMeResponse;
+        const snapshot = payload.code === 0 ? payload.data?.playbackAuthorization : undefined;
+        if (isPlaybackAuthorizationPayload(snapshot)) return snapshot;
       }
     } catch {
-      // Fall through to the dedicated entitlement endpoint.
+      // Keep permission checks fail-closed without rotating or deleting cookies.
     }
+  }
+  if (accessRejected) {
+    // The browser owns refresh and can actually receive the new Set-Cookie.
+    throw new AppError("Session refresh required", { code: 5204, status: 401, retryable: false });
   }
 
   try {
     const entitlementHeaders: Record<string, string> = {};
     if (authorization) {
       entitlementHeaders.authorization = authorization;
-    } else if (refreshedAccessToken) {
-      entitlementHeaders.authorization = `Bearer ${refreshedAccessToken}`;
+
     } else if (cookie) {
       return null;
     }

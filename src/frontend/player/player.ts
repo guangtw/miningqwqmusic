@@ -56,6 +56,11 @@ let loadToken = 0;
 let renewedOnce = false;
 let recentPushed = false;
 const history: number[] = [];
+let canAutoAdvance = () => true;
+let intendedPlaying = false;
+let remoteTarget: { positionMs: number; playing: boolean; receivedAt: number } | null = null;
+export const isPlaybackIntended = () => get().loading ? intendedPlaying : !audio.paused;
+export function setAutoAdvanceGuard(guard: () => boolean) { canAutoAdvance = guard; }
 
 const set = playerStore.set;
 const get = playerStore.get;
@@ -125,19 +130,22 @@ audio.addEventListener('playing', () => {
     pushRecent(t);
   }
 });
-audio.addEventListener('ended', () => {
+function advanceOnEnd() {
+  if (!canAutoAdvance()) { set({ playing: false }); return; }
   if (get().mode === 'one') {
     audio.currentTime = 0;
-    void audio.play();
+    void audio.play().catch(() => set({ playing: false }));
+    emit('seek');
   } else next(true);
-});
+}
+audio.addEventListener('ended', advanceOnEnd);
 audio.addEventListener('error', () => {
   if (!audio.getAttribute('src')) return;
   const at = audio.currentTime * 1000;
   // 播放地址是短时效的：第一次出错先续签再接着放
   if (!renewedOnce) {
     renewedOnce = true;
-    void resolveAndPlay(get().index, { resumeAt: at, autoplay: true });
+    void resolveAndPlay(get().index, { resumeAt: at, autoplay: intendedPlaying });
     return;
   }
   set({ loading: false, playing: false });
@@ -156,11 +164,13 @@ const expiringSoon = () => !!loaded && Date.now() > loaded.expiresAt - api.playU
 /** 取播放地址并装进 <audio>；resumeAt 用于续签后从原位置继续 */
 async function resolveAndPlay(
   index: number,
-  opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number } = {},
+  opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean } = {},
 ) {
   const { queue } = get();
   const track = queue[index];
   if (!track) return;
+  if (!opts.remote) remoteTarget = null;
+  intendedPlaying = opts.autoplay !== false;
   const fresh = opts.resumeAt == null;
   const token = ++loadToken;
   audio.pause();
@@ -179,25 +189,39 @@ async function resolveAndPlay(
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
     loaded = { id: track.id, expiresAt: expiryOf(src) };
     audio.src = src.url;
+    const alignRemote = () => {
+      if (!remoteTarget || token !== loadToken) return;
+      const target = remoteTarget;
+      const elapsed = target.playing ? Math.max(0, performance.now() - target.receivedAt) : 0;
+      const duration = Number.isFinite(audio.duration) ? audio.duration * 1000 : track.durationMs;
+      const position = Math.min(duration || Infinity, target.positionMs + elapsed);
+      audio.currentTime = position / 1000;
+      set({ position });
+      if (!target.playing) audio.pause();
+    };
+    if (remoteTarget) audio.addEventListener('loadedmetadata', alignRemote, { once: true });
     // 暂停状态下不会触发 timeupdate，进度条的位置要自己同步一下
-    const at = opts.resumeAt || opts.startAt;
-    if (at) {
+    const at = opts.resumeAt ?? opts.startAt;
+    if (at !== undefined) {
       audio.currentTime = at / 1000;
       set({ position: at });
     }
     set({ preview: src.preview, level: src.level ?? null });
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
-    if (opts.autoplay !== false) await audio.play().catch(() => {
+    if (remoteTarget) alignRemote();
+    if (intendedPlaying) await audio.play().catch(() => {
       if (token === loadToken) set({ playing: false });
     });
     if (token !== loadToken) return;
+    if (remoteTarget) alignRemote();
     set({ loading: false });
   } catch (e) {
     if (token !== loadToken) return;
     const skipped = (opts.skipped ?? 0) + 1;
-    if (fresh && skipped < queue.length) {
+    if (fresh && canAutoAdvance() && !opts.remote && skipped < queue.length) {
       toast(`《${track.name}》暂时放不了：${(e as Error).message}`);
+      emit('playback');
       return resolveAndPlay(nextIndex(index), { ...opts, startAt: undefined, skipped });
     }
     set({ loading: false, playing: false });
@@ -281,8 +305,15 @@ export function toggle() {
   const track = currentTrack(s);
   if (!track) return;
   emit('playback');
+  if (s.loading && loaded?.id !== track.id) {
+    intendedPlaying = !intendedPlaying;
+    if (remoteTarget) remoteTarget.playing = intendedPlaying;
+    if (!intendedPlaying) audio.pause();
+    return;
+  }
   if (loaded?.id !== track.id) return void resolveAndPlay(s.index);
-  if (!audio.paused) return audio.pause();
+  if (!audio.paused) { intendedPlaying = false; return audio.pause(); }
+  intendedPlaying = true;
   // 暂停太久地址可能过期，先续签
   if (expiringSoon()) return void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: true });
   void audio.play().catch(() => set({ playing: false }));
@@ -291,8 +322,10 @@ export function toggle() {
 export function next(auto = false) {
   const { queue, index, mode } = get();
   if (!queue.length) return;
+  if (auto && !canAutoAdvance()) return;
   if (auto && mode === 'order' && index === queue.length - 1) {
     set({ playing: false });
+    emit('playback');
     return;
   }
   history.push(index);
@@ -327,14 +360,30 @@ export function seek(ms: number) {
  */
 export function applyRemote(r: { queue: Track[]; index: number; positionMs: number; playing: boolean; mode?: PlayMode }) {
   const s = get();
+  remoteTarget = { positionMs: Math.max(0, r.positionMs), playing: r.playing, receivedAt: performance.now() };
+  intendedPlaying = r.playing;
   const sameQueue = s.queue.length === r.queue.length && s.queue.every((t, i) => t.id === r.queue[i]?.id);
   if (!sameQueue) history.length = 0;
   set({ ...(sameQueue ? {} : { queue: r.queue }), ...(r.mode ? { mode: r.mode } : {}) });
   const track = r.queue[r.index];
-  if (!track) return;
+  if (!track) {
+    unload();
+    set({ queue: [], index: -1, position: 0, duration: 0, playing: false, loading: false, lyric: null });
+    return;
+  }
+  if (r.playing && loaded?.id === track.id && track.durationMs > 0 && r.positionMs >= track.durationMs && canAutoAdvance()) {
+    set({ index: r.index });
+    advanceOnEnd();
+    return;
+  }
+  if (currentTrack(s)?.id === track.id && s.loading) {
+    set({ index: r.index });
+    if (!r.playing) audio.pause();
+    return;
+  }
   // 房间里的队列只带当前这首前后一段，传来传去序号会挪：认歌不认序号，同一首就只改序号、不重新加载
   if (loaded?.id !== track.id || currentTrack(s)?.id !== track.id) {
-    void resolveAndPlay(r.index, { startAt: Math.max(1, r.positionMs), autoplay: r.playing });
+    void resolveAndPlay(r.index, { startAt: r.positionMs, autoplay: r.playing, remote: true });
     return;
   }
   if (s.index !== r.index) set({ index: r.index });
@@ -417,6 +466,7 @@ function updateMediaSession(track: Track) {
 if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('play', () => { if (audio.paused) toggle(); });
   navigator.mediaSession.setActionHandler('pause', () => {
+    intendedPlaying = false;
     audio.pause();
     emit('playback');
   });

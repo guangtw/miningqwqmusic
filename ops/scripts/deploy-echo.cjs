@@ -103,6 +103,7 @@ function configureLogin(cwd, rollback = false) {
 }
 function liveAccountQa(origin) {
   execFileSync(node, [path.join(packageDir, 'ops/verify-account-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 150000 });
+  execFileSync(node, [path.join(packageDir, 'ops/verify-listen-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
 }
 let failed = false;
 (async () => {

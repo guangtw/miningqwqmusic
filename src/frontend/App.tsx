@@ -119,8 +119,8 @@ export function App() {
     const stop = watchSessionRecovery();
     void restoreSession();
     watchSocial();
-    watchListen();
-    return stop;
+    const stopListen = watchListen();
+    return () => { stopListen?.(); stop(); };
   }, []);
 
   useEffect(() => {

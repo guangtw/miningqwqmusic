@@ -93,6 +93,25 @@ describe("account proxy route", () => {
     expect(payload.retryable).toBe(true);
   });
 
+  it("keeps the SSE abort signal alive after headers and cancels upstream on reader cancellation", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const cancel = vi.fn();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode(': ready\n\n')); }, cancel
+    }), { headers: { 'content-type': 'text/event-stream' } }));
+    const abort = new AbortController();
+    const response = await GET(new NextRequest('http://localhost/api/account/listen/rooms/r/stream', { signal: abort.signal }), createContext(['listen', 'rooms', 'r', 'stream']));
+    const signal = fetchMock.mock.calls[0][1]?.signal;
+    expect(signal?.aborted).toBe(false);
+    const reader = response.body!.getReader();
+    await reader.read();
+    abort.abort();
+    expect(signal?.aborted).toBe(true);
+    await reader.cancel();
+    expect(signal?.aborted).toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it.each([["..", "..", "admin"], ["auth/me"], ["auth\\me"]])("rejects path traversal segments %s", async (...segments) => {
     process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
     const fetchMock = vi.spyOn(globalThis, "fetch");

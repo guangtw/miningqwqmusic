@@ -79,7 +79,7 @@ try {
   const id = 'echo-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14) + '-' + musicCommit.slice(0, 8);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'echo-publish-'));
   console.log('Release:', id, '\nExact source:', musicCommit, loginCommit, '\nWork directory:', stage);
-  const helpers = ['deploy-echo.cjs', 'verify-account-session.cjs', 'run-echo-release.sh'];
+  const helpers = ['deploy-echo.cjs', 'verify-account-session.cjs', 'verify-listen-session.cjs', 'run-echo-release.sh'];
   exportCommit(root, 'music', [...runtime, ...checkFiles, ...helpers.map(name => 'ops/scripts/' + name)], stage);
   exportCommit(loginRoot, 'login', [...loginRuntime, ...checkFiles], stage);
   const pack = path.join(stage, 'release');
@@ -110,7 +110,7 @@ try {
   run('ssh', [host, 'mkdir -p ' + remote]);
   run('scp', [archive, host + ':' + remote + '/release.tar.gz']);
   // The transport hash is checked before any release code is extracted/executed.
-  run('ssh', [host, 'cd ' + remote + ' && echo "' + digest + '  release.tar.gz" | sha256sum -c - && tar -xzf release.tar.gz && /bin/bash -n ops/run-echo-release.sh && /usr/bin/node --check ops/deploy-echo.cjs && /usr/bin/node --check ops/verify-account-session.cjs && (umask 077; nohup /bin/bash ' + remote + '/ops/run-echo-release.sh > job.log 2>&1 < /dev/null & echo DEPLOY_PID=$!)']);
+  run('ssh', [host, 'cd ' + remote + ' && echo "' + digest + '  release.tar.gz" | sha256sum -c - && tar -xzf release.tar.gz && /bin/bash -n ops/run-echo-release.sh && /usr/bin/node --check ops/deploy-echo.cjs && /usr/bin/node --check ops/verify-account-session.cjs && /usr/bin/node --check ops/verify-listen-session.cjs && (umask 077; nohup /bin/bash ' + remote + '/ops/run-echo-release.sh > job.log 2>&1 < /dev/null & echo DEPLOY_PID=$!)']);
   phase = 'server';
   const deadline = Date.now() + 15 * 60 * 1000;
   let complete = false;

@@ -2,7 +2,7 @@ import type { AcceptListenInviteResult, AccountUser, ListenPlaybackState, Listen
 import type { Track } from '../api';
 import { ApiError, path } from '../api/http';
 import { api } from '../config/site';
-import { applyRemote, audioTime, onPlayerAction, playerStore, type PlayerAction, type PlayerState, type PlayMode } from '../player/player';
+import { applyRemote, audioTime, isPlaybackIntended, onPlayerAction, playerStore, setAutoAdvanceGuard, type PlayerAction, type PlayerState, type PlayMode } from '../player/player';
 import { accessToken, authed, authStore, displayName } from './account';
 import { refreshSocial } from './friends';
 import { countFields } from './playlists';
@@ -12,8 +12,8 @@ import { toast } from './toast';
 /*
  * 一起听：房间在账户服务的内存里，谁都能控制播放。
  * - 本机的「操作」（播放暂停、换歌、拖进度、换模式、改队列）发到房间：POST state
- * - 别人的操作从推送流（SSE）收下来，照着摆播放器；自己的回声按 actor 过滤掉
- * - 播放中每 30 秒报一次进度，后来进房间的人能对上位置；每 45 秒心跳一次表示在线
+ * - 操作从 SSE 收下，按版本应用；同账号的另一台设备也跟随
+ * - 当前控制者每 30 秒报告进度，所有成员每 45 秒心跳；过期报告不能覆盖新操作
  * - 推送流要带 Authorization 头，EventSource 不支持，所以用 fetch 读流自己拆事件
  */
 
@@ -41,6 +41,28 @@ export const listenStore = createStore<ListenState>({ room: null, phase: 'idle',
 
 const me = () => authStore.get().user?.id;
 const roomId = () => listenStore.get().room?.id;
+let generation = 0;
+let operation = 0;
+let clockOffsetMs = 0;
+let controlSends = 0;
+let sends: Promise<void> = Promise.resolve();
+const current = (id: string, epoch: number) => roomId() === id && generation === epoch;
+const leader = () => {
+  const room = listenStore.get().room;
+  return !room || (room.playbackLeaderUserId ?? room.hostUserId) === me();
+};
+setAutoAdvanceGuard(leader);
+
+function acceptRoom(room: ListenRoomSummary, epoch: number) {
+  if (!current(room.id, epoch) || room.version < version) return false;
+  const takeover = !!listenStore.get().room && !leader() && (room.playbackLeaderUserId ?? room.hostUserId) === me();
+  const serverTime = Date.parse(room.serverTime ?? '');
+  if (Number.isFinite(serverTime)) clockOffsetMs = Date.now() - serverTime;
+  version = room.version;
+  listenStore.set({ room });
+  if (takeover && !pending && !controlSends) follow(room.playbackState, 6 * 60 * 60 * 1000);
+  return true;
+}
 
 // ---------------- 状态互转 ----------------
 
@@ -57,11 +79,11 @@ function shareTrack(t: Track): Track {
   } as Track;
 }
 
-const toRemoteMode = (m: PlayMode): ListenPlaybackState['mode'] => (m === 'one' ? 'loop-one' : m === 'shuffle' ? 'shuffle' : 'sequence');
-function fromRemoteMode(m: ListenPlaybackState['mode'], local: PlayMode): PlayMode {
+const toRemoteMode = (m: PlayMode): ListenPlaybackState['mode'] => (m === 'one' ? 'loop-one' : m === 'shuffle' ? 'shuffle' : m === 'loop' ? 'loop-all' : 'sequence');
+function fromRemoteMode(m: ListenPlaybackState['mode']): PlayMode {
   if (m === 'loop-one') return 'one';
   if (m === 'shuffle') return 'shuffle';
-  return local === 'order' || local === 'loop' ? local : 'loop';
+  return m === 'loop-all' ? 'loop' : 'order';
 }
 
 /** 本机播放器 → 房间状态。队列从当前这首往前带两首、往后带到字段上限为止 */
@@ -69,7 +91,7 @@ export function sharedState(s: PlayerState, positionMs = audioTime()): ListenPla
   const queue = s.queue.map(shareTrack);
   const base = {
     currentTimeMs: Math.max(0, Math.round(positionMs)),
-    isPlaying: s.playing || s.loading,
+    isPlaying: s.loading ? isPlaybackIntended() : s.playing,
     mode: toRemoteMode(s.mode),
     updatedAt: new Date().toISOString(),
   };
@@ -95,15 +117,13 @@ export function sharedState(s: PlayerState, positionMs = audioTime()): ListenPla
 
 /** 房间状态 → 本机播放器。maxLagMs 限制按时间差往前追多少（各人的时钟不一定准） */
 function follow(state: ListenPlaybackState, maxLagMs: number) {
-  // 房间里还没放歌（房主空着队列开的房）：不动自己的播放器
-  if (!state.queue.length) return;
-  const lag = state.isPlaying ? Math.min(maxLagMs, Math.max(0, Date.now() - Date.parse(state.updatedAt || ''))) || 0 : 0;
+  const lag = state.isPlaying ? Math.min(maxLagMs, Math.max(0, Date.now() - clockOffsetMs - Date.parse(state.updatedAt || ''))) || 0 : 0;
   applyRemote({
     queue: state.queue as Track[],
     index: state.currentIndex,
-    positionMs: state.currentTimeMs + lag,
+    positionMs: Math.min(state.queue[state.currentIndex]?.durationMs || Infinity, state.currentTimeMs + lag),
     playing: state.isPlaying && state.currentIndex >= 0,
-    mode: fromRemoteMode(state.mode, playerStore.get().mode),
+    mode: fromRemoteMode(state.mode),
   });
 }
 
@@ -126,18 +146,37 @@ onPlayerAction((type) => {
   }, SETTLE_MS);
 });
 
-async function send(type: PlayerAction | 'progress') {
+function send(type: PlayerAction | 'progress') {
   const id = roomId();
-  if (!id) return;
-  try {
-    const room = await authed<ListenRoomSummary>(path(p.listenRoomAction, { id, action: 'state' }), {
-      method: 'POST',
-      body: { type, playbackState: sharedState(playerStore.get()) },
-    });
-    if (roomId() === id) listenStore.set({ room });
-  } catch (e) {
-    handleError(e, id);
-  }
+  if (!id) return Promise.resolve();
+  if (type === 'progress' && (!leader() || pending || controlSends || playerStore.get().loading)) return Promise.resolve();
+  const epoch = generation;
+  const playbackState = sharedState(playerStore.get());
+  const capturedAt = performance.now();
+  if (type !== 'progress') controlSends++;
+  const task = sends.then(async () => {
+    if (!current(id, epoch)) return;
+    const baseVersion = version;
+    const elapsed = playbackState.isPlaying ? performance.now() - capturedAt : 0;
+    const duration = playbackState.queue[playbackState.currentIndex]?.durationMs || Infinity;
+    const state = { ...playbackState, currentTimeMs: Math.round(Math.min(duration, playbackState.currentTimeMs + elapsed)) };
+    try {
+      const room = await authed<ListenRoomSummary>(path(p.listenRoomAction, { id, action: 'state' }), {
+        method: 'POST', body: { type, baseVersion, playbackState: state },
+      });
+      if (current(id, epoch)) {
+        const accepted = acceptRoom(room, epoch);
+        // An SSE event can arrive before this HTTP response. Never rewind its version.
+        if (!accepted && type !== 'progress' && controlSends === 1 && !pending) {
+          const latest = listenStore.get().room;
+          if (latest) follow(latest.playbackState, 6 * 60 * 60 * 1000);
+        }
+      }
+    } catch (e) { if (current(id, epoch)) handleError(e, id); }
+    finally { if (current(id, epoch) && type !== 'progress') controlSends--; }
+  });
+  sends = task.catch(() => undefined);
+  return task;
 }
 
 function handleError(e: unknown, id: string) {
@@ -181,54 +220,69 @@ export function parseSse(buffer: string): { events: StreamEvent[]; rest: string 
   return { events, rest };
 }
 
-const wait = (ms: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true });
-  });
+const wait = (ms: number, signal: AbortSignal) => new Promise<void>(resolve => {
+  const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+  const timer = setTimeout(done, ms);
+  signal.addEventListener('abort', done, { once: true });
+  if (signal.aborted) done();
+});
 
 async function runStream(id: string, ctrl: AbortController) {
+  const epoch = generation;
   let delay = 1000;
   let force = false;
-  while (!ctrl.signal.aborted && roomId() === id) {
+  while (!ctrl.signal.aborted && current(id, epoch)) {
     try {
       const token = await accessToken(force);
       force = false;
-      if (!token) return end();
+      if (ctrl.signal.aborted || !current(id, epoch)) return;
+      if (!token) {
+        if (authStore.get().status === 'guest' || authStore.get().status === 'unavailable') return end();
+        throw new Error('Session recovery pending');
+      }
       const res = await fetch(`${path(p.listenRoomAction, { id, action: 'stream' })}?sinceVersion=${version}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
         cache: 'no-store',
         signal: ctrl.signal,
       });
+      if (ctrl.signal.aborted || !current(id, epoch)) { await res.body?.cancel().catch(() => undefined); return; }
       if (res.status === 401) {
         force = true;
-        continue;
+        throw new Error('Refresh stream authorization');
       }
       if (!res.ok || !res.body) {
         const body = await res.json().catch(() => null);
         if (body && GONE.has(body.code)) return handleError(new ApiError(api.errorText[body.code] ?? '', body.code, res.status), id);
         throw new Error(String(res.status));
       }
+      if (ctrl.signal.aborted || !current(id, epoch)) { await res.body.cancel(); return; }
       listenStore.set({ phase: 'live' });
       delay = 1000;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parsed = parseSse(buffer);
-        buffer = parsed.rest;
-        for (const ev of parsed.events) {
-          if (onEvent(id, ev) === 'closed') return;
+      try {
+        for (;;) {
+          const watchdog = setTimeout(() => void reader.cancel().catch(() => undefined), 45_000);
+          let chunk: ReadableStreamReadResult<Uint8Array>;
+          try { chunk = await reader.read(); } finally { clearTimeout(watchdog); }
+          if (ctrl.signal.aborted || !current(id, epoch)) { await reader.cancel().catch(() => undefined); return; }
+          const { value, done } = chunk;
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseSse(buffer);
+          buffer = parsed.rest;
+          if (buffer.length > 1024 * 1024) { await reader.cancel(); throw new Error('Invalid event stream'); }
+          for (const ev of parsed.events) {
+            if (onEvent(id, ev) === 'closed') return;
+          }
         }
-      }
+      } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
     } catch {
       if (ctrl.signal.aborted) return;
     }
     // 断了：等一会儿接着上次的版本号重连
-    if (roomId() !== id) return;
+    if (!current(id, epoch)) return;
     listenStore.set({ phase: 'reconnecting' });
     await wait(delay, ctrl.signal);
     delay = Math.min(15_000, delay * 2);
@@ -243,6 +297,11 @@ const ACTION_TEXT: Record<string, string> = {
 };
 
 function onEvent(id: string, { event, data }: StreamEvent): 'closed' | void {
+  if (event === 'ready') {
+    const time = Date.parse((data as { serverTime?: string }).serverTime ?? '');
+    if (Number.isFinite(time)) clockOffsetMs = Date.now() - time;
+    return;
+  }
   if (event === 'closed') {
     const code = (data as { code?: number }).code ?? 0;
     if (GONE.has(code)) {
@@ -253,7 +312,8 @@ function onEvent(id: string, { event, data }: StreamEvent): 'closed' | void {
   }
   if (event !== 'state' && event !== 'member') return;
   const ev = data as ListenRoomEvent;
-  version = Math.max(version, ev.version);
+  if (!Number.isFinite(ev.version) || ev.version <= version) return;
+  version = ev.version;
   const fromMe = ev.actor?.id === me();
   if (event === 'member') {
     const action = (ev.payload as { action?: string } | null)?.action;
@@ -266,21 +326,21 @@ function onEvent(id: string, { event, data }: StreamEvent): 'closed' | void {
     }
     return;
   }
-  if (fromMe || !ev.payload) return;
+  if (!ev.payload) return;
   const state = ev.payload as ListenPlaybackState;
   // 进度报告只在差得多的时候才跟
-  follow(state, ev.type === 'progress' ? 35_000 : 3_000);
-  if (ev.type !== 'progress') listenStore.set({ last: { who: displayName(ev.actor as AccountUser), what: ACTION_TEXT[ev.type] ?? '动了播放器', at: Date.now() } });
-  listenStore.set((s) => (s.room ? { room: { ...s.room, playbackState: state, version: ev.version } } : {}));
+  if (!pending && !controlSends) follow(state, 6 * 60 * 60 * 1000);
+  if (!fromMe && ev.type !== 'progress') listenStore.set({ last: { who: displayName(ev.actor as AccountUser), what: ACTION_TEXT[ev.type] ?? '动了播放器', at: Date.now() } });
+  listenStore.set((s) => (s.room ? { room: { ...s.room, playbackState: state, version: ev.version, ...(ev.type !== 'progress' ? { playbackLeaderUserId: ev.actor.id } : {}) } } : {}));
 }
 
 async function reloadRoom(id: string) {
+  const epoch = generation;
   try {
     const room = await authed<ListenRoomSummary>(path(p.listenRoom, { id }));
-    if (roomId() === id) listenStore.set({ room });
-    return room;
+    return acceptRoom(room, epoch) ? room : null;
   } catch (e) {
-    handleError(e, id);
+    if (current(id, epoch)) handleError(e, id);
     return null;
   }
 }
@@ -290,7 +350,7 @@ async function resync(id: string) {
   const room = await reloadRoom(id);
   if (room) {
     version = room.version;
-    follow(room.playbackState, 35_000);
+    follow(room.playbackState, 6 * 60 * 60 * 1000);
   }
 }
 
@@ -300,20 +360,23 @@ function enter(room: ListenRoomSummary, opts: { follow: boolean }) {
   stop();
   version = room.version;
   listenStore.set({ room, phase: 'live', last: null });
+  acceptRoom(room, generation);
   try {
     sessionStorage.setItem(ROOM_KEY, room.id);
+    sessionStorage.setItem(ROOM_KEY + ':user', me() ?? '');
   } catch {
     // 隐私模式：刷新后就不自动回房间了
   }
-  if (opts.follow) follow(room.playbackState, 35_000);
+  if (opts.follow) follow(room.playbackState, 6 * 60 * 60 * 1000);
   const ctrl = new AbortController();
   stream = ctrl;
   void runStream(room.id, ctrl);
   heartbeat = setInterval(() => {
     const id = roomId();
+    const epoch = generation;
     if (id) authed<ListenRoomSummary>(path(p.listenRoomAction, { id, action: 'heartbeat' }), { method: 'POST' }).then(
-      (r) => roomId() === id && listenStore.set({ room: r }),
-      (e) => handleError(e, id),
+      (r) => acceptRoom(r, epoch),
+      (e) => current(id, epoch) && handleError(e, id),
     );
   }, HEARTBEAT_MS);
   progress = setInterval(() => {
@@ -322,6 +385,9 @@ function enter(room: ListenRoomSummary, opts: { follow: boolean }) {
 }
 
 function stop() {
+  generation++;
+  controlSends = 0;
+  sends = Promise.resolve();
   stream?.abort();
   stream = null;
   clearInterval(heartbeat);
@@ -332,51 +398,52 @@ function stop() {
 
 /** 结束本地会话（不通知服务器） */
 function end() {
+  operation++;
   stop();
   listenStore.set({ room: null, phase: 'idle', last: null });
   try {
     sessionStorage.removeItem(ROOM_KEY);
+    sessionStorage.removeItem(ROOM_KEY + ':user');
   } catch {
     // 忽略
   }
 }
 
-async function busy<T>(work: () => Promise<T>): Promise<T> {
-  const before = listenStore.get().phase;
+async function openRoom(work: () => Promise<ListenRoomSummary>, shouldFollow: boolean) {
+  const ticket = ++operation;
+  const user = me();
+  const previous = listenStore.get();
   listenStore.set({ phase: 'busy' });
   try {
-    return await work();
-  } catch (e) {
-    listenStore.set({ phase: listenStore.get().room ? before : 'idle' });
-    throw e;
+    const room = await work();
+    if (ticket !== operation || me() !== user) {
+      if (me() === user && roomId() !== room.id) void authed(path(p.listenRoomAction, { id: room.id, action: 'leave' }), { method: 'POST' }).catch(() => undefined);
+      return room;
+    }
+    enter(room, { follow: shouldFollow });
+    if (previous.room && previous.room.id !== room.id) {
+      void authed(path(p.listenRoomAction, { id: previous.room.id, action: 'leave' }), { method: 'POST' }).catch(() => undefined);
+    }
+    return room;
+  } catch (error) {
+    if (ticket === operation && me() === user) listenStore.set({ phase: listenStore.get().room ? previous.phase : 'idle' });
+    throw error;
   }
 }
 
-/** 开一个房间，把现在的播放状态带进去 */
-export const createRoom = () =>
-  busy(async () => {
-    const room = await authed<ListenRoomSummary>(p.listenRooms, { method: 'POST', body: { playbackState: sharedState(playerStore.get()) } });
-    enter(room, { follow: false });
-    return room;
-  });
+export const createRoom = () => openRoom(() => authed<ListenRoomSummary>(p.listenRooms, {
+  method: 'POST', body: { playbackState: sharedState(playerStore.get()) },
+}), false);
 
-/** 用房间码加入：进去后照着房间里的进度放 */
-export const joinRoom = (code: string) =>
-  busy(async () => {
-    const room = await authed<ListenRoomSummary>(p.listenJoin, { method: 'POST', body: { inviteCode: code.trim().toUpperCase() } });
-    enter(room, { follow: true });
-    return room;
-  });
+export const joinRoom = (code: string) => openRoom(() => authed<ListenRoomSummary>(p.listenJoin, {
+  method: 'POST', body: { inviteCode: code.trim().toUpperCase() },
+}), true);
 
-export const acceptInvite = (inviteId: string) =>
-  busy(async () => {
-    // 已经在别的房间里：先离开
-    if (roomId()) await leaveRoom();
-    const r = await authed<AcceptListenInviteResult>(path(p.listenInviteAction, { id: inviteId, action: 'accept' }), { method: 'POST' });
-    enter(r.room, { follow: true });
-    void refreshSocial();
-    return r.room;
-  });
+export const acceptInvite = (inviteId: string) => openRoom(async () => {
+  const result = await authed<AcceptListenInviteResult>(path(p.listenInviteAction, { id: inviteId, action: 'accept' }), { method: 'POST' });
+  void refreshSocial();
+  return result.room;
+}, true);
 
 export async function rejectInvite(inviteId: string) {
   await authed<ListenRoomInviteSummary>(path(p.listenInviteAction, { id: inviteId, action: 'reject' }), { method: 'POST' });
@@ -401,33 +468,67 @@ export function watchListen() {
   if (watching) return;
   watching = true;
   let lastUser: string | undefined;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
+  const restore = async (user: string) => {
+    if (stopped || lastUser !== user || roomId()) return;
+    let saved: string | null;
+    try {
+      saved = sessionStorage.getItem(ROOM_KEY);
+      const owner = sessionStorage.getItem(ROOM_KEY + ':user');
+      if (owner && owner !== user) { sessionStorage.removeItem(ROOM_KEY); return; }
+    } catch { return; }
+    if (!saved) return;
+    const ticket = operation;
+    try {
+      const room = await authed<ListenRoomSummary>(path(p.listenRoom, { id: saved }));
+      if (!stopped && lastUser === user && operation === ticket && !roomId()) enter(room, { follow: true });
+    } catch (error) {
+      if (stopped || lastUser !== user || operation !== ticket) return;
+      if (error instanceof ApiError && GONE.has(error.code)) {
+        sessionStorage.removeItem(ROOM_KEY);
+      } else {
+        clearTimeout(retry);
+        retry = setTimeout(() => void restore(user), 5000);
+      }
+    }
+  };
   const sync = () => {
-    const s = authStore.get();
-    if (s.status === 'checking') return;
-    const user = s.status === 'authenticated' ? s.user?.id : undefined;
+    const state = authStore.get();
+    if (state.status === 'checking') return;
+    const user = state.status === 'authenticated' ? state.user?.id : undefined;
     if (user === lastUser) return;
     const was = lastUser;
     lastUser = user;
+    clearTimeout(retry);
     if (was) end();
-    if (!user) return;
-    let saved: string | null = null;
-    try {
-      saved = sessionStorage.getItem(ROOM_KEY);
-    } catch {
-      // 忽略
-    }
-    if (!saved) return;
-    authed<ListenRoomSummary>(path(p.listenRoom, { id: saved })).then(
-      (room) => lastUser === user && enter(room, { follow: true }),
-      () => {
-        try {
-          sessionStorage.removeItem(ROOM_KEY);
-        } catch {
-          // 忽略
-        }
-      },
-    );
+    if (user) void restore(user);
   };
-  authStore.subscribe(sync);
+  const online = () => {
+    if (!lastUser) return;
+    const id = roomId();
+    if (id) {
+      void resync(id);
+      stream?.abort();
+      const ctrl = new AbortController();
+      stream = ctrl;
+      void runStream(id, ctrl);
+    } else void restore(lastUser);
+  };
+  const visible = () => { if (document.visibilityState === 'visible') online(); };
+  const unsubscribe = authStore.subscribe(sync);
+  window.addEventListener('online', online);
+  document.addEventListener('visibilitychange', visible);
   sync();
+  return () => {
+    stopped = true;
+    watching = false;
+    operation++;
+    unsubscribe();
+    clearTimeout(retry);
+    window.removeEventListener('online', online);
+    document.removeEventListener('visibilitychange', visible);
+    stop();
+    listenStore.set({ room: null, phase: 'idle', last: null });
+  };
 }

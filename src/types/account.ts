@@ -88,7 +88,7 @@ export type ListenPlaybackState = {
   currentIndex: number;
   currentTimeMs: number;
   isPlaying: boolean;
-  mode: "sequence" | "loop-one" | "shuffle";
+  mode: "sequence" | "loop-all" | "loop-one" | "shuffle";
   updatedAt: string;
 };
 
@@ -104,6 +104,8 @@ export type ListenRoomSummary = {
   id: string;
   inviteCode: string;
   hostUserId: string;
+  playbackLeaderUserId?: string;
+  serverTime?: string;
   status: "open" | "closed" | "expired";
   version: number;
   playbackState: ListenPlaybackState;

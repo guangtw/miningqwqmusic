@@ -57,6 +57,14 @@ describe('listen together', () => {
     const { playerStore } = await import('@/src/frontend/player/player');
     expect(sharedState({ ...playerStore.get(), queue: [], index: -1, playing: true }, 0)).toMatchObject({ queue: [], currentIndex: -1, isPlaying: false });
   });
+
+  it('keeps list repeat distinct from stopping at the end of the queue', async () => {
+    const { sharedState } = await import('@/src/frontend/lib/listen');
+    const { playerStore } = await import('@/src/frontend/player/player');
+    const state = { ...playerStore.get(), queue: [track(1)], index: 0 };
+    expect(sharedState({ ...state, mode: 'loop' }, 0).mode).toBe('loop-all');
+    expect(sharedState({ ...state, mode: 'order' }, 0).mode).toBe('sequence');
+  });
 });
 
 describe('friends', () => {

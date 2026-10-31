@@ -71,6 +71,8 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
   request.signal.addEventListener("abort", onAbort, { once: true });
   if (request.signal.aborted) onAbort();
   const timer = setTimeout(() => controller.abort(), 15000);
+  let streaming = false;
+  const cleanup = () => request.signal.removeEventListener("abort", onAbort);
   try {
     const bodyBuffer = hasBody ? await request.arrayBuffer() : undefined;
     const upstreamResponse = await fetch(targetUrl, {
@@ -106,7 +108,26 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
     }
 
     headers.set("cache-control", "no-store");
-    return new Response(upstreamResponse.body, {
+    let body = upstreamResponse.body;
+    if (body && upstreamResponse.headers.get("content-type")?.includes("text/event-stream")) {
+      streaming = true;
+      const reader = body.getReader();
+      body = new ReadableStream<Uint8Array<ArrayBuffer>>({
+        async pull(output) {
+          try {
+            const chunk = await reader.read();
+            if (chunk.done) { cleanup(); output.close(); }
+            else output.enqueue(chunk.value);
+          } catch (error) { cleanup(); output.error(error); }
+        },
+        async cancel(reason) {
+          controller.abort();
+          cleanup();
+          await reader.cancel(reason).catch(() => undefined);
+        }
+      });
+    }
+    return new Response(body, {
       status: upstreamResponse.status,
       headers
     });
@@ -120,7 +141,7 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
     });
   } finally {
     clearTimeout(timer);
-    request.signal.removeEventListener("abort", onAbort);
+    if (!streaming) cleanup();
   }
 }
 

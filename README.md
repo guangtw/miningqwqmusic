@@ -1,5 +1,11 @@
 # MiningQwQ Music Player
 
+## Windows 客户端
+
+原生窗口壳层、系统托盘、媒体按键与原设置页集成。网页内容随线上版本更新；客户端源码与打包说明位于 [desktop/windows](desktop/windows/README.md)。
+
+[下载 Windows 安装版和便携版](https://github.com/guangtw/miningqwqmusic/releases/tag/windows-v1.0.0)
+
 基于 `Next.js + TypeScript + BFF` 的音乐播放器网站，采用 [唱片行](https://github.com/guangtw/chang-pian-hang) 前端，面向“网易云风格”的私有音乐源 API。前端与 BFF 在同一个进程、同一个域名运行，无需再启动 Vite 或配置跨域代理。
 
 ## 功能概览

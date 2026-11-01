@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MiningQwQMusic (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MiningQwQMusic (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

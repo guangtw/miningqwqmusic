@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Window
+    x:Class="MiningQwQMusic.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:MiningQwQMusic"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Mining唱片行"
+    mc:Ignorable="d">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root" Loaded="Root_Loaded" Background="{StaticResource ShellBackgroundBrush}" KeyboardAcceleratorPlacementMode="Hidden">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="Back_Invoked"/>
+            <KeyboardAccelerator Key="F5" Invoked="Refresh_Invoked"/>
+            <KeyboardAccelerator Key="F11" Invoked="FullScreen_Invoked"/>
+        </Grid.KeyboardAccelerators>
+        <InfoBar x:Name="Notice" Grid.Row="0" Canvas.ZIndex="11" IsOpen="False" IsClosable="True"/>
+        <Grid Grid.Row="0" Grid.RowSpan="2">
+            <WebView2 x:Name="MusicWebView" Visibility="Collapsed"/>
+            <Grid x:Name="LoadingPanel" Background="{StaticResource ShellBackgroundBrush}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="20">
+                    <Image Source="Assets/Music.png" Width="88" Height="88"/>
+                    <TextBlock Text="Mining唱片行" Style="{StaticResource TitleTextBlockStyle}" HorizontalAlignment="Center"/>
+                    <ProgressRing x:Name="LoadingRing" IsActive="True" Width="28" Height="28"/>
+                    <TextBlock Text="正在打开唱片行…" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="ErrorPanel" Visibility="Collapsed" Background="{StaticResource ShellBackgroundBrush}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16" MaxWidth="420" Margin="32">
+                    <FontIcon Glyph="&#xE701;" FontSize="40" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <TextBlock x:Name="ErrorTitle" Text="暂时无法连接唱片行" Style="{StaticResource SubtitleTextBlockStyle}" TextAlignment="Center"/>
+                    <TextBlock x:Name="ErrorMessage" Text="检查网络连接后再试一次。" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <Button Content="重新尝试" Click="Retry_Click" HorizontalAlignment="Center" Style="{StaticResource AccentButtonStyle}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

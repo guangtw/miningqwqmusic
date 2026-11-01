@@ -1,6 +1,6 @@
 import { failure, success } from "@/src/lib/api-response";
-import { toAppError } from "@/src/lib/errors";
-import { getPlaySource, getCachedTrackQualityAvailability } from "@/src/lib/music/service";
+import { isUpstreamBackpressure, toAppError } from "@/src/lib/errors";
+import { getPlaySource, getTrackQualityAvailability } from "@/src/lib/music/service";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
 import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 import { createTraceId } from "@/src/lib/trace";
@@ -31,10 +31,13 @@ export async function GET(request: Request, context: Context) {
           : "force_off";
     let effectiveLevel: PlayQualityLevel | undefined = requestedLevel;
     if (requestedLevel) {
-      // Reuse the quality menu's metadata when present; a cold lookup must not
-      // delay or fail playback. The native endpoint can downgrade cold requests.
-      const availability = getCachedTrackQualityAvailability(id);
-      if (availability) effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
+      try {
+        const availability = await getTrackQualityAvailability(id);
+        effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
+      } catch (error) {
+        if (isUpstreamBackpressure(error)) throw error;
+        effectiveLevel = requestedLevel;
+      }
     }
     const data = await getPlaySource(id, {
       level: effectiveLevel,

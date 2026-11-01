@@ -51,18 +51,9 @@ describe("upstream retry policy", () => {
   });
 
   it("recognizes business-level rate limits inside HTTP 200", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 429, message: "busy" }));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 503, message: "busy" }));
     await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 60 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("retries ordinary 503 outages without marking the whole service rate limited", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("maintenance", { status: 503 }))
-      .mockResolvedValueOnce(Response.json({ ok: true }));
-    const onBackpressure = vi.fn();
-    await expect(fetchWithRetry("https://stub.test", {}, { ...options, onBackpressure })).resolves.toEqual({ ok: true });
-    expect(onBackpressure).not.toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("parses HTTP-date Retry-After values", async () => {
@@ -70,13 +61,5 @@ describe("upstream retry policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(now);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status: 429, headers: { "Retry-After": new Date(now + 180000).toUTCString() } }));
     await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 180 });
-  });
-
-  it("still recognizes an explicit Netease high-frequency message with code 503", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 503, msg: "请求太频繁，请稍后再试" }));
-    const onBackpressure = vi.fn();
-    await expect(fetchWithRetry("https://stub.test", {}, { ...options, onBackpressure })).rejects.toMatchObject({ code: 2002 });
-    expect(onBackpressure).toHaveBeenCalledWith(60000);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

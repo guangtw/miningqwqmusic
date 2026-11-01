@@ -35,7 +35,6 @@ export interface MusicSourceAdapter {
   searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>>;
   getTrackDetail(trackId: string): Promise<Track>;
   getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability>;
-  getCachedTrackQualityAvailability?(trackId: string): TrackQualityAvailability | undefined;
   getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource>;
   getTrackLyric(trackId: string): Promise<TrackLyric>;
   getPlaylist(playlistId: string): Promise<Playlist>;

@@ -54,18 +54,6 @@ it('limits missing-song skips to three attempts with a delay', async () => {
   expect(player.playerStore.get()).toMatchObject({ loading: false, playing: false });
 });
 
-it('allows another song immediately after a normal timeout without a global recovery lock', async () => {
-  const { ApiError } = await import('@/src/frontend/api');
-  f.source.mockRejectedValueOnce(new ApiError('slow source', 2004, 504)).mockResolvedValue(source);
-  const player = await import('@/src/frontend/player/player');
-  player.playList([track, { ...track, id: 'two' }]);
-  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
-  player.next();
-  await vi.waitFor(() => expect(player.playerStore.get().playing).toBe(true));
-  expect(f.source).toHaveBeenCalledTimes(2);
-  expect(player.playerStore.get().index).toBe(1);
-});
-
 it('honors pause while waiting to skip a missing song', async () => {
   vi.useFakeTimers();
   const { ApiError } = await import('@/src/frontend/api');

@@ -15,7 +15,7 @@ export class AppError extends Error {
 }
 
 export function isUpstreamBackpressure(error: unknown): error is AppError {
-  return error instanceof AppError && [2002, 2008].includes(error.code);
+  return error instanceof AppError && [2002, 2004, 2005, 2008].includes(error.code);
 }
 
 export function toAppError(error: unknown): AppError {

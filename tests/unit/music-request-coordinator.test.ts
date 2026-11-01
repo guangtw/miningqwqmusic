@@ -23,7 +23,7 @@ describe("music upstream admission", () => {
   });
 
   it("bounds concurrency to two and spaces all ten different requests", async () => {
-    const gate = new MusicRequestCoordinator({ maxConcurrent: 2, burst: 1, reservedPlayback: 0 });
+    const gate = new MusicRequestCoordinator();
     let active = 0, peak = 0;
     const starts: number[] = [];
     const requests = Array.from({ length: 10 }, () => gate.run(async () => {
@@ -87,7 +87,7 @@ describe("music upstream admission", () => {
   });
 
   it("does not start the fetch timeout while waiting for a slot", async () => {
-    const gate = new MusicRequestCoordinator({ minIntervalMs: 2000, burst: 1 });
+    const gate = new MusicRequestCoordinator({ minIntervalMs: 2000 });
     await gate.run(async () => 1);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ ok: true }));
     const request = fetchWithRetry("https://stub.test", {}, { timeoutMs: 100, retries: 0, execute: task => gate.run(task) });
@@ -96,52 +96,17 @@ describe("music upstream admission", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not retry a timeout or freeze unrelated endpoints", async () => {
+  it("does not reissue a timed-out parse that may still be running in ncm-api", async () => {
     const gate = new MusicRequestCoordinator({ minIntervalMs: 0 });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => new Promise((_resolve, reject) => {
       init!.signal!.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")), { once: true });
     }));
     const request = expect(fetchWithRetry("https://stub.test", {}, {
       timeoutMs: 100, retries: 2, execute: task => gate.run(task), onBackpressure: ms => gate.coolDown(ms)
-    })).rejects.toMatchObject({ code: 2004, retryAfterSeconds: undefined });
+    })).rejects.toMatchObject({ code: 2004, retryAfterSeconds: 30 });
     await vi.advanceTimersByTimeAsync(101);
     await request;
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    await expect(gate.run(async () => 1)).resolves.toBe(1);
-  });
-
-  it("starts an idle four-request burst immediately but limits sustained traffic", async () => {
-    const gate = new MusicRequestCoordinator();
-    const starts: number[] = [];
-    const requests = Array.from({ length: 10 }, () => gate.run(async () => { starts.push(Date.now()); }, { priority: "playback" }));
-    await vi.advanceTimersByTimeAsync(0);
-    expect(starts).toHaveLength(4);
-    expect(new Set(starts).size).toBe(1);
-    await vi.runAllTimersAsync(); await Promise.all(requests);
-    expect(starts[9] - starts[0]).toBeGreaterThanOrEqual(3000);
-  });
-
-  it("reserves playback capacity while slow background requests remain active", async () => {
-    const gate = new MusicRequestCoordinator();
-    const releases: (() => void)[] = [];
-    const slow = () => new Promise<void>(resolve => { releases.push(resolve); });
-    const a = gate.run(slow, { priority: "background" });
-    const b = gate.run(slow, { priority: "background" });
-    const queued = vi.fn(async () => 1);
-    const c = gate.run(queued, { priority: "background" });
-    const play = gate.run(async () => "playing", { priority: "playback" });
-    await vi.advanceTimersByTimeAsync(0);
-    await expect(play).resolves.toBe("playing");
-    expect(queued).not.toHaveBeenCalled();
-    releases.forEach(release => release());
-    await Promise.all([a, b, c]);
-  });
-
-  it("isolates a provider cooldown from metadata and other providers", async () => {
-    const gate = new MusicRequestCoordinator({ minIntervalMs: 0 });
-    gate.coolDown(60000, "unblock:slow");
-    await expect(gate.run(async () => 1, { scope: "unblock:slow" })).rejects.toMatchObject({ code: 2002 });
-    await expect(gate.run(async () => "search", { scope: "netease" })).resolves.toBe("search");
-    await expect(gate.run(async () => "play", { scope: "unblock:healthy", priority: "playback" })).resolves.toBe("play");
+    await expect(gate.run(async () => 1)).rejects.toMatchObject({ code: 2002 });
   });
 });

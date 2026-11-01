@@ -5,22 +5,17 @@ type Options = {
   minIntervalMs?: number;
   maxQueue?: number;
   queueTimeoutMs?: number;
-  burst?: number;
-  reservedPlayback?: number;
 };
-type Admission = { scope?: string; priority?: "playback" | "interactive" | "background" };
-type Scope = { until: number; recovering: boolean; active: number };
-type Job = { scope: Scope; playback: boolean; rank: number; start: () => void; reject: (error: AppError) => void; timer: ReturnType<typeof setTimeout> };
+type Job = { start: () => void; reject: (error: AppError) => void; timer: ReturnType<typeof setTimeout> };
 type CacheEntry = { value: unknown; error: boolean; expiresAt: number };
 
 // One coordinator per upstream in a Node process, shared by Next's route bundles.
 // Multiple processes/servers must use a shared limiter before scaling out.
 export class MusicRequestCoordinator {
   private active = 0;
-  private nonPlaybackActive = 0;
-  private tokens: number;
-  private lastRefill = Date.now();
-  private readonly scopes = new Map<string, Scope>();
+  private nextStartAt = 0;
+  private coolDownUntil = 0;
+  private recovering = false;
   private wake?: ReturnType<typeof setTimeout>;
   private readonly queue: Job[] = [];
   private readonly pending = new Map<string, Promise<unknown>>();
@@ -28,41 +23,29 @@ export class MusicRequestCoordinator {
   private readonly options: Required<Options>;
 
   constructor(options: Options = {}) {
-    this.options = { maxConcurrent: 4, minIntervalMs: 500, maxQueue: 64, queueTimeoutMs: 15000,
-      burst: options.maxConcurrent ?? 4, reservedPlayback: 2, ...options };
-    this.tokens = this.options.burst;
+    this.options = { maxConcurrent: 2, minIntervalMs: 500, maxQueue: 64, queueTimeoutMs: 25000, ...options };
   }
 
   private busyError() {
     return new AppError("音乐服务请求较多，请稍后重试。", { code: 2008, status: 503, retryable: true, retryAfterSeconds: 3 });
   }
 
-  private coolingError(scope: Scope) {
+  private coolingError() {
     return new AppError("音乐上游正在冷却，请稍后再试。", {
       code: 2002, status: 503, retryable: true,
-      retryAfterSeconds: Math.max(1, Math.ceil((scope.until - Date.now()) / 1000))
+      retryAfterSeconds: Math.max(1, Math.ceil((this.coolDownUntil - Date.now()) / 1000))
     });
   }
 
-  private scope(name: string) {
-    let scope = this.scopes.get(name);
-    if (!scope) { scope = { until: 0, recovering: false, active: 0 }; this.scopes.set(name, scope); }
-    return scope;
-  }
-
-  coolDown(ms: number, name = "netease") {
-    const scope = this.scope(name);
-    scope.until = Math.max(scope.until, Date.now() + ms);
-    scope.recovering = true;
+  coolDown(ms: number) {
+    this.coolDownUntil = Math.max(this.coolDownUntil, Date.now() + ms);
+    this.recovering = true;
     if (this.wake) clearTimeout(this.wake);
     this.wake = undefined;
-    for (const job of [...this.queue]) {
-      if (job.scope !== scope) continue;
-      this.queue.splice(this.queue.indexOf(job), 1);
+    for (const job of this.queue.splice(0)) {
       clearTimeout(job.timer);
-      job.reject(this.coolingError(scope));
+      job.reject(this.coolingError());
     }
-    this.pump();
   }
 
   async share<T>(key: string, task: () => Promise<T>, ttlMs = 0, errorTtlMs = 0): Promise<T> {
@@ -93,40 +76,25 @@ export class MusicRequestCoordinator {
     this.cache.set(key, { value, error, expiresAt: Date.now() + ttlMs });
   }
 
-  peek<T>(key: string): T | undefined {
-    const hit = this.cache.get(key);
-    return hit && !hit.error && hit.expiresAt > Date.now() ? hit.value as T : undefined;
-  }
-
-  run<T>(task: () => Promise<T>, admission: Admission = {}): Promise<T> {
-    const scope = this.scope(admission.scope ?? "netease");
-    if (Date.now() < scope.until) return Promise.reject(this.coolingError(scope));
+  run<T>(task: () => Promise<T>): Promise<T> {
+    if (Date.now() < this.coolDownUntil) return Promise.reject(this.coolingError());
     if (this.queue.length >= this.options.maxQueue) return Promise.reject(this.busyError());
     return new Promise<T>((resolve, reject) => {
       const job: Job = {
-        scope, playback: admission.priority === "playback",
-        rank: admission.priority === "playback" ? 0 : admission.priority === "background" ? 2 : 1,
         reject,
         timer: setTimeout(() => {
           const index = this.queue.indexOf(job);
           if (index < 0) return;
           this.queue.splice(index, 1);
           reject(this.busyError());
-          this.pump();
         }, this.options.queueTimeoutMs),
         start: () => {
           this.active += 1;
-          scope.active += 1;
-          if (!job.playback) this.nonPlaybackActive += 1;
-          const startedAt = Date.now();
           Promise.resolve().then(task).then(value => {
-            if (startedAt >= scope.until) scope.recovering = false;
+            // A pre-cooldown request finishing must not release the recovery gate.
+            if (Date.now() >= this.coolDownUntil) this.recovering = false;
             resolve(value);
-          }, reject).finally(() => {
-            this.active -= 1; scope.active -= 1;
-            if (!job.playback) this.nonPlaybackActive -= 1;
-            this.pump();
-          });
+          }, reject).finally(() => { this.active -= 1; this.pump(); });
         }
       };
       this.queue.push(job);
@@ -135,23 +103,16 @@ export class MusicRequestCoordinator {
   }
 
   private pump() {
-    if (this.wake || !this.queue.length || this.active >= this.options.maxConcurrent) return;
-    const nonPlaybackLimit = Math.max(1, this.options.maxConcurrent - this.options.reservedPlayback);
-    const job = this.queue.filter(job => Date.now() >= job.scope.until && (!job.scope.recovering || job.scope.active === 0)
-      && (job.playback || this.nonPlaybackActive < nonPlaybackLimit)).sort((a, b) => a.rank - b.rank)[0];
-    if (!job) return;
-    const now = Date.now();
-    this.tokens = this.options.minIntervalMs === 0 ? this.options.burst
-      : Math.min(this.options.burst, this.tokens + (now - this.lastRefill) / this.options.minIntervalMs);
-    this.lastRefill = now;
-    const delay = this.tokens >= 1 ? 0 : Math.ceil((1 - this.tokens) * this.options.minIntervalMs);
+    if (this.wake || !this.queue.length || this.active >= (this.recovering ? 1 : this.options.maxConcurrent)) return;
+    if (Date.now() < this.coolDownUntil) return;
+    const delay = this.nextStartAt - Date.now();
     if (delay > 0) {
       this.wake = setTimeout(() => { this.wake = undefined; this.pump(); }, delay);
       return;
     }
-    this.queue.splice(this.queue.indexOf(job), 1);
+    const job = this.queue.shift()!;
     clearTimeout(job.timer);
-    this.tokens -= 1;
+    this.nextStartAt = Date.now() + this.options.minIntervalMs;
     job.start();
     this.pump();
   }
@@ -169,11 +130,10 @@ export function getMusicRequestCoordinator(baseUrl: string, apiKey = "") {
   let coordinator = coordinators.get(key);
   if (!coordinator) {
     coordinator = new MusicRequestCoordinator({
-      maxConcurrent: setting("MUSIC_SOURCE_MAX_CONCURRENT", 4, 1, 8),
+      maxConcurrent: setting("MUSIC_SOURCE_MAX_CONCURRENT", 2, 1, 8),
       minIntervalMs: setting("MUSIC_SOURCE_MIN_INTERVAL_MS", 500, 100, 5000),
       maxQueue: setting("MUSIC_SOURCE_MAX_QUEUE", 64, 1, 256),
-      queueTimeoutMs: setting("MUSIC_SOURCE_QUEUE_TIMEOUT_MS", 15000, 1000, 60000),
-      burst: setting("MUSIC_SOURCE_BURST", 4, 1, 8)
+      queueTimeoutMs: setting("MUSIC_SOURCE_QUEUE_TIMEOUT_MS", 25000, 1000, 60000)
     });
     coordinators.set(key, coordinator);
   }

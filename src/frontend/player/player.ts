@@ -228,8 +228,8 @@ async function resolveAndPlay(
     set({ loading: false });
   } catch (e) {
     if (token !== loadToken) return;
-    if (e instanceof ApiError && e.code === 2002) {
-      retryNotBefore = Date.now() + Math.max(1, e.retryAfterSeconds ?? 60) * 1000;
+    if (e instanceof ApiError && (e.status === 0 || e.status === 429 || e.status >= 500)) {
+      retryNotBefore = Date.now() + Math.max(3, e.retryAfterSeconds ?? (e.code === 2002 ? 60 : 5)) * 1000;
     }
     const skipped = (opts.skipped ?? 0) + 1;
     const songUnavailable = e instanceof ApiError && [3001, 3002].includes(e.code);

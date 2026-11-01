@@ -14,7 +14,8 @@ export async function runApiRoute<T>(runner: () => Promise<T>) {
       message: appError.message,
       traceId,
       status: appError.status,
-      retryable: appError.retryable
+      retryable: appError.retryable,
+      retryAfterSeconds: appError.retryAfterSeconds
     });
   }
 }

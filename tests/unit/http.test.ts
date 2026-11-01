@@ -13,7 +13,7 @@ describe("upstream retry policy", () => {
 
   it("retries transient status and returns the successful payload", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 502 }))
       .mockResolvedValueOnce(Response.json({ ok: true }));
     await expect(fetchWithRetry("http://upstream.test", {}, options)).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -40,5 +40,26 @@ describe("upstream retry policy", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
     await expect(fetchWithRetry("http://upstream.test", {}, { ...options, retries: Infinity })).rejects.toMatchObject({ code: 2005 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([429, 503])("does not retry HTTP %s and preserves the requested cooldown", async status => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status, headers: { "Retry-After": "120" } }));
+    const onBackpressure = vi.fn();
+    await expect(fetchWithRetry("https://stub.test", {}, { ...options, onBackpressure })).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 120 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onBackpressure).toHaveBeenCalledWith(120000);
+  });
+
+  it("recognizes business-level rate limits inside HTTP 200", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 503, message: "busy" }));
+    await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 60 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("parses HTTP-date Retry-After values", async () => {
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status: 429, headers: { "Retry-After": new Date(now + 180000).toUTCString() } }));
+    await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 180 });
   });
 });

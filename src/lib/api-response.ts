@@ -17,6 +17,7 @@ export function failure(error: {
   traceId: string;
   retryable?: boolean;
   status?: number;
+  retryAfterSeconds?: number;
 }) {
   const payload: ApiFailure = {
     code: error.code,
@@ -24,5 +25,10 @@ export function failure(error: {
     traceId: error.traceId,
     retryable: error.retryable ?? false
   };
-  return NextResponse.json(payload, { status: error.status ?? 500 });
+  const retryAfter = error.retryAfterSeconds ?? (error.code === 2002 ? 60 : error.code === 2008 ? 3 : undefined);
+  if (retryAfter) payload.retryAfterSeconds = retryAfter;
+  return NextResponse.json(payload, {
+    status: error.status ?? 500,
+    headers: retryAfter ? { "Retry-After": String(retryAfter) } : undefined
+  });
 }

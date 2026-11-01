@@ -30,6 +30,7 @@ vi.mock("@/src/lib/music/service", () => ({
 }));
 
 import { GET } from "@/app/api/music/track/[id]/play-url/route";
+import { AppError } from "@/src/lib/errors";
 
 function context(trackId: string) {
   return {
@@ -43,6 +44,15 @@ describe("GET /api/music/track/:id/play-url", () => {
     vi.stubEnv("ACCOUNT_SERVICE_BASE_URL", "http://127.0.0.1:3002");
     mocks.getTrackQualityAvailability.mockClear();
     mocks.getPlaySource.mockClear();
+  });
+
+  it("stops after a quality lookup cooldown and returns its Retry-After", async () => {
+    mocks.getTrackQualityAvailability.mockRejectedValueOnce(new AppError("cooling", { code: 2002, status: 503, retryable: true, retryAfterSeconds: 120 }));
+    const response = await GET(new Request("http://localhost/api/music/track/1001/play-url?level=exhigh"), context("1001"));
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("120");
+    expect((await response.json()).retryAfterSeconds).toBe(120);
+    expect(mocks.getPlaySource).not.toHaveBeenCalled();
   });
 
   it("forces unblock off when request has no account token", async () => {

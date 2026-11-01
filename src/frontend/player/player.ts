@@ -58,6 +58,7 @@ let recentPushed = false;
 const history: number[] = [];
 let canAutoAdvance = () => true;
 let intendedPlaying = false;
+let retryNotBefore = 0;
 let remoteTarget: { positionMs: number; playing: boolean; receivedAt: number } | null = null;
 export const isPlaybackIntended = () => get().loading ? intendedPlaying : !audio.paused;
 export function setAutoAdvanceGuard(guard: () => boolean) { canAutoAdvance = guard; }
@@ -149,8 +150,8 @@ audio.addEventListener('error', () => {
     return;
   }
   set({ loading: false, playing: false });
-  toast('这首歌加载失败，换下一首。');
-  next(true);
+  toast('这首歌加载失败，稍后再试。');
+  // Repeated media errors must not walk the entire queue requesting fresh URLs.
 });
 
 function expiryOf(src: { expiresAt?: string; ttlSeconds?: number }) {
@@ -169,6 +170,15 @@ async function resolveAndPlay(
   const { queue } = get();
   const track = queue[index];
   if (!track) return;
+  if (Date.now() < retryNotBefore) {
+    loadToken += 1;
+    intendedPlaying = false;
+    loaded = null;
+    audio.pause();
+    set({ loading: false, playing: false });
+    toast('音乐服务正在恢复，稍后再试。');
+    return;
+  }
   if (!opts.remote) remoteTarget = null;
   intendedPlaying = opts.autoplay !== false;
   const fresh = opts.resumeAt == null;
@@ -218,12 +228,22 @@ async function resolveAndPlay(
     set({ loading: false });
   } catch (e) {
     if (token !== loadToken) return;
-    const skipped = (opts.skipped ?? 0) + 1;
-    if (fresh && canAutoAdvance() && !opts.remote && skipped < queue.length) {
-      toast(`《${track.name}》暂时放不了：${(e as Error).message}`);
-      emit('playback');
-      return resolveAndPlay(nextIndex(index), { ...opts, startAt: undefined, skipped });
+    if (e instanceof ApiError && (e.status === 0 || e.status === 429 || e.status >= 500)) {
+      retryNotBefore = Date.now() + Math.max(3, e.retryAfterSeconds ?? (e.code === 2002 ? 60 : 5)) * 1000;
     }
+    const skipped = (opts.skipped ?? 0) + 1;
+    const songUnavailable = e instanceof ApiError && [3001, 3002].includes(e.code);
+    if (songUnavailable && fresh && canAutoAdvance() && !opts.remote && skipped < Math.min(queue.length, 3)) {
+      toast(`《${track.name}》暂时放不了：${(e as Error).message}`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (token !== loadToken) return;
+      if (!intendedPlaying) { set({ loading: false, playing: false }); return; }
+      const retry = resolveAndPlay(nextIndex(index), { ...opts, startAt: undefined, skipped });
+      emit('playback');
+      return retry;
+    }
+    intendedPlaying = false;
+    loaded = null;
     set({ loading: false, playing: false });
     toast((e as Error).message || '获取播放地址失败。');
   }

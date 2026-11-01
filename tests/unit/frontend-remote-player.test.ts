@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const f = vi.hoisted(() => ({ source: vi.fn(), recent: vi.fn() }));
 vi.mock('@/src/frontend/api', () => ({
-  ApiError: class extends Error {}, coverOf: () => '',
+  ApiError: class extends Error {
+    constructor(message: string, readonly code: number, readonly status: number, readonly traceId?: string, readonly retryable = false, readonly retryAfterSeconds?: number) { super(message); }
+  }, coverOf: () => '',
   music: { playUrl: f.source, lyric: async () => ({ lines: [] }) }
 }));
 vi.mock('@/src/frontend/lib/account', () => ({
@@ -19,8 +21,51 @@ class FakeAudio extends EventTarget {
 }
 const track = { id: 'one', name: 'One', artists: [{ id: 'a', name: 'Artist' }], durationMs: 180000 };
 const source = { url: 'https://example.test/audio', preview: false };
-beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); localStorage.clear(); vi.stubGlobal('Audio', FakeAudio); });
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); f.source.mockReset(); localStorage.clear(); vi.stubGlobal('Audio', FakeAudio); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+it('stops on upstream cooldown and blocks manual retry until Retry-After expires', async () => {
+  vi.useFakeTimers();
+  const { ApiError } = await import('@/src/frontend/api');
+  f.source.mockRejectedValue(new ApiError('cooling', 2002, 503, undefined, true, 60));
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(player.playerStore.get()).toMatchObject({ loading: false, playing: false });
+  expect(f.source).toHaveBeenCalledTimes(1);
+  player.next(); await vi.advanceTimersByTimeAsync(59000);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  f.source.mockResolvedValue(source);
+  await vi.advanceTimersByTimeAsync(1001);
+  player.next(); await vi.advanceTimersByTimeAsync(0);
+  expect(f.source).toHaveBeenCalledTimes(2);
+});
+
+it('limits missing-song skips to three attempts with a delay', async () => {
+  vi.useFakeTimers();
+  const { ApiError } = await import('@/src/frontend/api');
+  f.source.mockRejectedValue(new ApiError('missing', 3002, 404));
+  const player = await import('@/src/frontend/player/player');
+  player.playList(Array.from({ length: 10 }, (_, i) => ({ ...track, id: String(i) })));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(2001);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(player.playerStore.get()).toMatchObject({ loading: false, playing: false });
+});
+
+it('honors pause while waiting to skip a missing song', async () => {
+  vi.useFakeTimers();
+  const { ApiError } = await import('@/src/frontend/api');
+  f.source.mockRejectedValue(new ApiError('missing', 3002, 404));
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.advanceTimersByTimeAsync(0);
+  player.toggle();
+  await vi.advanceTimersByTimeAsync(1001);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  expect(player.playerStore.get()).toMatchObject({ loading: false, playing: false });
+});
 
 it('uses the latest remote seek/pause while one address request is still loading', async () => {
   let resolve!: (value: typeof source) => void;

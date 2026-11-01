@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createNeteaseLikeAdapterFromEnv, NeteaseLikeAdapter } from "@/src/lib/music/providers/netease-like";
+import { MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
 
 function createAdapter(overrides?: Partial<ConstructorParameters<typeof NeteaseLikeAdapter>[0]>) {
   return new NeteaseLikeAdapter({
@@ -7,6 +8,7 @@ function createAdapter(overrides?: Partial<ConstructorParameters<typeof NeteaseL
     apiKey: "abc123",
     timeoutMs: 3000,
     retries: 0,
+    requestCoordinator: new MusicRequestCoordinator({ minIntervalMs: 0 }),
     pathSearch: "/search",
     pathTrackDetail: "/song/detail",
     pathPlayUrl: "/song/url/v1",
@@ -85,6 +87,41 @@ function mockPlaySourceFetch(
 describe("NeteaseLikeAdapter mapping", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("shares the complete same-track resolution, including duration and audio probes", async () => {
+    const adapter = createAdapter();
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ url: "https://cdn.test/full.mp3", time: 210000 }] })]);
+    const sources = await Promise.all(Array.from({ length: 10 }, () => adapter.getPlaySource("108485", { unblockMode: "force_off" })));
+    expect(sources).toHaveLength(10);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("never falls through to other unblock sources after a rate limit", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
+    const fetchMock = mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] }),
+      jsonResponse({ code: 429 }, 429)
+    ]);
+    await expect(adapter.getPlaySource("108485", { unblockMode: "force_on" })).rejects.toMatchObject({ code: 2002 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps guest and authorized play requests separate and never retains completed URLs", async () => {
+    const adapter = createAdapter();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+      const url = new URL(String(input));
+      return jsonResponse({ data: [{ url: `https://cdn.test/${url.searchParams.get("unblock")}.mp3`, time: 30000 }] });
+    });
+    const [guest, authorized] = await Promise.all([
+      adapter.getPlaySource("1", { unblockMode: "force_off" }),
+      adapter.getPlaySource("1", { unblockMode: "force_on" })
+    ]);
+    expect(guest.url).toContain("false.mp3");
+    expect(authorized.url).toContain("true.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await adapter.getPlaySource("1", { unblockMode: "force_on" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("maps search result to Track list", async () => {
@@ -511,7 +548,8 @@ describe("NeteaseLikeAdapter mapping", () => {
         jsonResponse({
           code: 200,
           data: "https://cdn.test/fake-full-from-unm.flac"
-        })
+        }),
+        jsonResponse({ data: [] })
       ],
       {
         headResponses: [headResponse(481115), headResponse(481115)]

@@ -8,6 +8,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly traceId?: string,
     readonly retryable = false,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
   }
@@ -77,7 +78,7 @@ export async function request<T>(urlPath: string, init: RequestInitEx = {}): Pro
     return (payload as ApiSuccess<T>).data;
   }
   if (isFailure(payload)) {
-    throw new ApiError(friendlyMessage(payload.code, payload.message), payload.code, res.status, payload.traceId, payload.retryable);
+    throw new ApiError(friendlyMessage(payload.code, payload.message), payload.code, res.status, payload.traceId, payload.retryable, payload.retryAfterSeconds);
   }
   throw new ApiError(`请求失败（HTTP ${res.status}）`, 5000, res.status);
 }

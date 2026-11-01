@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync, spawn } = require('child_process');
+const { normalizeLegacyUnblockSources } = require('./music-source-config.cjs');
 if (process.getuid?.() !== 0) throw Error('Deployment requires the authorized sudo account');
 const packageDir = path.resolve(process.argv[2] || '');
 if (!packageDir.startsWith('/home/aiops/releases/')) throw Error('Unexpected package directory');
@@ -31,6 +32,9 @@ const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
 let membershipMigration = false;
+const musicEnvFile = musicBase + '/shared/.env.production';
+const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
+const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
 function stage() {
   if (fs.existsSync(musicRelease) || fs.existsSync(loginRelease)) throw Error('Release already exists; use a new release id');
   const oldSchema = fs.readFileSync(originalLogin.pm_cwd + '/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
@@ -47,7 +51,7 @@ function stage() {
   }
   fs.cpSync(packageDir + '/music', musicRelease, { recursive: true });
   fs.cpSync(packageDir + '/login', loginRelease, { recursive: true });
-  fs.copyFileSync(musicBase + '/shared/.env.production', musicRelease + '/.env.production');
+  fs.writeFileSync(musicRelease + '/.env.production', releaseMusicEnv, { mode: 0o600 });
   for (const name of ['.env', '.env.production']) {
     const from = originalLogin.pm_cwd + '/' + name;
     if (!fs.existsSync(from)) continue;
@@ -141,7 +145,14 @@ let failed = false;
   liveAccountQa('http://127.0.0.1:3101');
   let loginChanged = false;
   let musicChanged = false;
+  let musicEnvChanged = false;
   try {
+    if (releaseMusicEnv !== originalMusicEnv) {
+      fs.writeFileSync(work + '/music-env-before', originalMusicEnv, { mode: 0o600 });
+      musicEnvChanged = true;
+      fs.writeFileSync(musicEnvFile, releaseMusicEnv, { mode: 0o600 });
+      console.log('LEGACY_UNBLOCK_SOURCES_CORRECTED');
+    }
     loginChanged = true;
     configureLogin(loginRelease);
     await ready(3002, true);
@@ -160,6 +171,7 @@ let failed = false;
   } catch (error) {
     console.error('Deployment failed; restoring both original services');
     const recoveryErrors = [];
+    try { if (musicEnvChanged) fs.writeFileSync(musicEnvFile, originalMusicEnv, { mode: 0o600 }); } catch (e) { recoveryErrors.push(e.message); }
     try { if (musicChanged) { pointMusic(previousMusic); execFileSync(pm2, ['restart', 'miningqwqmusic', '--update-env'], { stdio: 'inherit' }); } } catch (e) { recoveryErrors.push(e.message); }
     try { if (loginChanged) configureLogin(originalLogin.pm_cwd, true); } catch (e) { recoveryErrors.push(e.message); }
     try { execFileSync(pm2, ['save'], { stdio: 'inherit' }); } catch (e) { recoveryErrors.push(e.message); }

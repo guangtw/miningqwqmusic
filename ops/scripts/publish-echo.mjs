@@ -79,7 +79,7 @@ try {
   const id = 'echo-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14) + '-' + musicCommit.slice(0, 8);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'echo-publish-'));
   console.log('Release:', id, '\nExact source:', musicCommit, loginCommit, '\nWork directory:', stage);
-  const helpers = ['deploy-echo.cjs', 'verify-account-session.cjs', 'verify-listen-session.cjs', 'verify-membership-session.cjs', 'run-echo-release.sh'];
+  const helpers = ['deploy-echo.cjs', 'music-source-config.cjs', 'verify-account-session.cjs', 'verify-listen-session.cjs', 'verify-membership-session.cjs', 'run-echo-release.sh'];
   exportCommit(root, 'music', [...runtime, ...checkFiles, ...helpers.map(name => 'ops/scripts/' + name)], stage);
   exportCommit(loginRoot, 'login', [...loginRuntime, ...checkFiles], stage);
   const pack = path.join(stage, 'release');

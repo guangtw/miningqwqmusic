@@ -232,6 +232,7 @@ export type ApiFailure = {
   message: string;
   traceId: string;
   retryable: boolean;
+  retryAfterSeconds?: number;
 };
 
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;

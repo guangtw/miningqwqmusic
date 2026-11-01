@@ -1,5 +1,5 @@
 import { failure, success } from "@/src/lib/api-response";
-import { toAppError } from "@/src/lib/errors";
+import { isUpstreamBackpressure, toAppError } from "@/src/lib/errors";
 import { getPlaySource, getTrackQualityAvailability } from "@/src/lib/music/service";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
 import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
@@ -34,7 +34,8 @@ export async function GET(request: Request, context: Context) {
       try {
         const availability = await getTrackQualityAvailability(id);
         effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
-      } catch {
+      } catch (error) {
+        if (isUpstreamBackpressure(error)) throw error;
         effectiveLevel = requestedLevel;
       }
     }
@@ -59,7 +60,8 @@ export async function GET(request: Request, context: Context) {
       message: appError.message,
       traceId,
       status: appError.status,
-      retryable: appError.retryable
+      retryable: appError.retryable,
+      retryAfterSeconds: appError.retryAfterSeconds
     });
     response.headers.set("Cache-Control", "no-store");
     return response;

@@ -142,8 +142,12 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
   // 唱臂的状态跨过「面板收起」保留下来（手机上切全屏歌词再回来时接着动）
   const arm = useRef({ angle: new Spring(REST, SWING.stiffness, SWING.damping), lift: new Spring(0, 140, 13), travelling: false, sway: 0, airborne: false });
 
-  /** 把唱臂画到某个角度、某个抬起高度。只改两层的 transform，不重绘 */
+  /** 把唱臂画到某个角度、某个抬起高度。只改两层的 transform，不重绘；和上一帧一样就不碰 DOM */
+  const drawn = useRef('');
   const draw = (deg: number, l: number) => {
+    const key = `${deg.toFixed(3)}:${l.toFixed(4)}`;
+    if (key === drawn.current) return;
+    drawn.current = key;
     // 俯视角：抬得越高离镜头越近，唱臂略放大，影子落得更远更淡
     if (armRef.current) armRef.current.style.transform = `rotate(${deg.toFixed(3)}deg) scale(${(1 + 0.045 * l).toFixed(4)})`;
     const shadow = shadowRef.current;
@@ -157,8 +161,17 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
   // 臂架上的唱臂不压在唱片上，飞来的唱片不会在过渡结束时从唱臂上面「跳」到下面
   const parkUntil = useRef(0);
   const wasOpen = useRef(open);
+  // 停臂这段时间唱片也不转：一来像真唱机（放稳了、落针了才转起来），
+  // 二来打开过渡里唱片是「活」的一层，一直在转的话 iPhone 上每帧都得重画它
+  const [settling, setSettling] = useState(false);
+  useEffect(() => {
+    if (!settling) return;
+    const t = setTimeout(() => setSettling(false), PARK_MS);
+    return () => clearTimeout(t);
+  }, [settling]);
   useLayoutEffect(() => {
     if (open && !wasOpen.current && motionEnabled()) {
+      setSettling(true);
       const a = arm.current;
       a.angle.snap(REST);
       a.lift.snap(0);
@@ -228,7 +241,8 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
       }
 
       const l = Math.max(0, lift.value);
-      const swayTarget = animate && playing && !a.travelling && !dragging ? 1 - Math.min(1, l) : 0;
+      // 只有针落在唱片上才跟着偏心摆；搁在臂架上的唱臂纹丝不动
+      const swayTarget = animate && playing && !a.travelling && !dragging && goal !== REST ? 1 - Math.min(1, l) : 0;
       a.sway += (swayTarget - a.sway) * Math.min(1, dt * 2.5);
       draw(angle.value + SWAY_DEG * a.sway * Math.sin((now / REV_MS) * Math.PI * 2), l);
       id = requestAnimationFrame(loop);
@@ -265,7 +279,7 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
             <Vinyl
               cover={r.cover}
               // 面板收起时唱盘也不转，省下一层一直在合成的动画
-              spinning={!r.leaving && !r.entering && playing && drag == null && active}
+              spinning={!r.leaving && !r.entering && playing && drag == null && active && !settling}
               className="deck-vinyl"
               labelPx={400}
               ref={(el) => {

@@ -117,6 +117,24 @@ html[data-snap] .nowplaying * {
   transition: none !important;
 }
 
+/* 开合唱机这 0.6 秒，过渡里只让真正要动的东西动（面板、飞的唱片、播放台、唱臂）。
+   iPhone Safari 上过渡里的「活快照」只要里面有一点东西在变，就要把整块全屏的面板每帧重画一遍，
+   桌面 Chrome 交给 GPU 合成看不出来，所以只有 iPhone 卡：
+   · 主区域和顶栏 / 侧栏不单独成层：页面内容没变、又被面板盖着，单独成层只会多出两张全屏图做交叉淡化
+   · 面板里的过渡全部瞬间到位：收着时歌词当前行不更新，一打开十几行歌词一起播透明度、缩放、变色
+   · 面板里和背后页面里的循环动画（指示灯、播放中小柱、光斑漂移）先停一下，过渡结束再接着走 */
+html[data-vt^='np-'] .main,
+html[data-vt^='np-'] .side,
+html[data-vt^='np-'] .hero-active {
+  view-transition-name: none;
+}
+html[data-vt^='np-'] .nowplaying * {
+  transition: none !important;
+}
+html[data-vt^='np-'] :is(.main, .side, .nowplaying) * {
+  animation-play-state: paused !important;
+}
+
 /* Chrome 给带 backdrop-filter 的元素拍过渡快照时不按圆角裁剪，播放台四角会露出方形底。
    快照本来也拍不到背后的内容（模糊无从谈起），所以过渡这零点几秒换成颜色相近的实色底。 */
 html[data-vt] .player {

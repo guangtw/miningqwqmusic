@@ -18,6 +18,10 @@ export type PlaybackAuthorization = {
   source: "manual" | "invite" | null;
   grantedAt?: string;
   inviteLabel?: string | null;
+  membershipKind?: "permanent" | "timed";
+  memberNumber?: number | null;
+  expiresAt?: string | null;
+  status?: "active" | "expired" | "revoked";
 };
 
 export type AuthStatus = "guest" | "restoring" | "authenticating" | "authenticated" | "degraded" | "error";
@@ -40,6 +44,10 @@ export type MusicUnblockEntitlement = {
   source?: "manual" | "invite" | null;
   redeemedAt?: string;
   inviteLabel?: string | null;
+  membershipKind?: "permanent" | "timed";
+  memberNumber?: number | null;
+  expiresAt?: string | null;
+  status?: "active" | "expired" | "revoked";
 };
 
 export type RegisterInput = {

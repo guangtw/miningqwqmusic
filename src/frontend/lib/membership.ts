@@ -13,6 +13,10 @@ const toAuthorization = (e: MusicUnblockEntitlement): PlaybackAuthorization => (
   source: e.source ?? null,
   ...(e.redeemedAt ? { grantedAt: e.redeemedAt } : {}),
   ...(e.inviteLabel !== undefined ? { inviteLabel: e.inviteLabel } : {}),
+  membershipKind: e.membershipKind,
+  memberNumber: e.memberNumber,
+  expiresAt: e.expiresAt,
+  status: e.status,
 });
 
 function applyEntitlement(e: MusicUnblockEntitlement) {

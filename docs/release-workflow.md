@@ -37,7 +37,7 @@ ssh aliyun-ai 'sudo -n true && echo READY'
 
 本机临时目录内的 `receipt.json` 记录发布 ID、源码提交与包校验值。服务器任务位于 `/home/aiops/releases/<发布ID>/`，其中 `job.log` 为发布输出，`result.json` 为最终状态。不要在发布结果未知时重复启动第二次发布。
 
-受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化会直接停止发布，必须另外提供迁移和回滚方案。
+受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；本次一人一码会员迁移仅在旧 schema、新 schema、迁移 SQL 三个 SHA-256 完全匹配专用计划时执行，备份、验收与回滚边界见 [会员协议](membership-invitations.md)。
 
 GitHub 推送或 Release 上传失败不会撤销已经通过验收的生产版本。此时根据明确的 `PRODUCTION_VERIFIED` 记录补推相同提交或发布包，不重复部署。
 

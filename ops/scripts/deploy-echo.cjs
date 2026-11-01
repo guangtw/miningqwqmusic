@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Invoked through SSH under flock. No migrations, global restarts, or secret output.
+// Invoked through SSH under flock. Only an exact, documented additive migration is allowed.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -30,10 +30,21 @@ if (!originalLogin || !fs.existsSync(database)) throw Error('Existing account se
 const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
+let membershipMigration = false;
 function stage() {
   if (fs.existsSync(musicRelease) || fs.existsSync(loginRelease)) throw Error('Release already exists; use a new release id');
   const oldSchema = fs.readFileSync(originalLogin.pm_cwd + '/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
-  if (oldSchema !== fs.readFileSync(packageDir + '/login/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n')) throw Error('Database schema changed: an explicit migration plan is required before deployment');
+  const newSchema = fs.readFileSync(packageDir + '/login/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
+  if (oldSchema !== newSchema) {
+    const migrationDir = packageDir + '/login/prisma/migrations/20261101130000_single_use_memberships';
+    const plan = JSON.parse(fs.readFileSync(migrationDir + '/plan.json', 'utf8'));
+    const textHash = text => crypto.createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
+    if (plan.previousSchemaSha256 !== textHash(oldSchema) || plan.targetSchemaSha256 !== textHash(newSchema) ||
+        plan.migrationSha256 !== textHash(fs.readFileSync(migrationDir + '/migration.sql', 'utf8'))) {
+      throw Error('Database schema changed without an exact approved migration plan');
+    }
+    membershipMigration = true;
+  }
   fs.cpSync(packageDir + '/music', musicRelease, { recursive: true });
   fs.cpSync(packageDir + '/login', loginRelease, { recursive: true });
   fs.copyFileSync(musicBase + '/shared/.env.production', musicRelease + '/.env.production');
@@ -56,6 +67,7 @@ function stage() {
       if (fs.existsSync(source + '/node_modules') && lockHash(source + '/package-lock.json') === lockHash(target + '/package-lock.json')) {
         execFileSync('cp', ['-a', '--reflink=auto', source + '/node_modules', target + '/node_modules'], options);
       } else execFileSync(node, [npmCli, 'ci', '--include=dev'], options);
+      if (target === loginRelease) execFileSync(node, ['node_modules/prisma/build/index.js', 'generate'], options);
       execFileSync(node, [npmCli, 'run', 'build'], options);
       console.log('LINUX_BUILD_PASSED', target);
     }
@@ -104,6 +116,7 @@ function configureLogin(cwd, rollback = false) {
 function liveAccountQa(origin) {
   execFileSync(node, [path.join(packageDir, 'ops/verify-account-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 150000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-listen-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
+  execFileSync(node, [path.join(packageDir, 'ops/verify-membership-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
 }
 let failed = false;
 (async () => {
@@ -114,6 +127,13 @@ let failed = false;
   fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
+  if (membershipMigration) {
+    // Online SQLite backup includes WAL contents. Never copy/replace a live database file.
+    execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-memberships.db']);
+    execFileSync(node, ['scripts/migrate-single-use-memberships.mjs', '--apply'], {
+      cwd: loginRelease, env: { ...process.env, DATABASE_URL: 'file:' + database }, stdio: 'inherit'
+    });
+  }
   startCandidate('candidate-login', loginRelease, 3102);
   startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
   await ready(3102, true);

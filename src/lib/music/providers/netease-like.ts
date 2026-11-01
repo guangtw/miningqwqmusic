@@ -431,7 +431,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
 
     const topData = pickFromCandidate(payload.data);
-    if (topData) return topData;
+    if (topData) return {
+      ...topData,
+      level: toPlayQualityLevel(topData.level) ?? toPlayQualityLevel(asString(payload.level)),
+      br: asNumber(topData.br) ?? asNumber(payload.br)
+    };
 
     const nestedResultData = pickFromCandidate(asObject(payload.result).data);
     if (nestedResultData) return nestedResultData;
@@ -513,7 +517,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private pickBetterPlayCandidate(
     current: PlayCandidate | null,
-    candidate: PlayCandidate | null
+    candidate: PlayCandidate | null,
+    requestedLevel: PlayQualityLevel
   ): PlayCandidate | null {
     if (!candidate) return current;
     if (!current) return candidate;
@@ -521,7 +526,16 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     const currentRank = this.getPlaySourceRank(current.raw, current.data);
     const candidateRank = this.getPlaySourceRank(candidate.raw, candidate.data);
     if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
-    return this.playQualityRank(candidate.data) > this.playQualityRank(current.data) ? candidate : current;
+    const preference = (data: PlayData) => {
+      const actual = toPlayQualityLevel(data.level);
+      if (actual === requestedLevel) return 100;
+      const rank = this.playQualityRank(data);
+      const requestedRank = PLAY_QUALITY_LEVELS.indexOf(requestedLevel);
+      // A higher tier is not a substitute for the selected version/effect.
+      // Prefer the closest lower tier to unsolicited higher-quality files.
+      return rank < 0 ? -100 : rank <= requestedRank ? rank : -rank;
+    };
+    return preference(candidate.data) > preference(current.data) ? candidate : current;
   }
 
   private playQualityRank(data: PlayData): number {
@@ -852,7 +866,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private async resolvePlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const level = this.resolvePlayLevel(options);
-    const requestedQualityRank = PLAY_QUALITY_LEVELS.indexOf(toPlayQualityLevel(level) ?? "standard");
+    const requestedLevel = toPlayQualityLevel(level) ?? "standard";
     const unblockMode = this.resolvePlayUnblockMode(options);
     let trackMetadataPromise: Promise<NeteaseSong | undefined> | null = null;
     const ensureTrackMetadata = () => {
@@ -865,10 +879,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           ensureTrackMetadata(), inspectAudio(candidate.data.url ?? "", Math.min(this.config.timeoutMs, 3000))
         ]);
         const matches = this.matchesRecording(track, audio);
-        // Match endpoints may echo the requested quality even for MP3. Only
-        // measured container/bit depth/bitrate may describe alternate audio.
-        candidate.data.level = inspectedPlayQuality(audio);
-        candidate.data.br = audio.bitrate;
+        // Preserve the match provider's explicit nine-tier result. Container
+        // inspection cannot identify mastering, Dolby or proprietary effects.
+        // Infer only for legacy providers which return a bare URL/no tier.
+        candidate.data.level = toPlayQualityLevel(candidate.data.level) ?? inspectedPlayQuality(audio);
+        candidate.data.br = asNumber(candidate.data.br) ?? audio.bitrate;
         this.debugUnblockTrace(trackId, `${label}-identity`, { matches, durationMs: audio.durationMs, actualLevel: candidate.data.level });
         return !matches;
       }
@@ -881,24 +896,28 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       return validation === "mismatch";
     };
     let lastFailure: unknown;
-    let raw: AnyRecord;
-    try {
-      raw = await this.request<AnyRecord>(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level));
-    } catch (error) {
-      if (unblockMode === "force_off" || (error instanceof AppError && error.code === 2008)) throw error;
-      lastFailure = error;
-      raw = {};
-    }
+    const loadNative = async () => {
+      try {
+        return await this.request<AnyRecord>(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level));
+      } catch (error) {
+        if (unblockMode === "force_off" || (error instanceof AppError && error.code === 2008)) throw error;
+        lastFailure = error;
+        return {};
+      }
+    };
+    const unblockPath = this.config.pathPlayUrlUnblock;
+    const unblockFirst = unblockMode === "force_on" && Boolean(unblockPath);
+    const raw = unblockFirst ? {} : await loadNative();
     const data = this.extractPlayData(raw);
     const primaryRestricted = this.isRestrictedPlaySource(raw, data);
-    const unblockPath = this.config.pathPlayUrlUnblock;
     let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
       ? { raw, data, resolvedVia: "primary" }
       : null;
     if (bestCandidate && (await shouldRejectCandidate(bestCandidate, "primary"))) {
       bestCandidate = null;
     }
-    const needsQualityUpgrade = bestCandidate && requestedQualityRank > 0 && this.playQualityRank(bestCandidate.data) < requestedQualityRank;
+    const nativeLevel = bestCandidate && (toPlayQualityLevel(bestCandidate.data.level) ?? inspectedPlayQuality({ bitrate: bestCandidate.data.br }));
+    const needsQualityUpgrade = nativeLevel && nativeLevel !== requestedLevel;
     const shouldTryUnblock = unblockMode !== "force_off" && (!bestCandidate || this.shouldAttemptUnblock(raw, data) || needsQualityUpgrade);
     this.debugUnblockTrace(trackId, "v1", {
       level,
@@ -953,8 +972,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         if (
           !(await shouldRejectCandidate(unblockCandidate, source ? `match-${source}` : "match-default"))
         ) {
-          bestCandidate = this.pickBetterPlayCandidate(bestCandidate, unblockCandidate);
-          if (!unblockRestricted && bestCandidate === unblockCandidate && this.playQualityRank(unblockCandidate.data) >= requestedQualityRank) {
+          bestCandidate = this.pickBetterPlayCandidate(bestCandidate, unblockCandidate, requestedLevel);
+          if (!unblockRestricted && bestCandidate === unblockCandidate && unblockCandidate.data.level === requestedLevel) {
             return this.toPlaySource(trackId, unblockCandidate.raw, unblockCandidate.data, "unblock");
           }
         }
@@ -968,6 +987,17 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     if (bestCandidate) {
       return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
+    }
+
+    if (unblockFirst) {
+      const nativeRaw = await loadNative();
+      const nativeData = this.extractPlayData(nativeRaw);
+      if (this.hasPlayableUrl(nativeData)) {
+        const nativeCandidate: PlayCandidate = { raw: nativeRaw, data: nativeData, resolvedVia: "primary" };
+        if (!(await shouldRejectCandidate(nativeCandidate, "native-fallback"))) {
+          return this.toPlaySource(trackId, nativeRaw, nativeData, "primary");
+        }
+      }
     }
 
     if (lastFailure instanceof AppError && [2002, 2004, 2005].includes(lastFailure.code)) {

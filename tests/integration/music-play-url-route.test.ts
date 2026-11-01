@@ -32,6 +32,7 @@ vi.mock("@/src/lib/music/service", () => ({
 
 import { GET } from "@/app/api/music/track/[id]/play-url/route";
 import { AppError } from "@/src/lib/errors";
+import { PLAY_QUALITY_LEVELS } from "@/src/lib/play-quality";
 
 function context(trackId: string) {
   return {
@@ -45,6 +46,14 @@ describe("GET /api/music/track/:id/play-url", () => {
     vi.stubEnv("ACCOUNT_SERVICE_BASE_URL", "http://127.0.0.1:3002");
     mocks.getCachedTrackQualityAvailability.mockClear();
     mocks.getPlaySource.mockClear();
+  });
+
+  it.each(PLAY_QUALITY_LEVELS)("forwards selected %s unchanged for an authorized member", async level => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 0, data: { playbackAuthorization: { enabled: true, version: 8 } } }));
+    const response = await GET(new Request(`http://localhost/api/music/track/1001/play-url?level=${level}`, { headers: { authorization: "Bearer member" } }), context("1001"));
+    expect(response.status).toBe(200);
+    expect(mocks.getPlaySource).toHaveBeenCalledWith("1001", { level, unblockMode: "force_on" });
+    expect(mocks.getCachedTrackQualityAvailability).not.toHaveBeenCalled();
   });
 
   it("starts cold playback without fetching optional quality metadata", async () => {
@@ -127,7 +136,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(mocks.getCachedTrackQualityAvailability).toHaveBeenCalledWith("1002");
+    expect(mocks.getCachedTrackQualityAvailability).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3002/api/account/auth/me", expect.objectContaining({
       method: "GET",
       headers: {
@@ -144,7 +153,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(payload.data.authorizationVersion).toBe(7);
   });
 
-  it("falls back to the best available level for the current track without overwriting the requested preference", async () => {
+  it("does not rewrite a Dolby request using cached native availability", async () => {
     mocks.getCachedTrackQualityAvailability.mockReturnValueOnce({
       trackId: "2001",
       availableLevels: ["standard", "higher", "exhigh", "lossless", "hires", "sky"],
@@ -164,9 +173,9 @@ describe("GET /api/music/track/:id/play-url", () => {
     const response = await GET(new Request("http://localhost:3000/api/music/track/2001/play-url?level=dolby"), context("2001"));
 
     expect(response.status).toBe(200);
-    expect(mocks.getCachedTrackQualityAvailability).toHaveBeenCalledWith("2001");
+    expect(mocks.getCachedTrackQualityAvailability).not.toHaveBeenCalled();
     expect(mocks.getPlaySource).toHaveBeenCalledWith("2001", {
-      level: "sky",
+      level: "dolby",
       unblockMode: "force_off"
     });
   });
@@ -191,14 +200,14 @@ describe("GET /api/music/track/:id/play-url", () => {
     const response = await GET(new Request("http://localhost:3000/api/music/track/2002/play-url?level=dolby"), context("2002"));
 
     expect(response.status).toBe(200);
-    expect(mocks.getCachedTrackQualityAvailability).toHaveBeenCalledWith("2002");
+    expect(mocks.getCachedTrackQualityAvailability).not.toHaveBeenCalled();
     expect(mocks.getPlaySource).toHaveBeenCalledWith("2002", {
       level: "dolby",
       unblockMode: "force_off"
     });
   });
 
-  it("defaults to auto when entitlement is enabled and request omits unblock mode", async () => {
+  it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(
@@ -252,7 +261,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1004", {
       level: undefined,
-      unblockMode: "auto"
+      unblockMode: "force_on"
     });
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");

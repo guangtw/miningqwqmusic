@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNeteaseLikeAdapterFromEnv, NeteaseLikeAdapter } from "@/src/lib/music/providers/netease-like";
+import { PLAY_QUALITY_LEVELS } from "@/src/lib/play-quality";
 import { MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
 
 const inspection = vi.hoisted(() => vi.fn());
@@ -97,6 +98,47 @@ describe("NeteaseLikeAdapter mapping", () => {
     inspection.mockResolvedValue({ ok: true, durationMs: 240000, title: "Test Song", artists: ["Singer A"], lossless: false, bitrate: 320000 });
   });
 
+  it.each(PLAY_QUALITY_LEVELS)("forced matching keeps the selected %s tier and provider result", async level => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ url: `https://cdn.test/${level}`, level, br: 900000 }] })]);
+    // Container inspection does not override the provider's effects/master tier.
+    inspection.mockResolvedValueOnce({ ok: true, nativeNetease: true, durationMs: 240000, lossless: true, bitsPerSample: 24, sampleRate: 48000 });
+    await expect(adapter.getPlaySource("108485", { level, unblockMode: "force_on" })).resolves.toMatchObject({ level, resolvedVia: "unblock", bitrate: 900000 });
+    const first = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(first.pathname).toBe("/song/url/match");
+    expect(first.searchParams.get("level")).toBe(level);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/song/url/v1"))).toBe(false);
+  });
+
+  it("preserves a tier beside a legacy URL payload", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    mockPlaySourceFetch([jsonResponse({ data: "https://cdn.test/dolby", level: "dolby" })]);
+    await expect(adapter.getPlaySource("108485", { level: "dolby", unblockMode: "force_on" })).resolves.toMatchObject({ level: "dolby" });
+  });
+
+  it("continues looking for the selected lossless tier after an unsolicited Hi-Res result", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
+    mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/hires", level: "hires" }] }),
+      jsonResponse({ data: [{ url: "https://cdn.test/lossless", level: "lossless" }] })
+    ]);
+    await expect(adapter.getPlaySource("108485", { level: "lossless", unblockMode: "force_on" })).resolves.toMatchObject({ url: "https://cdn.test/lossless", level: "lossless" });
+    expect(inspection).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to the original if all forced matches are different recordings", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/wrong", level: "hires" }] }),
+      jsonResponse({ data: [{ url: "https://cdn.test/original", level: "exhigh", time: 240000 }] })
+    ]);
+    inspection.mockResolvedValueOnce({ ok: true, durationMs: 240000, title: "Different Song", artists: ["Singer A"] });
+    await expect(adapter.getPlaySource("108485", { level: "hires", unblockMode: "force_on" })).resolves.toMatchObject({ url: "https://cdn.test/original", resolvedVia: "primary" });
+    const requests = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter(url => ["/song/url/match", "/song/url/v1"].includes(url.pathname));
+    expect(requests.map(url => url.pathname)).toEqual(["/song/url/match", "/song/url/v1"]);
+    expect(requests[1].searchParams.get("level")).toBe("hires");
+  });
+
   it("shares the complete same-track resolution, including duration and audio probes", async () => {
     const adapter = createAdapter();
     const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ url: "https://cdn.test/full.mp3", time: 210000 }] })]);
@@ -112,7 +154,7 @@ describe("NeteaseLikeAdapter mapping", () => {
       jsonResponse({ code: 429 }, 429),
       jsonResponse({ data: [{ url: "https://cdn.test/healthy.mp3", time: 240000 }] })
     ]);
-    await expect(adapter.getPlaySource("108485", { unblockMode: "force_on" })).resolves.toMatchObject({ url: "https://cdn.test/healthy.mp3" });
+    await expect(adapter.getPlaySource("108485", { unblockMode: "auto" })).resolves.toMatchObject({ url: "https://cdn.test/healthy.mp3" });
     const requests = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter(url => url.pathname === "/song/url/match");
     expect(requests.map(url => url.searchParams.get("source"))).toEqual(["unm", "msls"]);
   });
@@ -149,7 +191,7 @@ describe("NeteaseLikeAdapter mapping", () => {
       if (url.searchParams.get("source") === "msls") return jsonResponse({ data: [{ url: "https://cdn.test/healthy.mp3", time: 240000 }] });
       throw new Error("Unexpected request");
     });
-    const play = adapter.getPlaySource("108485", { unblockMode: "force_on" });
+    const play = adapter.getPlaySource("108485", { unblockMode: "auto" });
     await vi.advanceTimersByTimeAsync(201);
     await expect(play).resolves.toMatchObject({ url: "https://cdn.test/healthy.mp3", preview: false });
     await expect(adapter.searchTracks({ keyword: "test", page: 1, pageSize: 10 })).resolves.toMatchObject({ total: 0 });
@@ -369,7 +411,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(source.ttlSeconds).toBe(1200);
   });
 
-  it.each(["auto", "force_on"] as const)("upgrades a full free recording when the native endpoint downgraded Hi-Res in %s mode", async unblockMode => {
+  it.each(["auto"] as const)("upgrades a full free recording when the native endpoint downgraded Hi-Res in %s mode", async unblockMode => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
     mockPlaySourceFetch([
       jsonResponse({ data: [{ url: "https://cdn.test/original.mp3", time: 240000, level: "exhigh", br: 320000 }] }),
@@ -380,23 +422,23 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(inspection).toHaveBeenCalledTimes(1);
   });
 
-  it("does not replace the original with same-quality MP3 or falsely label it Hi-Res", async () => {
+  it("keeps the original when a bare-URL alternate is the same MP3 quality", async () => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
     mockPlaySourceFetch([
       jsonResponse({ data: [{ url: "https://cdn.test/original.mp3", time: 240000, level: "exhigh", br: 320000 }] }),
-      jsonResponse({ data: [{ url: "https://cdn.test/another.mp3", level: "hires", br: 999000 }] })
+      jsonResponse({ data: "https://cdn.test/another.mp3" })
     ]);
     await expect(adapter.getPlaySource("108485", { level: "hires" })).resolves.toMatchObject({ url: "https://cdn.test/original.mp3", level: "exhigh", resolvedVia: "primary" });
   });
 
-  it("returns measured Hi-Res for a master request without claiming unverified mastering", async () => {
+  it("preserves an explicit master tier supplied by the matching provider", async () => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
     mockPlaySourceFetch([
       jsonResponse({ data: [{ url: "https://cdn.test/original.mp3", time: 240000, level: "exhigh" }] }),
       jsonResponse({ data: [{ url: "https://cdn.test/hires.flac", level: "jymaster" }] })
     ]);
     inspection.mockResolvedValueOnce({ ok: true, durationMs: 240000, nativeNetease: true, lossless: true, bitsPerSample: 24, sampleRate: 48000 });
-    await expect(adapter.getPlaySource("108485", { level: "jymaster" })).resolves.toMatchObject({ url: "https://cdn.test/hires.flac", level: "hires", resolvedVia: "unblock" });
+    await expect(adapter.getPlaySource("108485", { level: "jymaster" })).resolves.toMatchObject({ url: "https://cdn.test/hires.flac", level: "jymaster", resolvedVia: "unblock" });
   });
 
   it("keeps looking after an MP3 alternate and picks the highest verified recording", async () => {
@@ -446,7 +488,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(inspection).not.toHaveBeenCalled();
   });
 
-  it.each(["auto", "force_on", "force_off"] as const)("tries the original recording first in %s mode", async unblockMode => {
+  it.each(["auto", "force_off"] as const)("tries the original recording first in %s mode", async unblockMode => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
     const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ id: 108485, url: "https://cdn.test/original.mp3", time: 240000 }] })]);
     await expect(adapter.getPlaySource("108485", { unblockMode })).resolves.toMatchObject({ url: "https://cdn.test/original.mp3", resolvedVia: "primary" });
@@ -466,7 +508,7 @@ describe("NeteaseLikeAdapter mapping", () => {
   ])("still resolves a full verified source after $name", async ({ primary }) => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["msls"] });
     const fetchMock = mockPlaySourceFetch([jsonResponse(primary), jsonResponse({ code: 200, data: "https://cdn.test/full.mp3" })]);
-    await expect(adapter.getPlaySource("108485", { unblockMode: "force_on" })).resolves.toMatchObject({ url: "https://cdn.test/full.mp3", preview: false, resolvedVia: "unblock" });
+    await expect(adapter.getPlaySource("108485", { unblockMode: "auto" })).resolves.toMatchObject({ url: "https://cdn.test/full.mp3", preview: false, resolvedVia: "unblock" });
     const requests = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter(url => url.pathname === "/song/url/match");
     expect(requests).toHaveLength(1);
     expect(requests[0].searchParams.get("source")).toBe("msls");

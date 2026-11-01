@@ -1,10 +1,8 @@
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
-import { getPlaySource, getCachedTrackQualityAvailability } from "@/src/lib/music/service";
+import { getPlaySource } from "@/src/lib/music/service";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
-import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 import { createTraceId } from "@/src/lib/trace";
-import type { PlayQualityLevel } from "@/src/types/music";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -27,17 +25,13 @@ export async function GET(request: Request, context: Context) {
       requestedUnblockMode === "force_off"
         ? "force_off"
         : canUseUnblock
-          ? (requestedUnblockMode ?? "auto")
+          ? (requestedUnblockMode ?? "force_on")
           : "force_off";
-    let effectiveLevel: PlayQualityLevel | undefined = requestedLevel;
-    if (requestedLevel) {
-      // Reuse the quality menu's metadata when present; a cold lookup must not
-      // delay or fail playback. The native endpoint can downgrade cold requests.
-      const availability = getCachedTrackQualityAvailability(id);
-      if (availability) effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
-    }
+    // The menu describes the native catalogue, not every authorized provider.
+    // Always let upstream resolve the exact selection; cache warmth must never
+    // turn a Dolby request into sky (or a master request into Hi-Res).
     const data = await getPlaySource(id, {
-      level: effectiveLevel,
+      level: requestedLevel,
       unblockMode: effectiveUnblockMode
     });
     const response = success(

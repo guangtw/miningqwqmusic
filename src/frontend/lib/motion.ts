@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
 import { tintOf } from './palette';
 import { motionEnabled } from './settings';
@@ -34,6 +34,14 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
     running = false;
     delete root.dataset.vt;
   });
+}
+
+/** 不带任何过渡地立刻更新（系统返回手势已经演过动画时用），面板自己的 CSS 过渡也先关掉 */
+export function snap(update: () => void) {
+  const root = document.documentElement;
+  root.dataset.snap = '';
+  flushSync(update);
+  requestAnimationFrame(() => requestAnimationFrame(() => delete root.dataset.snap));
 }
 
 export const supportsViewTransition = () => !!(document as ViewTransitionDoc).startViewTransition;
@@ -86,6 +94,18 @@ export function useFrame(cb: (now: number) => void, active: boolean) {
     id = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(id);
   }, [active]);
+}
+
+/** 订阅一条媒体查询（例如窄屏） */
+export function useMedia(query: string): boolean {
+  return useSyncExternalStore(
+    (fn) => {
+      const m = window.matchMedia(query);
+      m.addEventListener('change', fn);
+      return () => m.removeEventListener('change', fn);
+    },
+    () => window.matchMedia(query).matches,
+  );
 }
 
 // ================= 退场动画 =================

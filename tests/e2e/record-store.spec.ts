@@ -107,7 +107,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
   return { calls, errors, recoverHome: () => { failHome = false; } };
 }
 
-test('search, pagination, collection, playback, lyrics, queue and local favorites', async ({ page }) => {
+test('search, pagination, collection, playback, lyrics, queue and local favorites', async ({ page }, info) => {
   const state = await backend(page);
   await page.goto('/');
   await expect(page).toHaveTitle('Mining唱片行');
@@ -133,7 +133,35 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.locator('.player .np-text').click();
   await expect(page.locator('.nowplaying')).toHaveClass(/open/);
   await expect(page.getByText('第一句歌词', { exact: true })).toBeVisible();
+  // 手机上歌词平时只露两行，点一下进全屏歌词
+  if (info.project.name.includes('mobile')) {
+    await page.locator('.lyric-line').first().click();
+    await expect(page.locator('.nowplaying')).toHaveClass(/np-focus/);
+  }
+  // 点没唱到的一句：先亮出句尾的播放键，点它才跳过去
+  await page.locator('.lyric-line', { hasText: '第二句歌词' }).click();
+  await expect(page.locator('.lyric-go')).toBeVisible();
+  await page.locator('.lyric-go').click();
+  await expect(page.locator('.lyric-go')).toHaveCount(0);
+  if (info.project.name.includes('mobile')) {
+    // 全屏歌词也占一条历史记录：返回先退回唱机
+    await page.evaluate(() => ((window as Window & { __alive?: number }).__alive = 1));
+    await page.evaluate(() => history.back());
+    await expect(page.locator('.nowplaying')).not.toHaveClass(/np-focus/);
+    await expect(page.locator('.nowplaying')).toHaveClass(/open/);
+    // 没有整页刷新（外层 Next.js 路由不该接手这条记录）
+    expect(await page.evaluate(() => (window as Window & { __alive?: number }).__alive)).toBe(1);
+  }
+  // 系统返回先收起正在播放页，不离开当前页面；再打开后用「收起」关
+  const before = page.url();
+  await page.evaluate(() => history.back());
+  await expect(page.locator('.nowplaying')).not.toHaveClass(/open/);
+  expect(page.url()).toBe(before);
+  await page.locator('.player .np-text').click();
+  await expect(page.locator('.nowplaying')).toHaveClass(/open/);
   await page.getByRole('button', { name: '收起', exact: true }).click();
+  // 手机上播放台要等面板收起后才缩回去，队列键随之藏起来
+  await expect(page.locator('.player')).not.toHaveClass(/np-open/);
   if (await page.getByRole('button', { name: '播放队列', exact: true }).isVisible()) {
     await page.getByRole('button', { name: '播放队列', exact: true }).click();
     await expect(page.locator('.drawer .q-item')).toHaveCount(2);
@@ -175,11 +203,12 @@ test('daily epigraph starts the selected song at its lyric timestamp', async ({ 
 test('search categories, login, cloud sync and logout use the BFF contract', async ({ page }) => {
   const state = await backend(page);
   await page.goto('/#/search?q=晨光');
+  // 换分页时上一页的卡片会多留一瞬（还在取数据），按「最后只剩一张」来等
   await page.getByRole('tab', { name: '艺人', exact: true }).click();
   await expect(page.locator('.card-title')).toHaveCount(1);
   await expect(page.locator('.card-title')).toHaveText('测试艺人');
   await page.getByRole('tab', { name: '歌单', exact: true }).click();
-  await expect(page.locator('.card-title')).toHaveText('本期精选');
+  await expect(page.locator('.card-title')).toHaveText(['本期精选']);
   await page.getByRole('tab', { name: '单曲', exact: true }).click();
   await page.locator('.track').first().getByRole('button', { name: '收藏', exact: true }).click();
   await page.goto('/#/account');
@@ -250,9 +279,9 @@ test('listen together: open a room and follow what a friend plays', async ({ pag
   await dialog.locator('input[type="password"]').fill('test-password');
   await dialog.getByRole('button', { name: '登录', exact: true }).click();
   await expect(dialog).toHaveCount(0);
-  // 手机布局把播放栏的工具按钮收起来了，从正在播放面板进
+  // 一起听在播放台中间那排的最左边；手机上平时收着，打开正在播放页后才展开
   await page.locator('.player .np-text').click();
-  await page.locator('.np-actions').getByRole('button', { name: /一起听/ }).click();
+  await page.locator('.player .t-left').getByRole('button', { name: '一起听' }).click();
   await page.getByRole('button', { name: /开一个房间/ }).click();
   await expect(page.locator('.listen-code-big')).toContainText('ABC123'.split('').join(''));
   await expect(page.locator('.listen-room .person-text b')).toHaveText(['唱片听众（我）', '同桌']);

@@ -33,18 +33,26 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
 }
 
 export function SettingsView() {
-  const s = useSyncExternalStore(subscribeSettings, getSettings);
-  const status = useStore(authStore, (x) => x.status);
-  // 用推荐接口探一下 BFF 是否可用
-  const probe = useAsync(() => music.searchAssist(''), []);
-
   return (
     <div className="page">
       <header className="page-head reveal">
         <div className="kicker">设置</div>
         <h1 className="page-title">唱机调校</h1>
       </header>
+      <SettingsPanel />
+    </div>
+  );
+}
 
+/** 设置项本体：单独的设置页和手机上个人中心的「设置」分页共用 */
+export function SettingsPanel() {
+  const s = useSyncExternalStore(subscribeSettings, getSettings);
+  const status = useStore(authStore, (x) => x.status);
+  // 用推荐接口探一下 BFF 是否可用
+  const probe = useAsync(() => music.searchAssist(''), []);
+
+  return (
+    <>
       <div className="form">
         <div className="field reveal" style={{ '--i': 0 } as React.CSSProperties}>
           <span className="label">音质</span>
@@ -83,7 +91,7 @@ export function SettingsView() {
         </div>
       </div>
 
-      <section className="section">
+      <section className="section keys-section">
         <div className="section-head">
           <h2>快捷键</h2>
         </div>
@@ -100,6 +108,6 @@ export function SettingsView() {
           <dd>搜索</dd>
         </dl>
       </section>
-    </div>
+    </>
   );
 }

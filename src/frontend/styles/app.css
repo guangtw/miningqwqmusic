@@ -119,7 +119,8 @@ img {
 .side {
   display: flex;
   flex-direction: column;
-  padding: 28px 18px calc(var(--deck-h) + var(--deck-gap) * 2 + 10px) 22px;
+  /* 底部的账号卡和播放台同高、底边对齐，并排成一条 */
+  padding: 28px 18px var(--deck-gap) 22px;
   min-height: 0;
 }
 .brand {
@@ -200,23 +201,57 @@ img {
   margin-top: auto;
   padding-top: 16px;
 }
+/* 账号卡：和播放台一样高、一样的圆角和描边，像同一排里的两块 */
 .who {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 12px;
-  transition: background 0.2s;
+  gap: 11px;
+  height: var(--deck-h);
+  padding: 0 14px 0 13px;
+  border-radius: 24px;
+  background: var(--glass-solid);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  transition: background 0.2s, border-color 0.2s, transform 0.3s var(--ease-spring);
 }
 .who:hover {
-  background: var(--surface);
+  border-color: var(--line-strong);
+}
+.who:active {
+  transform: scale(0.98);
+}
+.who-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
 }
 .who-name {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.who-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who-guest {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: var(--ink-2);
+  border: 1.5px dashed var(--line-strong);
+  opacity: 0.75;
+}
+.who-guest svg {
+  width: 20px;
+  height: 20px;
 }
 .avatar {
   display: inline-grid;
@@ -1690,11 +1725,12 @@ mark.hl {
 /* ============ 浮动播放台 ============ */
 .player {
   position: fixed;
-  /* 在窗口里水平居中，播放键落在窗口正中；大屏上限宽，不拉成一长条。侧栏底部留出了它的位置 */
-  left: 0;
-  right: 0;
+  /* 从侧栏右边开始，和左下角的账号卡并排；大屏上限宽、在内容区里居中，不拉成一长条。
+     打开正在播放页时侧栏被盖住，播放台滑回窗口正中 */
+  left: var(--sidebar);
+  right: var(--deck-gap);
+  max-width: 1240px;
   margin-inline: auto;
-  width: min(calc(100% - var(--deck-gap) * 2), 1240px);
   bottom: var(--deck-gap);
   height: var(--deck-h);
   z-index: 40;
@@ -2435,12 +2471,14 @@ mark.hl {
 .tonearm-base {
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.2));
 }
-/* --lift 由 Turntable 每帧写入（0 = 落在唱片上，1 = 抬起）：抬得越高影子越远、越虚、越淡 */
-.tonearm {
-  --lift: 0;
-  filter: drop-shadow(
-    0 calc(4px + 12px * var(--lift)) calc(4px + 8px * var(--lift)) rgb(0 0 0 / calc(0.3 - 0.1 * var(--lift)))
-  );
+/* 唱臂的影子：Turntable 每帧按抬起高度错开、调淡（不用 drop-shadow 滤镜，Safari 上每帧重绘滤镜很卡） */
+.arm-shadow rect {
+  fill: #000;
+}
+.arm-shadow line {
+  stroke: #000;
+  stroke-width: 1.9;
+  stroke-linecap: round;
 }
 .arm-base {
   fill: var(--surface);
@@ -2693,7 +2731,10 @@ mark.hl {
   border-radius: 999px;
   background: var(--surface-2);
 }
-.seg button {
+.seg button,
+.seg a {
+  display: inline-grid;
+  place-items: center;
   height: 34px;
   padding: 0 16px;
   border-radius: 999px;
@@ -2706,7 +2747,8 @@ mark.hl {
   margin-left: 4px;
   color: var(--ink-3);
 }
-.seg button.on {
+.seg button.on,
+.seg a.on {
   background: var(--surface);
   color: var(--ink);
   box-shadow: var(--shadow-1);
@@ -2822,9 +2864,6 @@ mark.hl {
   .side-foot {
     margin: 0;
     padding: 0;
-  }
-  .side-foot .btn {
-    display: none;
   }
   .page {
     padding-top: 18px;
@@ -3766,7 +3805,7 @@ mark.hl {
   content: '✓ ';
 }
 .side .who.on {
-  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 .side .who.on .who-name {
   color: var(--accent);
@@ -4350,4 +4389,518 @@ mark.hl {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* ============ 触屏、播放台、账号卡、手机唱机（第五批） ============ */
+
+/* 手机上点任何控件都不要系统那圈蓝色高亮框；鼠标点击也不留焦点框，键盘 Tab 才显示 */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* 播放台中间一排左右对称：一起听 · 模式 | 上一首 播放 下一首 | 音质 · 队列 */
+.t-side {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 进度条的填充单独成层：每次挪动只交给合成器，不连带重绘毛玻璃的播放台 */
+.bar-fill,
+.mini-progress-fill {
+  will-change: transform;
+}
+/* 打开正在播放页时侧栏被盖住，播放台滑回窗口正中 */
+.player.np-open {
+  left: var(--deck-gap);
+}
+
+/* 账号卡上的未登录提示（手机上从右上角冒出来） */
+.login-hint {
+  display: none;
+}
+
+/* 个人中心：账号 / 设置分页 */
+.acct-tabs {
+  display: inline-flex;
+  margin: 4px 0 30px;
+}
+.acct-tabs a {
+  padding: 0 20px;
+}
+.acct-guest {
+  width: 72px;
+  height: 72px;
+}
+.acct-login {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+/* 正在播放：歌名旁的收藏（只在手机上露出，宽屏的在播放台上） */
+.np-name-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.show-sm {
+  display: none !important;
+}
+.np-more {
+  padding: 0 10px;
+}
+.t-menu-side {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+.pop-menu .t-menu-item:disabled {
+  opacity: 0.45;
+}
+.np-mini {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  min-width: 0;
+  max-width: 70%;
+  text-align: left;
+  color: var(--ink);
+}
+.np-mini svg {
+  grid-row: span 2;
+  color: var(--accent);
+}
+.np-mini-name {
+  font-size: 15px;
+  font-weight: 650;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.np-mini-by {
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 背景光斑：面板收起时不动；触屏设备上干脆不飘（几块全屏大的渐变层一直动，手机 GPU 吃不消） */
+.nowplaying:not(.open) .np-glow i {
+  animation-play-state: paused;
+}
+
+@media (pointer: coarse) {
+  .np-glow i {
+    animation: none;
+    will-change: auto;
+  }
+  /* 歌词逐行模糊在手机上太贵（每换一行所有行都要重算滤镜），只留透明度和缩放 */
+  .lyric-line,
+  .lyric-line:hover {
+    filter: none;
+    transition: opacity 0.5s var(--ease-out), transform 0.6s var(--ease-spring);
+  }
+}
+
+@media (max-width: 860px) {
+  /* 账号卡在顶栏右上角：只剩头像 */
+  .who,
+  .who:hover {
+    height: auto;
+    padding: 2px;
+    border: 0;
+    border-radius: 50%;
+    background: none;
+    box-shadow: none;
+  }
+  .who-text {
+    display: none;
+  }
+  .side .who.on {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .side .who-avatar .avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
+  .who-guest {
+    width: 32px;
+    height: 32px;
+  }
+  .who-guest svg {
+    width: 18px;
+    height: 18px;
+  }
+  .side-foot {
+    position: relative;
+  }
+  .login-hint {
+    display: block;
+    position: absolute;
+    top: calc(100% + 12px);
+    right: -4px;
+    z-index: 35;
+    width: 176px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: left;
+    box-shadow: var(--shadow-2);
+    animation: pop-in 0.4s var(--ease-spring) both;
+    transform-origin: calc(100% - 18px) 0;
+  }
+  .login-hint::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    right: 15px;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: inherit;
+    transform: rotate(45deg);
+  }
+
+  /* ---- 播放台：平时只有唱片、歌名、播放、下一首 ---- */
+  .player {
+    left: var(--deck-gap);
+    right: var(--deck-gap);
+  }
+  .t-side,
+  .t-prev {
+    display: none;
+  }
+
+  /* ---- 打开正在播放页：播放台长高，进度条和整排控件依次弹出来 ---- */
+  .player.np-open {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 10px 12px 10px;
+    border-radius: 26px;
+  }
+  .player.np-open .np,
+  .player.np-open .mini-progress {
+    display: none;
+  }
+  .player.np-open .transport {
+    flex-direction: column-reverse;
+    gap: 4px;
+  }
+  .player.np-open .progress-row {
+    display: flex !important;
+    max-width: none;
+    padding: 0 4px;
+    animation: deck-item-in 0.5s var(--ease-out) 0.05s both;
+  }
+  .player.np-open .transport-btns {
+    display: grid;
+    width: 100%;
+    gap: 6px;
+  }
+  .player.np-open .t-side {
+    display: flex;
+  }
+  .player.np-open .t-prev {
+    display: inline-grid;
+  }
+  .player.np-open .quality {
+    display: block;
+  }
+  .player.np-open .t-prev,
+  .player.np-open .nudge-right {
+    animation: deck-item-in 0.5s var(--ease-spring) 0.1s both;
+  }
+  .player.np-open .t-side > * {
+    animation: deck-item-in 0.55s var(--ease-spring) both;
+  }
+  .player.np-open .t-left > :last-child,
+  .player.np-open .t-right > :first-child {
+    animation-delay: 0.14s;
+  }
+  .player.np-open .t-left > :first-child,
+  .player.np-open .t-right > :last-child {
+    animation-delay: 0.2s;
+  }
+  .player.np-open .t-left > * {
+    --from-x: 14px;
+  }
+  .player.np-open .t-right > * {
+    --from-x: -14px;
+  }
+
+  /* ---- 正在播放页 ---- */
+  .nowplaying {
+    --np-bar: 120px;
+  }
+  .np-head {
+    padding-top: 14px;
+    min-height: 52px;
+  }
+  .np-body {
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 16px;
+    padding-bottom: calc(var(--np-bar) + var(--deck-gap) * 2);
+  }
+  .np-deck-col {
+    cursor: pointer;
+  }
+  .deck {
+    width: min(80vw, 40vh);
+  }
+  @supports (height: 1svh) {
+    .deck {
+      width: min(80vw, 40svh);
+    }
+  }
+  /* 歌名、歌手各占一行：换歌时这块高度不变，唱机不会跟着上下跳 */
+  .np-name {
+    min-width: 0;
+    font-size: 24px;
+    line-height: 1.25;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .np-by {
+    margin-top: 4px;
+    font-size: 14px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .np-name-row .heart {
+    margin: -4px -8px 0 0;
+  }
+  .show-sm {
+    display: inline-grid !important;
+  }
+  .np-actions {
+    margin-top: 12px;
+    flex-wrap: nowrap;
+  }
+  .np-chip {
+    height: 30px;
+    font-size: 12.5px;
+  }
+  /* 平时歌词只露两行，当前行顶在第一行 */
+  .nowplaying:not(.np-focus) .lyrics {
+    flex: none;
+    height: 76px;
+    margin-top: 14px;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+    -webkit-mask: linear-gradient(#000 55%, transparent);
+    mask: linear-gradient(#000 55%, transparent);
+  }
+  .nowplaying:not(.np-focus) .lyric-line {
+    padding: 4px 0;
+    font-size: 16px;
+  }
+  .nowplaying:not(.np-focus) .lyric-line small {
+    display: none;
+  }
+  .nowplaying:not(.np-focus) .lyrics-empty {
+    margin-top: 16px;
+    font-size: 16px;
+  }
+  .nowplaying:not(.np-focus) .notes {
+    margin-top: 16px;
+  }
+  /* 从全屏歌词回到唱机：唱机重新浮上来 */
+  .np-return .np-deck-col,
+  .np-return .np-titles {
+    animation: deck-item-in 0.5s var(--ease-spring) both;
+  }
+
+  /* 全屏歌词：唱机、歌名、按钮都收起来，只剩歌词和播放台 */
+  .np-focus .np-deck-col,
+  .np-focus .np-titles {
+    display: none;
+  }
+  .np-focus .np-body {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .np-focus .lyrics {
+    margin-top: 0;
+    padding: 16vh 0 30vh;
+    animation: np-lyrics-in 0.5s var(--ease-out) both;
+  }
+  .np-focus .lyric-line {
+    font-size: 22px;
+  }
+  .np-focus .np-mini {
+    animation: deck-item-in 0.4s var(--ease-out) both;
+  }
+}
+
+@keyframes deck-item-in {
+  from {
+    opacity: 0;
+    transform: translate(var(--from-x, 0), 8px) scale(0.85);
+  }
+}
+@keyframes np-lyrics-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+/* 歌词：点一句没唱到的，句尾先冒出一个小播放键，点它才跳过去 */
+.lyric-line {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.lyric-line.armed {
+  opacity: 1;
+  filter: none;
+}
+.lyric-go {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: 10px;
+  vertical-align: 0.1em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent);
+  animation: lyric-go-in 0.4s var(--ease-spring) backwards;
+}
+.lyric-go svg {
+  margin-left: 2px;
+}
+.lyric-go:active {
+  transform: scale(0.9);
+}
+@keyframes lyric-go-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3) rotate(-40deg);
+  }
+}
+
+/* 宽屏左下角的账号卡：和播放台同一套玻璃质感，带一点跟着封面走的强调色，
+   右边露出半张唱片的纹路，和唱片行的主题呼应 */
+@media (min-width: 861px) {
+  .side .who {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+      radial-gradient(130% 160% at 0% 0%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 62%),
+      var(--glass-solid);
+    border-color: color-mix(in srgb, var(--accent) 16%, var(--line));
+    box-shadow: var(--shadow-2), inset 0 1px 0 var(--q-sheen);
+    transition: border-color 0.3s, transform 0.35s var(--ease-spring), box-shadow 0.3s;
+  }
+  .side .who::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: 50%;
+    right: -40px;
+    width: 84px;
+    height: 84px;
+    margin-top: -42px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, color-mix(in srgb, var(--accent) 70%, transparent) 0 15%, transparent 16%),
+      repeating-radial-gradient(circle, color-mix(in srgb, var(--ink) 9%, transparent) 0 1px, transparent 1.2px 3.6px);
+    opacity: 0.7;
+    transition: transform 0.6s var(--ease-out);
+  }
+  .side .who:hover {
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+    transform: translateY(-1px);
+  }
+  .side .who:hover::after {
+    transform: rotate(40deg) translateX(-4px);
+  }
+  .side .who-avatar .avatar,
+  .side .who-guest {
+    box-shadow: 0 0 0 2px var(--glass-solid), 0 0 0 3.5px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  .side .who-guest {
+    border-color: transparent;
+    color: var(--accent);
+    opacity: 1;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .side .who-sub {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: color-mix(in srgb, var(--accent) 65%, var(--ink-3));
+  }
+  .side .who.on {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
+/* 中等宽度（小笔记本、分屏）：中间一排按钮变多了，给它定宽，两边让一让；收藏挪到正在播放页里点 */
+@media (min-width: 861px) and (max-width: 1180px) {
+  .player {
+    grid-template-columns: minmax(0, 1fr) 332px minmax(0, 0.5fr);
+    gap: 12px;
+  }
+  .player .np .heart {
+    display: none;
+  }
+  .tools .volume {
+    width: 64px;
+  }
+  .np-name-row .heart {
+    display: inline-grid !important;
+  }
+}
+
+/* 账号卡收小一号：不和播放台抢分量，竖直方向和播放台居中对齐 */
+@media (min-width: 861px) {
+  .side .side-foot {
+    padding-bottom: calc((var(--deck-h) - 56px) / 2);
+  }
+  .side .who {
+    height: 56px;
+    gap: 9px;
+    padding: 0 12px 0 10px;
+    border-radius: 18px;
+    box-shadow: var(--shadow-1), inset 0 1px 0 var(--q-sheen);
+  }
+  .side .who-avatar .avatar {
+    width: 30px !important;
+    height: 30px !important;
+    font-size: 13px !important;
+  }
+  .side .who-guest {
+    width: 30px;
+    height: 30px;
+  }
+  .side .who-guest svg {
+    width: 17px;
+    height: 17px;
+  }
+  .side .who-name {
+    font-size: 13px;
+  }
+  .side .who-sub {
+    font-size: 10.5px;
+  }
+  .side .who::after {
+    right: -32px;
+    width: 64px;
+    height: 64px;
+    margin-top: -32px;
+  }
 }

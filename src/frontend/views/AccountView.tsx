@@ -6,12 +6,13 @@ import { PasswordRules } from '../components/PasswordRules';
 import { Empty, Loading } from '../components/States';
 import { ApiError } from '../api';
 import { authStore, changePassword, displayName, logout, logoutAll } from '../lib/account';
-import { navigate, href } from '../lib/router';
+import { navigate, href, useRoute } from '../lib/router';
 import { avatarProblem, passwordProblem, removeAvatar, updateNickname, uploadAvatar } from '../lib/profile';
 import { socialStore } from '../lib/friends';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
+import { SettingsPanel } from './SettingsView';
 
 const joined = (iso?: string) => {
   if (!iso) return '';
@@ -282,9 +283,24 @@ function FriendsField() {
 }
 
 /** 个人中心：头像、昵称、会员卡、好友、密码、登录设备 */
+/** 个人中心的分页：账号 / 设置。手机上导航放不下「设置」，从右上角头像进来在这里切 */
+function AcctTabs({ tab }: { tab: 'account' | 'settings' }) {
+  return (
+    <div className="acct-tabs seg" role="tablist" aria-label="个人中心">
+      <a role="tab" href={href.account()} aria-selected={tab === 'account'} className={tab === 'account' ? 'on' : ''}>
+        账号
+      </a>
+      <a role="tab" href={href.accountSettings()} aria-selected={tab === 'settings'} className={tab === 'settings' ? 'on' : ''}>
+        设置
+      </a>
+    </div>
+  );
+}
+
 export function AccountView() {
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
+  const tab = useRoute().query.get('tab') === 'settings' ? 'settings' : 'account';
 
   if (status === 'checking') {
     return (
@@ -296,16 +312,31 @@ export function AccountView() {
   if (status !== 'authenticated' || !user) {
     return (
       <div className="page">
-        <Empty title={status === 'unavailable' ? '账户服务没有开启' : '还没登录'}>
-          {status === 'guest' && (
-            <>
-              <p className="muted">登录后收藏、歌单和会员卡会在设备之间同步。</p>
-              <button className="btn" onClick={() => uiStore.set({ login: true })} style={{ marginTop: 18 }}>
+        <header className="page-head acct-head reveal">
+          <span className="who-guest acct-guest" aria-hidden="true">
+            <Icon name="user" size={30} />
+          </span>
+          <div>
+            <div className="kicker">个人中心</div>
+            <h1 className="page-title">{status === 'unavailable' ? '账户服务没有开启' : '还没登录'}</h1>
+            <p className="muted small acct-sub">
+              {status === 'unavailable' ? '收藏只保存在这台设备上。' : '登录后收藏、歌单和会员卡会在设备之间同步。'}
+            </p>
+          </div>
+        </header>
+        <AcctTabs tab={tab} />
+        {tab === 'settings' ? (
+          <SettingsPanel />
+        ) : (
+          status === 'guest' && (
+            <div className="acct-login reveal">
+              <button className="btn" onClick={() => uiStore.set({ login: true })}>
                 登录同步
               </button>
-            </>
-          )}
-        </Empty>
+              <p className="help">注册时可以顺手填会员邀请码。</p>
+            </div>
+          )
+        )}
       </div>
     );
   }
@@ -337,15 +368,20 @@ export function AccountView() {
           </p>
         </div>
       </header>
+      <AcctTabs tab={tab} />
 
-      <div className="form acct-form">
-        {fields.map(([label, node], i) => (
-          <div key={label} className="field reveal" style={{ '--i': i + 1 } as React.CSSProperties}>
-            <span className="label">{label}</span>
-            {node}
-          </div>
-        ))}
-      </div>
+      {tab === 'settings' ? (
+        <SettingsPanel />
+      ) : (
+        <div className="form acct-form">
+          {fields.map(([label, node], i) => (
+            <div key={label} className="field reveal" style={{ '--i': i + 1 } as React.CSSProperties}>
+              <span className="label">{label}</span>
+              {node}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

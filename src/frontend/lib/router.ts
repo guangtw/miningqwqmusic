@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { browserAnimatedNav } from './backstack';
 import { transition } from './motion';
 
 // hash 路由：#/playlist/123?x=1。部署成静态文件时不需要服务端配置。
@@ -39,8 +40,8 @@ function track(): number {
 
 window.addEventListener('hashchange', () => {
   const next = parse(track());
-  // 只改了查询参数（例如搜索翻页）不做整页过渡
-  const samePage = next.path === route.path;
+  // 只改了查询参数（例如搜索翻页）不做整页过渡；系统侧滑返回自己演过一遍了，也不再演
+  const samePage = next.path === route.path || browserAnimatedNav();
   const apply = () => {
     route = next;
     listeners.forEach((fn) => fn());
@@ -78,5 +79,6 @@ export const href = {
   settings: () => '#/settings',
   admin: () => '#/admin',
   account: () => '#/account',
+  accountSettings: () => '#/account?tab=settings',
   friends: () => '#/friends',
 };

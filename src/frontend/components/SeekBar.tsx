@@ -17,12 +17,24 @@ export function SeekBar({ compact = false }: { compact?: boolean }) {
   const thumbRef = useRef<HTMLDivElement>(null);
   const curRef = useRef<HTMLSpanElement>(null);
   const [drag, setDrag] = useState<number | null>(null);
+  const painted = useRef({ pct: -1, text: '' });
 
+  // 只在进度条真的挪了半个像素以上、或时间文字变了时才写 DOM。
+  // 播放台是毛玻璃，里面每帧有改动 Safari 就得每帧重新模糊一遍背后的页面，iPhone 上会掉到十几帧
   const paint = (ms: number, total: number) => {
     const pct = total > 0 ? Math.min(100, (ms / total) * 100) : 0;
-    if (fillRef.current) fillRef.current.style.transform = `scaleX(${pct / 100})`;
-    if (thumbRef.current) thumbRef.current.style.left = `${pct}%`;
-    if (curRef.current) curRef.current.textContent = formatTime(ms);
+    const last = painted.current;
+    // 0.1% 在 500px 宽的进度条上是半个像素
+    if (Math.abs(pct - last.pct) >= 0.1 || (pct === 0) !== (last.pct === 0)) {
+      last.pct = pct;
+      if (fillRef.current) fillRef.current.style.transform = `scaleX(${pct / 100})`;
+      if (thumbRef.current) thumbRef.current.style.left = `${pct}%`;
+    }
+    const text = formatTime(ms);
+    if (curRef.current && text !== last.text) {
+      last.text = text;
+      curRef.current.textContent = text;
+    }
   };
 
   useFrame(() => {

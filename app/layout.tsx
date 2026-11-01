@@ -63,6 +63,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var s=JSON.parse(localStorage.getItem('cph.settings.v2')||'{}');if(s.theme==='paper'||s.theme==='night')document.documentElement.dataset.theme=s.theme;if(s.motion)document.documentElement.dataset.motion=s.motion}catch(e){}})()` }} />
+        {/* 唱片行的全屏浮层（正在播放、全屏歌词）各压一条自己的历史记录。Next.js 的路由见到不是它写的记录会整页刷新，
+            它的 popstate 监听又比前端代码先挂上，所以在这里最先接住：先交给前端处理，是浮层记录就不再往下传 */}
+        <script dangerouslySetInnerHTML={{ __html: `window.__qwqPopstate=null;addEventListener('popstate',function(e){var h=window.__qwqPopstate;if(h)h(e);var s=e.state;if(s&&s.layer!=null&&!s.__NA)e.stopImmediatePropagation()})` }} />
       </head>
       <body>
         <ServiceWorkerRegister />

@@ -99,7 +99,9 @@ html[data-vt='np-close']::view-transition-old(np-arm) {
 }
 
 /* 过渡进行中关掉面板自己的 CSS 过渡，避免两套动画打架 */
-html[data-vt] .nowplaying {
+html[data-vt] .nowplaying,
+html[data-snap] .nowplaying,
+html[data-snap] .nowplaying * {
   transition: none !important;
 }
 
@@ -113,7 +115,27 @@ html[data-vt] .player {
 /* 过渡结束后从实色慢慢回到半透明毛玻璃，不要一下子跳回去。
    只在「没有 data-vt」时带过渡，进入过渡时的切换仍是瞬间的，快照拍到的就是实色。 */
 html:not([data-vt]) .player {
-  transition: background-color 0.35s var(--ease-soft);
+  transition: background-color 0.35s var(--ease-soft), left 0.55s var(--ease-out);
+}
+/* 手机上打开 / 收起唱机时播放台会变高 / 变矮（只剩播放键 ↔ 整套控件）。
+   新旧两张快照都贴着底边、按原尺寸画，不拉伸；外框从旧高度平滑收放到新高度，超出的部分裁掉，
+   两张快照交叉淡化。展开时新快照是「活的」，里面控件依次弹出来的动画照常播 */
+@media (max-width: 860px) {
+  html[data-vt^='np-']::view-transition-group(deck) {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.3, 1.1, 0.4, 1);
+  }
+  html[data-vt^='np-']::view-transition-image-pair(deck) {
+    overflow: hidden;
+    border-radius: 24px;
+  }
+  html[data-vt^='np-']::view-transition-old(deck),
+  html[data-vt^='np-']::view-transition-new(deck) {
+    inset: auto 0 0 0;
+    width: 100%;
+    height: auto;
+    animation-duration: 0.3s;
+  }
 }
 
 @keyframes vt-fade-out {
@@ -317,52 +339,14 @@ html:not([data-vt]) .player {
 }
 
 /* ============ 唱机换唱片 ============ */
-/* 按真的换黑胶来：唱片是实物，不淡入淡出。
-   旧唱片先被托起（放大一点 = 离镜头更近，影子拉远），再朝观众这一侧（屏幕下方）拿走；
-   唱盘空出来一瞬，新唱片从下方送进来，对准中心轴放平，最后轻轻一沉。 */
+/* 动画本身在 Turntable.tsx 里用 Web Animations 驱动（位移按屏幕高度算）。
+   往下掉的旧唱片压在歌名、歌词上面掉出去，新唱片在它下面一层升上来 */
 .deck-vinyl.leaving {
   pointer-events: none;
-  animation: record-out 0.62s linear 0.08s both;
+  z-index: 3;
 }
 .deck-vinyl.entering {
-  animation: record-in 0.78s linear 0.66s both;
-}
-@keyframes record-out {
-  0% {
-    transform: translate(0, 0) scale(1);
-    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-    animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
-  }
-  26% {
-    transform: translate(0, -1.5%) scale(1.05);
-    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
-    animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.35);
-  }
-  100% {
-    transform: translate(-5%, 150%) scale(1.05);
-    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
-  }
-}
-@keyframes record-in {
-  0% {
-    transform: translate(5%, 150%) scale(1.05);
-    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
-    animation-timing-function: cubic-bezier(0.12, 0.7, 0.3, 1);
-  }
-  64% {
-    transform: translate(0, -1.5%) scale(1.05);
-    box-shadow: 0 28px 44px -14px rgba(0, 0, 0, 0.55);
-    animation-timing-function: cubic-bezier(0.5, 0, 0.6, 1);
-  }
-  88% {
-    transform: translate(0, 0) scale(0.994);
-    box-shadow: 0 2px 4px -2px rgba(0, 0, 0, 0.4);
-    animation-timing-function: cubic-bezier(0.3, 0, 0.3, 1);
-  }
-  100% {
-    transform: translate(0, 0) scale(1);
-    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-  }
+  z-index: 2;
 }
 
 /* ============ 收藏：心跳 + 一圈散开的光环 ============ */

@@ -25,10 +25,10 @@ const node = '/www/server/nvm/versions/node/v24.15.0/bin/node';
 const npmCli = '/www/server/nvm/versions/node/v24.15.0/lib/node_modules/npm/bin/npm-cli.js';
 const processes = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
 const originalLogin = processes.find(p => p.name === 'miningqwqlogin')?.pm2_env;
-const originalNcm = processes.find(p => p.name === 'ncm-api')?.pm2_env;
+const originalUpstream = processes.find(p => p.name === 'ncm-api')?.pm2_env;
 const previousMusic = fs.realpathSync(musicBase + '/current');
 const database = '/www/wwwroot/miningqwqlogin/prisma/dev.db';
-if (!originalLogin || !originalNcm || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
+if (!originalLogin || !originalUpstream || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
 const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
@@ -36,12 +36,13 @@ let membershipMigration = false;
 const musicEnvFile = musicBase + '/shared/.env.production';
 const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
 const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
+// Restore only the two switches introduced by the reverted quality release.
+// Verified against protected echo-20261101152723-076be33a/upstream-before.json:
+// both switches were unset. No process credentials or backup dependency enter Git.
+const targetUpstreamFlags = { ENABLE_FLAC: '', FOLLOW_SOURCE_ORDER: '' };
+const qualityFlags = env => ({ ENABLE_FLAC: env.ENABLE_FLAC ?? '', FOLLOW_SOURCE_ORDER: env.FOLLOW_SOURCE_ORDER ?? '' });
 let upstreamChanged = false;
-function configureUnblockQuality(enable) {
-  if (!originalNcm) throw Error('Existing music upstream missing');
-  const flags = enable
-    ? { ENABLE_FLAC: 'true', FOLLOW_SOURCE_ORDER: 'true' }
-    : { ENABLE_FLAC: originalNcm.ENABLE_FLAC ?? '', FOLLOW_SOURCE_ORDER: originalNcm.FOLLOW_SOURCE_ORDER ?? '' };
+function configureUpstreamQuality(flags) {
   execFileSync(pm2, ['restart', 'ncm-api', '--update-env'], { env: { ...process.env, ...flags }, stdio: 'inherit' });
 }
 function stage() {
@@ -140,7 +141,7 @@ let failed = false;
   fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
-  fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalNcm), { mode: 0o600 });
+  fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalUpstream), { mode: 0o600 });
   if (membershipMigration) {
     // Online SQLite backup includes WAL contents. Never copy/replace a live database file.
     execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-memberships.db']);
@@ -148,10 +149,11 @@ let failed = false;
       cwd: loginRelease, env: { ...process.env, DATABASE_URL: 'file:' + database }, stdio: 'inherit'
     });
   }
-  if (originalNcm.ENABLE_FLAC !== 'true' || originalNcm.FOLLOW_SOURCE_ORDER !== 'true') {
+  if (JSON.stringify(qualityFlags(originalUpstream)) !== JSON.stringify(targetUpstreamFlags)) {
     upstreamChanged = true;
-    configureUnblockQuality(true);
+    configureUpstreamQuality(targetUpstreamFlags);
     await ready(3000);
+    console.log('PRE_COMPLAINT_UPSTREAM_FLAGS_RESTORED');
   }
   startCandidate('candidate-login', loginRelease, 3102);
   startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
@@ -198,9 +200,8 @@ let failed = false;
   console.error(e.message);
   if (upstreamChanged) {
     try {
-      configureUnblockQuality(false);
+      configureUpstreamQuality(qualityFlags(originalUpstream));
       execFileSync(pm2, ['save'], { stdio: 'inherit' });
-      console.error('UPSTREAM_QUALITY_CONFIGURATION_RESTORED');
     } catch (recoveryError) { console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryError.message); }
   }
   process.exitCode = 1;

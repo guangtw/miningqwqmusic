@@ -77,14 +77,6 @@ async function api(path, method='GET', body, authenticated=true) {
       const playback=await api('/api/music/track/'+encodeURIComponent(playbackTrackId)+'/play-url?level=exhigh&unblockMode=force_on');
       if(!playback.data.url||playback.data.authorizationScope!=='authorized') throw Error('Authorized playback address missing');
       console.log('REAL_AUTHORIZED_PLAYBACK_PASSED',JSON.stringify({elapsedMs:Date.now()-started,preview:playback.data.preview}));
-      for (const [id, requested] of [['1926623288', 'hires'], ['1895330088', 'jymaster']]) {
-        const highQuality = await api('/api/music/track/'+id+'/play-url?level='+requested);
-        const result = highQuality.data;
-        if (!result.url || result.preview || result.authorizationScope !== 'authorized' || !['lossless', 'hires'].includes(result.level)) {
-          throw Error('Full verified free-track lossless playback missing: '+id);
-        }
-        console.log('REAL_AUTHORIZED_HIGH_QUALITY_PASSED', JSON.stringify({ id, requested, level: result.level, bitrate: result.bitrate }));
-      }
       await api('/api/music/search?q='+encodeURIComponent('播放验收')+'&page=1&pageSize=1');
       console.log('SEARCH_AFTER_PLAYBACK_PASSED');
     } finally { await membershipDb.$disconnect(); }

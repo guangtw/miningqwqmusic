@@ -75,7 +75,7 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - 你的上游如果暂时无 API Key，可保持 `MUSIC_SOURCE_API_KEY=` 为空
 - `MUSIC_SOURCE_PLAY_LEVEL` 用于透传到 `/song/url/v1` 的 `level` 参数（例如 `standard`、`exhigh`）
 - `MUSIC_SOURCE_VIP_PREVIEW_MAX_MS`：判定试听直链阈值（默认 `60000`）
-- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；会员默认强制解灰，解灰不可用时回退原曲，游客只走原曲。九档 `level` 原样传递，优先精确匹配所选档位；上游明确返回的音质档位不被编码推断覆盖。无精确档位时显示实际结果；旧的仅 URL 解灰来源不能据此宣称具备九档能力。音频身份、版本和完整时长校验继续保留。
+- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
 - `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `unm,msls,qijieya`）；这是当前用于止血的优先级，优先避开会回落到 30 秒试听链的旧 source 组合
 - `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
 - `ACCOUNT_SERVICE_BASE_URL`：可选，独立登录服务地址。配置后站内 `/api/account/*` 会代理到该服务，前端显示“登录同步”入口；未配置则保持纯游客模式。

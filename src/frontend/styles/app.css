@@ -1092,6 +1092,178 @@ img {
   color: var(--accent);
 }
 
+/* ============ 唱片架 ============ */
+.shelf-head {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'intro crate' 'account crate';
+  grid-template-rows: 1fr auto;
+  align-items: end;
+  column-gap: 32px;
+}
+.shelf-intro {
+  grid-area: intro;
+  min-width: 0;
+}
+.shelf-head .page-title {
+  overflow-wrap: anywhere;
+}
+.shelf-head .account-line {
+  grid-area: account;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  min-width: 0;
+}
+.account-mail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.shelf-head .detail-band {
+  inset: -120px calc(var(--gutter) * -1) -40px;
+  background: radial-gradient(60% 100% at 82% 30%, var(--tint), transparent 70%);
+}
+
+/* 唱片箱：封套边长 = 箱宽的 58%，唱片从封套右边探出来，后面几张绕底边斜靠 */
+.crate {
+  --cw: 280px;
+  grid-area: crate;
+  position: relative;
+  width: var(--cw);
+  height: calc(var(--cw) * 0.7);
+  margin-right: calc(var(--cw) * -0.04);
+}
+.crate-front,
+.crate-back {
+  position: absolute;
+  left: calc(var(--cw) * 0.06);
+  bottom: 0;
+  width: calc(var(--cw) * 0.58);
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.crate-front {
+  z-index: 3;
+  box-shadow: var(--shadow-2);
+}
+.crate-front .cover,
+.crate-back .cover {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+.crate-back {
+  z-index: calc(3 - var(--k));
+  transform-origin: 0% 100%;
+  transform: translateX(calc(var(--k) * var(--cw) * 0.035)) rotate(calc(var(--k) * -5deg));
+  filter: brightness(calc(1 - var(--k) * 0.12));
+  box-shadow: var(--shadow-1);
+  transition: transform 0.6s var(--ease-spring);
+}
+.crate-back:empty {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--line);
+  filter: none;
+}
+.crate-vinyl {
+  position: absolute;
+  z-index: 2;
+  left: calc(var(--cw) * 0.3);
+  bottom: calc(var(--cw) * 0.02);
+  width: calc(var(--cw) * 0.54);
+  transition: transform 0.7s var(--ease-spring);
+}
+.crate-front:empty {
+  background: transparent;
+  box-shadow: none;
+  border: 1.5px dashed var(--line-strong);
+  opacity: 0.35;
+}
+@media (hover: hover) {
+  .crate:hover .crate-vinyl {
+    transform: translateX(calc(var(--cw) * 0.1)) rotate(24deg);
+  }
+  .crate:hover .crate-back {
+    transform: translateX(calc(var(--k) * var(--cw) * 0.05)) rotate(calc(var(--k) * -8deg));
+  }
+}
+
+/* 三张分隔卡：选中的那张是一块浮起来的卡片，切栏时滑过去 */
+.shelf-tabs {
+  --n: 3;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  width: min(100%, 480px);
+  padding: 5px;
+  border-radius: 18px;
+  background: var(--surface-2);
+}
+.shelf-tabs::before {
+  content: '';
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 10px) / var(--n));
+  border-radius: 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transform: translateX(calc(var(--at) * 100%));
+  transition: transform 0.5s var(--ease-spring);
+}
+.shelf-tabs button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 16px 11px;
+  color: var(--ink-3);
+  text-align: left;
+  transition: color 0.25s;
+}
+.shelf-tabs button:hover,
+.shelf-tabs button.on {
+  color: var(--ink);
+}
+.shelf-n {
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.shelf-tabs button.on .shelf-n {
+  color: var(--accent);
+}
+.shelf-l {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.shelf-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-height: 42px;
+  margin: 22px 0 10px;
+}
+.shelf-actions {
+  display: flex;
+  gap: 8px;
+}
+.shelf-bar .btn {
+  height: 38px;
+  padding: 0 16px;
+}
+
 /* ============ 详情页 ============ */
 .detail-head {
   position: relative;
@@ -2840,8 +3012,10 @@ mark.hl {
 }
 .seg button,
 .seg a {
-  display: inline-grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   height: 34px;
   padding: 0 16px;
   border-radius: 999px;
@@ -2859,12 +3033,6 @@ mark.hl {
   background: var(--surface);
   color: var(--ink);
   box-shadow: var(--shadow-1);
-}
-.seg .seg-action {
-  color: var(--accent);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 .seg-sm button {
   height: 30px;
@@ -5198,5 +5366,41 @@ html {
     width: 64px;
     height: 64px;
     margin-top: -32px;
+  }
+}
+
+/* 手机上的唱片架：箱子缩到标题旁边，账号一行占满宽度，分隔卡铺满一行 */
+@media (max-width: 860px) {
+  .shelf-head {
+    grid-template-areas: 'intro crate' 'account account';
+    align-items: center;
+    column-gap: 14px;
+  }
+  .crate {
+    --cw: 104px;
+  }
+  .shelf-head .page-title {
+    font-size: clamp(32px, 10.4vw, 44px);
+  }
+  .shelf-tabs {
+    width: 100%;
+  }
+  .shelf-tabs button {
+    padding: 9px 12px 10px;
+  }
+  .shelf-n {
+    font-size: 22px;
+  }
+  .shelf-bar {
+    margin-top: 16px;
+  }
+}
+@media (max-width: 380px) {
+  .shelf-bar .shelf-shuffle span {
+    display: none;
+  }
+  .shelf-bar .shelf-shuffle {
+    width: 38px;
+    padding: 0;
   }
 }

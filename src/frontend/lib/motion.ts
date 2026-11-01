@@ -13,6 +13,7 @@ type ViewTransitionDoc = Document & {
 };
 
 let running = false;
+let finished: Promise<void> = Promise.resolve();
 
 /**
  * 用 View Transitions API 包住一次界面更新，让封面在页面之间「飞」过去。
@@ -30,11 +31,14 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
   const vt = doc.startViewTransition(() => flushSync(update));
   // 页面在后台、或被别的过渡打断时浏览器会跳过动画（更新照常生效），ready 会 reject，不算错误
   vt.ready.catch(() => undefined);
-  void vt.finished.catch(() => undefined).finally(() => {
+  finished = vt.finished.catch(() => undefined).finally(() => {
     running = false;
     delete root.dataset.vt;
   });
 }
+
+/** 正在播视图过渡时返回它播完的 Promise，没在播返回 null */
+export const transitionSettled = () => (running ? finished : null);
 
 /** 不带任何过渡地立刻更新（系统返回手势已经演过动画时用），面板自己的 CSS 过渡也先关掉 */
 export function snap(update: () => void) {

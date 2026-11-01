@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { Track } from '../api';
 import { Avatar } from '../components/Avatar';
 import { Card } from '../components/Cards';
+import { Cover } from '../components/Cover';
 import { Icon } from '../components/Icon';
 import { Empty } from '../components/States';
 import { TrackList } from '../components/TrackList';
+import { Vinyl } from '../components/Vinyl';
 import { authStore, displayName, libraryStore, pullLibrary } from '../lib/account';
+import { tintVars, useTint } from '../lib/palette';
 import { kindOf, playlistCover } from '../lib/playlists';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
-import { playList } from '../player/player';
+import { currentTrack, playerStore, playList } from '../player/player';
 import { uiStore } from '../player/ui';
 
 type Tab = 'favorites' | 'playlists' | 'recent';
@@ -58,6 +62,36 @@ function Playlists() {
   );
 }
 
+/** 页头角上的唱片箱：最新收藏的一张在最前，唱片从封套里探出来，正在放它就转；后面斜靠着几张 */
+function Crate({ tracks }: { tracks: Track[] }) {
+  const front = tracks[0];
+  const spinning = useStore(playerStore, (s) => !!front && s.playing && currentTrack(s)?.id === front.id);
+  const cover = (t?: Track) => t?.coverUrl ?? t?.album?.coverUrl;
+  return (
+    <div className={`crate ${front ? '' : 'empty'}`} aria-hidden="true">
+      {[3, 2, 1].map((k) => (
+        <span key={k} className="crate-back" style={{ '--k': k } as React.CSSProperties}>
+          {tracks[k] && <Cover src={cover(tracks[k])} alt="" size={200} />}
+        </span>
+      ))}
+      {front && <Vinyl cover={cover(front)} spinning={spinning} className="crate-vinyl" labelPx={120} />}
+      <span className="crate-front">{front && <Cover src={cover(front)} alt="" size={300} />}</span>
+    </div>
+  );
+}
+
+/** 随机播放：洗一遍牌再从头放，不改播放器的播放模式 */
+function shuffled<T>(list: T[]) {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+const minutes = (tracks: Track[]) => Math.round(tracks.reduce((n, t) => n + (t.durationMs || 0), 0) / 60000);
+
 const TAB_KEY = 'cph.library.tab';
 
 export function Library() {
@@ -92,15 +126,28 @@ export function Library() {
   const favList = favSnapshot.length ? favSnapshot : order.map((id) => favorites[id]).filter(Boolean);
   const list = tab === 'favorites' ? favList : recent;
 
+  const shelf = favList.length ? favList : recent;
+  const tint = useTint(shelf[0]?.coverUrl ?? shelf[0]?.album?.coverUrl);
+  const tabs: { key: Tab; label: string; n: number }[] = [
+    { key: 'favorites', label: '收藏', n: order.length },
+    { key: 'playlists', label: '歌单', n: playlistCount },
+    { key: 'recent', label: '最近播放', n: recent.length },
+  ];
+  const at = tabs.findIndex((t) => t.key === tab);
+
   return (
     <div className="page">
-      <header className="page-head reveal">
-        <div className="kicker">唱片架</div>
-        <h1 className="page-title">{user ? displayName(user) : '我的唱片架'}</h1>
+      <header className={`page-head shelf-head reveal ${tint ? 'tinted' : ''}`} style={tintVars(tint)}>
+        <div className="detail-band" aria-hidden="true" />
+        <div className="shelf-intro">
+          <div className="kicker">唱片架 · Shelf</div>
+          <h1 className="page-title">{user ? displayName(user) : '我的唱片架'}</h1>
+        </div>
+        <Crate tracks={shelf.slice(0, 4)} />
         {status === 'authenticated' && user ? (
           <div className="account-line">
             <Avatar user={user} size={28} />
-            <span className="muted small">{user.email} · 已同步</span>
+            <span className="muted small account-mail">{user.email} · 已同步</span>
             <a className="text-btn" href={href.account()}>
               个人中心
             </a>
@@ -115,22 +162,33 @@ export function Library() {
         ) : null}
       </header>
 
-      <div className="seg" role="tablist" style={{ marginTop: 8 }}>
-        <button role="tab" aria-selected={tab === 'favorites'} className={tab === 'favorites' ? 'on' : ''} onClick={() => setTab('favorites')}>
-          收藏 <span className="mono">{order.length}</span>
-        </button>
-        <button role="tab" aria-selected={tab === 'playlists'} className={tab === 'playlists' ? 'on' : ''} onClick={() => setTab('playlists')}>
-          歌单 <span className="mono">{playlistCount}</span>
-        </button>
-        <button role="tab" aria-selected={tab === 'recent'} className={tab === 'recent' ? 'on' : ''} onClick={() => setTab('recent')}>
-          最近播放 <span className="mono">{recent.length}</span>
-        </button>
-        {tab !== 'playlists' && list.length > 0 && (
-          <button className="seg-action" onClick={() => playList(list)}>
-            <Icon name="play" size={14} /> 全部播放
+      <div className="shelf-tabs" role="tablist" style={{ '--at': at } as React.CSSProperties}>
+        {tabs.map((t) => (
+          <button key={t.key} role="tab" aria-label={`${t.label} ${t.n}`} aria-selected={tab === t.key} className={tab === t.key ? 'on' : ''} onClick={() => setTab(t.key)}>
+            <span className="shelf-n">{String(t.n).padStart(2, '0')}</span>
+            <span className="shelf-l">{t.label}</span>
           </button>
-        )}
+        ))}
       </div>
+
+      {(tab === 'playlists' || list.length > 0) && (
+        <div className="shelf-bar">
+          <span className="mono faint">
+            {tab === 'playlists' ? `${playlistCount} 张歌单` : `${list.length} 首 · ${minutes(list)} 分钟`}
+          </span>
+          {tab !== 'playlists' && list.length > 0 && (
+            <span className="shelf-actions">
+              <button className="btn solid" onClick={() => playList(list)}>
+                <Icon name="play" size={14} /> 全部播放
+              </button>
+              <button className="btn shelf-shuffle" onClick={() => playList(shuffled(list))} aria-label="随机播放" title="随机播放">
+                <Icon name="shuffle" size={16} />
+                <span>随机</span>
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
       {tab === 'playlists' ? (
         <Playlists />
@@ -139,7 +197,7 @@ export function Library() {
           <p className="muted">{tab === 'favorites' ? '在任意曲目旁点一下心形，它就会摆到这里。' : '放一首歌，这里就会记下来。'}</p>
         </Empty>
       ) : (
-        <TrackList key={tab} tracks={list} />
+        <TrackList key={tab} tracks={list} covers />
       )}
     </div>
   );

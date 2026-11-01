@@ -83,6 +83,7 @@
 /* 含 var() 的自定义属性在声明处就算好了值，子元素改 --tint-h 不会影响继承下来的 --tint，
    所以凡是局部设置封面色相的容器，都要在自己身上重新声明一次 */
 .detail-head,
+.shelf-head,
 .feature,
 .np-glow {
   --tint: hsl(var(--tint-h) var(--tint-s) var(--tint-l) / var(--tint-a));

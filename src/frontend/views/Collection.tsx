@@ -95,7 +95,7 @@ export function PlaylistView({ id, source }: { id: string; source: 'playlist' | 
       )}
       {loading && <Loading />}
       {error && <ErrorState error={error} onRetry={reload} />}
-      {p && <TrackList tracks={p.tracks} />}
+      {p && <TrackList tracks={p.tracks} covers />}
     </div>
   );
 }
@@ -152,7 +152,7 @@ export function ArtistView({ id }: { id: string }) {
       )}
       {loading && <Loading />}
       {error && <ErrorState error={error} onRetry={reload} />}
-      {a && <TrackList tracks={a.topTracks} />}
+      {a && <TrackList tracks={a.topTracks} covers />}
     </div>
   );
 }

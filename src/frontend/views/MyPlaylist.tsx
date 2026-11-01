@@ -79,7 +79,7 @@ export function MyPlaylistView({ id }: { id: string }) {
       {pl.tracks.length ? (
         <>
           <p className="muted small list-hint">拖动曲目可以排序，右键或「⋯」可以移除。</p>
-          <TrackList tracks={pl.tracks} playlistId={id} />
+          <TrackList tracks={pl.tracks} playlistId={id} covers />
         </>
       ) : (
         <Empty title="还是一张空白唱片">

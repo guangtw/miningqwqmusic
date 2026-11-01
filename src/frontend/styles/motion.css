@@ -407,6 +407,40 @@ html:not([data-vt]) .player {
   }
 }
 
+/* ============ 换歌时强调色的过渡 ============ */
+/* 根元素上的强调色是一下子换的（见 App.tsx），常驻在屏幕上、跟正在播放有关的那几处各自慢慢变过去，
+   不会「啪」地跳色。颜色按 RGB 插值，不会像色相那样绕一圈彩虹；只有颜色真的变了的元素才动，不拖累整页。
+   本来就有 transition 的元素，原来的几项要一起写上，简写会把它们覆盖掉 */
+.nav-pill::before,
+.badge,
+.vinyl-label,
+.mini-progress-fill {
+  transition: background-color 0.6s var(--ease-soft);
+}
+.kicker,
+.section-no,
+.text-btn,
+.q-item .t,
+.lyric-line span,
+.track.current .name .t {
+  transition: color 0.6s var(--ease-soft);
+}
+.arm-cartridge {
+  transition: fill 0.6s var(--ease-soft);
+}
+.bar-thumb {
+  transition: transform 0.3s var(--ease-spring), border-color 0.6s var(--ease-soft);
+}
+.tab-line {
+  transition: transform 0.45s var(--ease-spring), width 0.35s var(--ease-out), background-color 0.6s var(--ease-soft);
+}
+.eq i {
+  transition: background-color 0.6s var(--ease-soft);
+}
+.eq.paused i {
+  transition: transform 0.5s var(--ease-out), background-color 0.6s var(--ease-soft);
+}
+
 /* ============ 唱机 ============ */
 /* 换唱片在 Turntable.tsx 里用 Web Animations 驱动（方向、落稳时刻要和唱臂对上）。
    拖唱臂跳转时的时间气泡弹出来 */

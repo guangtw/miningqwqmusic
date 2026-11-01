@@ -4596,6 +4596,12 @@ html {
   text-overflow: ellipsis;
 }
 
+/* 面板收着时里面的过渡不播：看不见，歌词换行时却照样一行行算过渡 */
+.nowplaying:not(.open) .lyric-line,
+.nowplaying:not(.open) .lyric-line span {
+  transition: none;
+}
+
 /* 背景光斑：面板收起时不动；触屏设备上干脆不飘（几块全屏大的渐变层一直动，手机 GPU 吃不消） */
 .nowplaying:not(.open) .np-glow i {
   animation-play-state: paused;

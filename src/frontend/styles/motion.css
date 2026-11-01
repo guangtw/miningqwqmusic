@@ -76,6 +76,25 @@ html[data-vt='np-open']::view-transition-old(np-panel),
 html[data-vt='np-close']::view-transition-new(np-panel) {
   opacity: 0;
 }
+/* 换页时：播放台、顶栏 / 侧栏单独成层只是为了压在新页面上面，前后内容一样，
+   所以只留新的一张（它是「活」的，导航高亮自己的过渡照常播），不拿两张一样的图做 plus-lighter 交叉淡化；
+   收着的唱机面板（全屏、隐藏）和播放台里的小唱片（只在开合唱机时才要飞）换页时不单独成层。
+   画面上没有区别，iPhone 上每帧少合成好几张大图 */
+html[data-vt='page']::view-transition-old(deck),
+html[data-vt='page']::view-transition-old(side) {
+  display: none;
+}
+html[data-vt='page']::view-transition-new(deck),
+html[data-vt='page']::view-transition-new(side) {
+  animation: none;
+}
+html[data-vt='page'] .nowplaying:not(.open) {
+  view-transition-name: none;
+}
+html[data-vt='page'] .mini-vinyl {
+  view-transition-name: none !important;
+}
+
 /* 过渡层的叠放顺序要和真实页面一致：侧栏 < 唱机面板 < 播放台 < 飞行中的小唱片。
    顺序不一致的话，过渡一结束，被错误压在上面的东西会突然消失（例如侧栏浮在唱机面板上）。 */
 ::view-transition-group(side) {

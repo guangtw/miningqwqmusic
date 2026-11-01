@@ -10,6 +10,15 @@ let token = null;
 let createdId = null;
 const checks=[];
 
+function qaDatabase() {
+  const envText=fs.readFileSync(accountRoot+'/.env','utf8');
+  const match=envText.match(/^DATABASE_URL=(.*)$/m);
+  if(!match) throw Error('Cannot locate account database for QA');
+  process.env.DATABASE_URL=match[1].trim().replace(/^['"]|['"]$/g,'');
+  const {PrismaClient}=require(accountRoot+'/node_modules/@prisma/client');
+  return new PrismaClient();
+}
+
 async function api(path, method='GET', body, authenticated=true) {
   const headers = { 'content-type':'application/json', 'user-agent':'Echo deployment health check' };
   if(authenticated && token) headers.authorization='Bearer '+token;
@@ -44,6 +53,33 @@ async function api(path, method='GET', body, authenticated=true) {
     if(me.data.user.id!==createdId) throw Error('Wrong account identity');
     const search=await api('/api/music/search?q=%E6%99%B4%E5%A4%A9&page=1&pageSize=1');
     const track=search.data.items[0];
+    // Exercise the actual authorized playback path, not only the permission probe.
+    // Use one recently successful track if available; never print listening history,
+    // the returned signed URL, the disposable token or database configuration.
+    let playbackTrackId=track.id;
+    try {
+      const fd=fs.openSync('/www/wwwlogs/www.echo.miningqwq.cn.log','r');
+      let log;
+      try {
+        const size=fs.fstatSync(fd).size, length=Math.min(size,1000000), buffer=Buffer.alloc(length);
+        fs.readSync(fd,buffer,0,length,size-length); log=buffer.toString('utf8');
+      } finally { fs.closeSync(fd); }
+      const recent=[...log.matchAll(/GET \/api\/music\/track\/([0-9]+)\/play-url[^ ]* HTTP\/[^\"]+" 200/g)];
+      if(recent.length) playbackTrackId=recent[recent.length-1][1];
+    } catch { /* A new installation can use the search result instead. */ }
+    const membershipDb=qaDatabase();
+    try {
+      const disposable=await membershipDb.user.findFirst({where:{id:createdId,email}});
+      if(!disposable) throw Error('Disposable playback QA identity missing');
+      await membershipDb.playbackAuthorization.create({data:{userId:createdId,source:'manual',status:'active',membershipKind:'timed',
+        memberNumber:1000000000+crypto.randomInt(100000000),expiresAt:new Date(Date.now()+300000)}});
+      const started=Date.now();
+      const playback=await api('/api/music/track/'+encodeURIComponent(playbackTrackId)+'/play-url?level=exhigh&unblockMode=force_on');
+      if(!playback.data.url||playback.data.authorizationScope!=='authorized') throw Error('Authorized playback address missing');
+      console.log('REAL_AUTHORIZED_PLAYBACK_PASSED',JSON.stringify({elapsedMs:Date.now()-started,preview:playback.data.preview}));
+      await api('/api/music/search?q='+encodeURIComponent('播放验收')+'&page=1&pageSize=1');
+      console.log('SEARCH_AFTER_PLAYBACK_PASSED');
+    } finally { await membershipDb.$disconnect(); }
     await api('/api/account/library/favorites','POST',{track});
     const snapshot=await api('/api/account/library/snapshot');
     if(!snapshot.data.favorites[track.id]) throw Error('Favorite did not persist');
@@ -64,12 +100,7 @@ async function api(path, method='GET', body, authenticated=true) {
   } finally {
     if(createdId) {
       // Clean up only this run's disposable QA account and its cascading session/library rows.
-      const envText=fs.readFileSync(accountRoot+'/.env','utf8');
-      const match=envText.match(/^DATABASE_URL=(.*)$/m);
-      if(!match) throw Error('Cannot locate account database for QA cleanup');
-      process.env.DATABASE_URL=match[1].trim().replace(/^['"]|['"]$/g,'');
-      const {PrismaClient}=require(accountRoot+'/node_modules/@prisma/client');
-      const prisma=new PrismaClient();
+      const prisma=qaDatabase();
       try { const deleted=await prisma.user.deleteMany({where:{id:createdId,email}}); if(deleted.count!==1) throw Error('QA account cleanup failed'); console.log('Disposable QA account and related data removed'); }
       finally {await prisma.$disconnect();}
     }

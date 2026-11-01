@@ -24,7 +24,12 @@ import type {
   TrackLyric
 } from "@/src/types/music";
 
-const breaker = new CircuitBreaker({ failureThreshold: 3, coolDownMs: 7000 });
+const breakers = new Map<keyof MusicSourceAdapter, CircuitBreaker>();
+function breakerFor(operation: keyof MusicSourceAdapter) {
+  let breaker = breakers.get(operation);
+  if (!breaker) { breaker = new CircuitBreaker({ failureThreshold: 3, coolDownMs: 7000 }); breakers.set(operation, breaker); }
+  return breaker;
+}
 let adapter: MusicSourceAdapter | null = null;
 
 function envEnabled(key: string, fallback = false): boolean {
@@ -55,7 +60,7 @@ function getAdapter() {
 
 export async function searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>> {
   try {
-    return await breaker.execute(() => getAdapter().searchTracks(input));
+    return await breakerFor("searchTracks").execute(() => getAdapter().searchTracks(input));
   } catch (error) {
     const fallbackToMock = envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false);
     if (!fallbackToMock) throw error;
@@ -66,7 +71,7 @@ export async function searchTracks(input: TrackSearchInput): Promise<PagedResult
 
 export async function searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>> {
   try {
-    return await breaker.execute(() => getAdapter().searchArtists(input));
+    return await breakerFor("searchArtists").execute(() => getAdapter().searchArtists(input));
   } catch (error) {
     const fallbackToMock = envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false);
     if (!fallbackToMock) throw error;
@@ -77,7 +82,7 @@ export async function searchArtists(input: ArtistSearchInput): Promise<PagedResu
 
 export async function searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>> {
   try {
-    return await breaker.execute(() => getAdapter().searchPlaylists(input));
+    return await breakerFor("searchPlaylists").execute(() => getAdapter().searchPlaylists(input));
   } catch (error) {
     const fallbackToMock = envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false);
     if (!fallbackToMock) throw error;
@@ -88,7 +93,7 @@ export async function searchPlaylists(input: TrackSearchInput): Promise<PagedRes
 
 export async function getTrack(trackId: string): Promise<Track> {
   try {
-    return await breaker.execute(() => getAdapter().getTrackDetail(trackId));
+    return await breakerFor("getTrackDetail").execute(() => getAdapter().getTrackDetail(trackId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getTrackDetail(trackId);
@@ -97,16 +102,20 @@ export async function getTrack(trackId: string): Promise<Track> {
 
 export async function getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
   try {
-    return await breaker.execute(() => getAdapter().getTrackQualityAvailability(trackId));
+    return await breakerFor("getTrackQualityAvailability").execute(() => getAdapter().getTrackQualityAvailability(trackId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getTrackQualityAvailability(trackId);
   }
 }
 
+export function getCachedTrackQualityAvailability(trackId: string): TrackQualityAvailability | undefined {
+  return getAdapter().getCachedTrackQualityAvailability?.(trackId);
+}
+
 export async function getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
   try {
-    return await breaker.execute(() => getAdapter().getPlaySource(trackId, options));
+    return await breakerFor("getPlaySource").execute(() => getAdapter().getPlaySource(trackId, options));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getPlaySource(trackId, options);
@@ -115,7 +124,7 @@ export async function getPlaySource(trackId: string, options?: PlaySourceRequest
 
 export async function getTrackLyric(trackId: string): Promise<TrackLyric> {
   try {
-    return await breaker.execute(() => getAdapter().getTrackLyric(trackId));
+    return await breakerFor("getTrackLyric").execute(() => getAdapter().getTrackLyric(trackId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getTrackLyric(trackId);
@@ -124,7 +133,7 @@ export async function getTrackLyric(trackId: string): Promise<TrackLyric> {
 
 export async function getPlaylist(playlistId: string): Promise<Playlist> {
   try {
-    return await breaker.execute(() => getAdapter().getPlaylist(playlistId));
+    return await breakerFor("getPlaylist").execute(() => getAdapter().getPlaylist(playlistId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getPlaylist(playlistId);
@@ -133,7 +142,7 @@ export async function getPlaylist(playlistId: string): Promise<Playlist> {
 
 export async function getSearchAssist(keyword: string): Promise<SearchAssist> {
   try {
-    return await breaker.execute(() => getAdapter().getSearchAssist(keyword));
+    return await breakerFor("getSearchAssist").execute(() => getAdapter().getSearchAssist(keyword));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getSearchAssist();
@@ -142,7 +151,7 @@ export async function getSearchAssist(keyword: string): Promise<SearchAssist> {
 
 export async function getDiscoverData(): Promise<DiscoverData> {
   try {
-    return await breaker.execute(() => getAdapter().getDiscoverData());
+    return await breakerFor("getDiscoverData").execute(() => getAdapter().getDiscoverData());
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getDiscoverData();
@@ -151,7 +160,7 @@ export async function getDiscoverData(): Promise<DiscoverData> {
 
 export async function getToplist(): Promise<ToplistItem[]> {
   try {
-    return await breaker.execute(() => getAdapter().getToplist());
+    return await breakerFor("getToplist").execute(() => getAdapter().getToplist());
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getToplist();
@@ -160,7 +169,7 @@ export async function getToplist(): Promise<ToplistItem[]> {
 
 export async function getAlbumDetail(albumId: string): Promise<AlbumDetail> {
   try {
-    return await breaker.execute(() => getAdapter().getAlbumDetail(albumId));
+    return await breakerFor("getAlbumDetail").execute(() => getAdapter().getAlbumDetail(albumId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getAlbumDetail(albumId);
@@ -169,7 +178,7 @@ export async function getAlbumDetail(albumId: string): Promise<AlbumDetail> {
 
 export async function getArtistDetail(artistId: string): Promise<ArtistDetail> {
   try {
-    return await breaker.execute(() => getAdapter().getArtistDetail(artistId));
+    return await breakerFor("getArtistDetail").execute(() => getAdapter().getArtistDetail(artistId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getArtistDetail(artistId);
@@ -178,7 +187,7 @@ export async function getArtistDetail(artistId: string): Promise<ArtistDetail> {
 
 export async function getTrackInsight(trackId: string): Promise<SongInsight> {
   try {
-    return await breaker.execute(() => getAdapter().getTrackInsight(trackId));
+    return await breakerFor("getTrackInsight").execute(() => getAdapter().getTrackInsight(trackId));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getTrackInsight(trackId);
@@ -187,7 +196,7 @@ export async function getTrackInsight(trackId: string): Promise<SongInsight> {
 
 export async function getDownloadSource(trackId: string, level?: string): Promise<DownloadSource> {
   try {
-    return await breaker.execute(() => getAdapter().getDownloadSource(trackId, level));
+    return await breakerFor("getDownloadSource").execute(() => getAdapter().getDownloadSource(trackId, level));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getDownloadSource(trackId, level);
@@ -196,7 +205,7 @@ export async function getDownloadSource(trackId: string, level?: string): Promis
 
 export async function getSatiScene(tag?: string): Promise<SceneData> {
   try {
-    return await breaker.execute(() => getAdapter().getSatiScene(tag));
+    return await breakerFor("getSatiScene").execute(() => getAdapter().getSatiScene(tag));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getSatiScene();
@@ -205,7 +214,7 @@ export async function getSatiScene(tag?: string): Promise<SceneData> {
 
 export async function getSportScene(bpm: number): Promise<SceneData> {
   try {
-    return await breaker.execute(() => getAdapter().getSportScene(bpm));
+    return await breakerFor("getSportScene").execute(() => getAdapter().getSportScene(bpm));
   } catch (error) {
     if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getSportScene(bpm);

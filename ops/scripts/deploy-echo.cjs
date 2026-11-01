@@ -25,9 +25,10 @@ const node = '/www/server/nvm/versions/node/v24.15.0/bin/node';
 const npmCli = '/www/server/nvm/versions/node/v24.15.0/lib/node_modules/npm/bin/npm-cli.js';
 const processes = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
 const originalLogin = processes.find(p => p.name === 'miningqwqlogin')?.pm2_env;
+const originalNcm = processes.find(p => p.name === 'ncm-api')?.pm2_env;
 const previousMusic = fs.realpathSync(musicBase + '/current');
 const database = '/www/wwwroot/miningqwqlogin/prisma/dev.db';
-if (!originalLogin || !fs.existsSync(database)) throw Error('Existing account service/database missing');
+if (!originalLogin || !originalNcm || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
 const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
@@ -35,6 +36,14 @@ let membershipMigration = false;
 const musicEnvFile = musicBase + '/shared/.env.production';
 const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
 const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
+let upstreamChanged = false;
+function configureUnblockQuality(enable) {
+  if (!originalNcm) throw Error('Existing music upstream missing');
+  const flags = enable
+    ? { ENABLE_FLAC: 'true', FOLLOW_SOURCE_ORDER: 'true' }
+    : { ENABLE_FLAC: originalNcm.ENABLE_FLAC ?? '', FOLLOW_SOURCE_ORDER: originalNcm.FOLLOW_SOURCE_ORDER ?? '' };
+  execFileSync(pm2, ['restart', 'ncm-api', '--update-env'], { env: { ...process.env, ...flags }, stdio: 'inherit' });
+}
 function stage() {
   if (fs.existsSync(musicRelease) || fs.existsSync(loginRelease)) throw Error('Release already exists; use a new release id');
   const oldSchema = fs.readFileSync(originalLogin.pm_cwd + '/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
@@ -131,12 +140,18 @@ let failed = false;
   fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
+  fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalNcm), { mode: 0o600 });
   if (membershipMigration) {
     // Online SQLite backup includes WAL contents. Never copy/replace a live database file.
     execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-memberships.db']);
     execFileSync(node, ['scripts/migrate-single-use-memberships.mjs', '--apply'], {
       cwd: loginRelease, env: { ...process.env, DATABASE_URL: 'file:' + database }, stdio: 'inherit'
     });
+  }
+  if (originalNcm.ENABLE_FLAC !== 'true' || originalNcm.FOLLOW_SOURCE_ORDER !== 'true') {
+    upstreamChanged = true;
+    configureUnblockQuality(true);
+    await ready(3000);
   }
   startCandidate('candidate-login', loginRelease, 3102);
   startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
@@ -178,7 +193,18 @@ let failed = false;
     if (recoveryErrors.length) console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryErrors.join('; '));
     throw error;
   }
-})().catch(e => { failed = true; console.error(e.message); process.exitCode = 1; }).finally(() => {
+})().catch(e => {
+  failed = true;
+  console.error(e.message);
+  if (upstreamChanged) {
+    try {
+      configureUnblockQuality(false);
+      execFileSync(pm2, ['save'], { stdio: 'inherit' });
+      console.error('UPSTREAM_QUALITY_CONFIGURATION_RESTORED');
+    } catch (recoveryError) { console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryError.message); }
+  }
+  process.exitCode = 1;
+}).finally(() => {
   for (const candidate of candidates) {
     try {
       const cwd = fs.realpathSync('/proc/' + candidate.pid + '/cwd');

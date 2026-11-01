@@ -1,7 +1,7 @@
 import { AppError, isUpstreamBackpressure } from "@/src/lib/errors";
 import { fetchWithRetry } from "@/src/lib/http";
 import { getMusicRequestCoordinator, MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
-import { inspectAudio, type AudioInspection } from "@/src/lib/music/audio-inspection";
+import { inspectAudio, inspectedPlayQuality, type AudioInspection } from "@/src/lib/music/audio-inspection";
 import { parseLyric } from "@/src/lib/lyrics";
 import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
 import type {
@@ -520,7 +520,13 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     const currentRank = this.getPlaySourceRank(current.raw, current.data);
     const candidateRank = this.getPlaySourceRank(candidate.raw, candidate.data);
-    return candidateRank > currentRank ? candidate : current;
+    if (candidateRank !== currentRank) return candidateRank > currentRank ? candidate : current;
+    return this.playQualityRank(candidate.data) > this.playQualityRank(current.data) ? candidate : current;
+  }
+
+  private playQualityRank(data: PlayData): number {
+    const level = toPlayQualityLevel(data.level) ?? inspectedPlayQuality({ bitrate: data.br });
+    return level ? PLAY_QUALITY_LEVELS.indexOf(level) : -1;
   }
 
   private shouldAttemptUnblock(raw: unknown, data: PlayData | null): boolean {
@@ -846,6 +852,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private async resolvePlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const level = this.resolvePlayLevel(options);
+    const requestedQualityRank = PLAY_QUALITY_LEVELS.indexOf(toPlayQualityLevel(level) ?? "standard");
     const unblockMode = this.resolvePlayUnblockMode(options);
     let trackMetadataPromise: Promise<NeteaseSong | undefined> | null = null;
     const ensureTrackMetadata = () => {
@@ -858,7 +865,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           ensureTrackMetadata(), inspectAudio(candidate.data.url ?? "", Math.min(this.config.timeoutMs, 3000))
         ]);
         const matches = this.matchesRecording(track, audio);
-        this.debugUnblockTrace(trackId, `${label}-identity`, { matches, durationMs: audio.durationMs });
+        // Match endpoints may echo the requested quality even for MP3. Only
+        // measured container/bit depth/bitrate may describe alternate audio.
+        candidate.data.level = inspectedPlayQuality(audio);
+        candidate.data.br = audio.bitrate;
+        this.debugUnblockTrace(trackId, `${label}-identity`, { matches, durationMs: audio.durationMs, actualLevel: candidate.data.level });
         return !matches;
       }
       if (candidate.resolvedVia === "primary" && candidate.data.id != null && String(candidate.data.id) !== trackId) return true;
@@ -887,7 +898,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     if (bestCandidate && (await shouldRejectCandidate(bestCandidate, "primary"))) {
       bestCandidate = null;
     }
-    const shouldTryUnblock = unblockMode !== "force_off" && (!bestCandidate || this.shouldAttemptUnblock(raw, data));
+    const needsQualityUpgrade = bestCandidate && requestedQualityRank > 0 && this.playQualityRank(bestCandidate.data) < requestedQualityRank;
+    const shouldTryUnblock = unblockMode !== "force_off" && (!bestCandidate || this.shouldAttemptUnblock(raw, data) || needsQualityUpgrade);
     this.debugUnblockTrace(trackId, "v1", {
       level,
       unblockMode,
@@ -935,15 +947,15 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         });
         const unblockCandidate: PlayCandidate = {
           raw: unblockRaw,
-          data: unblockData,
+          data: { ...unblockData },
           resolvedVia: "unblock"
         };
         if (
           !(await shouldRejectCandidate(unblockCandidate, source ? `match-${source}` : "match-default"))
         ) {
           bestCandidate = this.pickBetterPlayCandidate(bestCandidate, unblockCandidate);
-          if (!unblockRestricted) {
-            return this.toPlaySource(trackId, unblockRaw, unblockData, "unblock");
+          if (!unblockRestricted && bestCandidate === unblockCandidate && this.playQualityRank(unblockCandidate.data) >= requestedQualityRank) {
+            return this.toPlaySource(trackId, unblockCandidate.raw, unblockCandidate.data, "unblock");
           }
         }
       } catch (error) {

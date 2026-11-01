@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { inspectAudio } from "@/src/lib/music/audio-inspection";
+import { inspectAudio, inspectedPlayQuality } from "@/src/lib/music/audio-inspection";
 
 // A valid FLAC header with STREAMINFO duration and Vorbis identity tags.
 // No fixture download or real music is needed to exercise the actual parser.
-function flac(seconds: number, title = "小胡同", artist = "郑润泽") {
+function flac(seconds: number, title = "小胡同", artist = "郑润泽", bits = 16, rate = 44100) {
   const streamInfo = Buffer.alloc(34);
-  streamInfo.writeBigUInt64BE((44100n << 44n) | (1n << 41n) | (15n << 36n) | BigInt(seconds * 44100), 10);
+  streamInfo.writeBigUInt64BE((BigInt(rate) << 44n) | (1n << 41n) | (BigInt(bits - 1) << 36n) | BigInt(seconds * rate), 10);
   const comments = [`TITLE=${title}`, `ARTIST=${artist}`].map(value => {
     const text = Buffer.from(value);
     const length = Buffer.alloc(4);
@@ -23,6 +23,28 @@ function flac(seconds: number, title = "小胡同", artist = "郑润泽") {
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe("actual audio inspection", () => {
+  it("detects real Hi-Res FLAC even when the CDN labels it audio/mpeg", async () => {
+    const audio = flac(276, "小胡同", "郑润泽", 24, 48000);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(audio, {
+      status: 206, headers: { "content-type": "audio/mpeg", "content-range": `bytes 0-${audio.length - 1}/59653782` }
+    }));
+    const result = await inspectAudio("https://cdn.test/hires", 3000);
+    expect(result).toMatchObject({ lossless: true, bitsPerSample: 24, sampleRate: 48000, durationMs: 276000 });
+    expect(result.bitrate).toBeCloseTo(59653782 * 8 / 276);
+    expect(inspectedPlayQuality(result)).toBe("hires");
+  });
+
+  it.each([
+    [{ lossless: true, bitsPerSample: 16, sampleRate: 44100 }, "lossless"],
+    [{ lossless: true, bitsPerSample: 24, sampleRate: 48000 }, "hires"],
+    [{ lossless: true, bitsPerSample: 16, sampleRate: 96000 }, "hires"],
+    [{ lossless: false, bitrate: 320000 }, "exhigh"],
+    [{ lossless: false, bitrate: 192000 }, "higher"],
+    [{ lossless: false, bitrate: 128000 }, "standard"],
+    [{}, undefined]
+  ] as const)("reports measured quality without assuming the requested tier", (audio, expected) => {
+    expect(inspectedPlayQuality(audio)).toBe(expected);
+  });
   it("parses real duration and performer tags from a ranged response", async () => {
     const audio = flac(276);
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(audio, {

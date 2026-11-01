@@ -3510,15 +3510,15 @@ mark.hl {
 }
 
 /* ============ 会员卡 ============ */
-/* 卡面标题的宋体：Noto Serif CJK SC Bold，只留卡面会用到的字（约 8 KB，许可见同目录 OFL.txt）。
-   改卡面文案加了新字，需要重新子集化：
-   pyftsubset NotoSerifCJK-Bold.ttc --font-number=2 --text="…" --layout-features='*' --flavor=woff2
+/* 卡面中文用细宋体，和 Didone 数字同是粗细对比强的衬线。Noto Serif CJK SC Regular，只留卡面会用到的字
+   （约 8 KB，许可见同目录 OFL.txt）。卡面文案加了新字要重新子集化：
+   pyftsubset NotoSerifCJK-Regular.ttc --font-number=2 --text="…" --layout-features='*' --flavor=woff2
    没收进去的字会落到后面的系统宋体。 */
 @font-face {
   font-family: 'Member Serif SC';
-  font-weight: 700;
+  font-weight: 400;
   font-display: swap;
-  src: url('../assets/fonts/member-serif-sc-700.woff2') format('woff2');
+  src: url('../assets/fonts/member-serif-sc-400.woff2') format('woff2');
   unicode-range: U+4E45, U+4F1A, U+5206, U+5458, U+5531, U+5929, U+5C0F, U+6388, U+64AD, U+653E, U+65F6, U+6743, U+6C38, U+7247, U+884C, U+949F, U+9650;
 }
 .member {
@@ -3540,19 +3540,70 @@ mark.hl {
   background: radial-gradient(130% 90% at 100% 0%, #2c2c30 0%, #121214 55%, #0a0a0b 100%);
   box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
-/* 右下角露出半张唱片的纹路 */
-.member-grooves {
+/* 右侧一张唱片：扭索纹花环 + 中心标签（纹样在 MemberCard.tsx 里画），没开通是银线，开通后是铜线 */
+.member-art {
   position: absolute;
-  right: -34%;
-  bottom: -62%;
-  width: 92%;
-  aspect-ratio: 1;
-  border-radius: 50%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: -1;
-  background:
-    radial-gradient(circle, rgba(255, 255, 255, 0.16) 0 7%, transparent 7.5%),
-    repeating-radial-gradient(circle, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 4px);
-  opacity: 0.9;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 0.45;
+  /* 自己一层：金箔流光每帧重绘卡面时，这几千个点的纹样不跟着重新栅格化 */
+  will-change: transform;
+}
+.member-label {
+  position: absolute;
+  left: 85.3%;
+  top: 48.6%;
+  width: 18.2%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  z-index: -1;
+  color: rgba(255, 255, 255, 0.78);
+}
+.member-label svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lb-stop-in {
+  stop-color: #2e2e33;
+}
+.lb-stop-mid {
+  stop-color: #1b1b1e;
+}
+.lb-stop-out {
+  stop-color: #111113;
+}
+.lb-disc {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 0.6;
+}
+.lb-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.4;
+}
+.lb-text {
+  font-family: var(--didone), var(--serif-sc);
+  font-size: 5.6px;
+  font-weight: 600;
+  fill: currentColor;
+}
+.lb-small {
+  font-family: var(--didone);
+  font-size: 3.4px;
+  font-weight: 600;
+  letter-spacing: 0.9px;
+  fill: currentColor;
+}
+.lb-hole {
+  fill: #0a0a0b;
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-width: 0.4;
 }
 .member-top {
   display: flex;
@@ -3569,11 +3620,11 @@ mark.hl {
 }
 .member-brand small {
   display: block;
-  margin: 4px 0 0 3px;
+  margin: 5px 0 0 3px;
   font-family: var(--serif-sc);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.55em;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.5em;
   line-height: 1;
   text-shadow: none;
   opacity: 0.68;
@@ -3590,9 +3641,9 @@ mark.hl {
 .member-title {
   margin-top: auto;
   font-family: var(--serif-sc);
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
 }
 /* 内衬一圈细线，像证书和烫金卡的压边 */
 .member-card::after {
@@ -3623,10 +3674,30 @@ mark.hl {
   background-size: 220% 100%;
   box-shadow: 0 26px 50px -22px rgba(176, 124, 36, 0.65), inset 0 0 0 1px rgba(255, 255, 255, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
-.member-card.gold .member-grooves {
-  background:
-    radial-gradient(circle, rgba(90, 60, 10, 0.22) 0 7%, transparent 7.5%),
-    repeating-radial-gradient(circle, rgba(90, 60, 10, 0.08) 0 1px, transparent 1px 4px);
+.member-card.gold .member-art {
+  stroke: #5a3c0a;
+}
+.member-card.gold .member-label {
+  color: rgba(74, 50, 12, 0.88);
+}
+.member-card.gold .lb-stop-in {
+  stop-color: #f3dfae;
+}
+.member-card.gold .lb-stop-mid {
+  stop-color: #e2c182;
+}
+.member-card.gold .lb-stop-out {
+  stop-color: #cfa65e;
+}
+.member-card.gold .lb-disc {
+  stroke: rgba(90, 60, 10, 0.45);
+}
+.member-card.gold .lb-line {
+  stroke: rgba(90, 60, 10, 0.3);
+}
+.member-card.gold .lb-hole {
+  fill: #f6e7c2;
+  stroke: rgba(90, 60, 10, 0.5);
 }
 .member-card.gold .member-state {
   border-color: rgba(58, 42, 12, 0.35);
@@ -3669,8 +3740,8 @@ mark.hl {
   text-shadow: 0 -1px 0 rgba(90, 60, 10, 0.28), 0 1px 0 rgba(255, 248, 225, 0.75);
 }
 .member-kind {
-  font-size: 13px;
-  letter-spacing: 0.32em;
+  font-size: 14px;
+  letter-spacing: 0.42em;
   white-space: nowrap;
   opacity: 0.88;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { site } from '../config/site';
 import { authStore, displayName } from '../lib/account';
 import { redeemCode, refreshEntitlement } from '../lib/membership';
@@ -22,6 +22,84 @@ const remain = (ms: number): [number, string] => {
   if (ms >= 3_600_000) return [Math.ceil(ms / 3_600_000), '小时'];
   return [Math.max(1, Math.ceil(ms / 60_000)), '分钟'];
 };
+
+// ---------------- 卡面纹样 ----------------
+// 卡面按 340×214 的坐标画，右侧是一张唱片：中心一枚标签，外面绕着钞票式的扭索纹。
+const CX = 290;
+const CY = 104;
+
+/** 一圈正弦起伏的圆环：半径 R、起伏 a、一圈 m 个波 */
+const wave = (R: number, a: number, m: number) => {
+  const steps = m * 16;
+  let d = '';
+  for (let i = 0; i < steps; i++) {
+    const t = (i / steps) * Math.PI * 2;
+    const r = R + a * Math.sin(m * t);
+    d += `${i ? 'L' : 'M'}${(CX + r * Math.cos(t)).toFixed(1)} ${(CY + r * Math.sin(t)).toFixed(1)}`;
+  }
+  return `${d}Z`;
+};
+
+// 每条花环由同一圈波纹错开相位叠成；相位错开等于整圈转一个角度，所以每条只算一条路径，其余用 <use> 转出来
+const BANDS = [
+  { d: wave(112, 13, 18), m: 18, copies: 14, opacity: 0.13 },
+  { d: wave(72, 8, 12), m: 12, copies: 10, opacity: 0.15 },
+  { d: wave(45, 4, 9), m: 9, copies: 6, opacity: 0.12 },
+];
+
+function Guilloche() {
+  const id = useId();
+  return (
+    <svg className="member-art" viewBox="0 0 340 214" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        {BANDS.map((b, i) => (
+          <path key={i} id={`${id}b${i}`} d={b.d} />
+        ))}
+      </defs>
+      {BANDS.map((b, i) => (
+        <g key={i} opacity={b.opacity}>
+          {Array.from({ length: b.copies }, (_, k) => (
+            <use key={k} href={`#${id}b${i}`} transform={`rotate(${(-(k / b.copies) * 360) / b.m} ${CX} ${CY})`} />
+          ))}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+/** 唱片中心的标签：一圈环形小字、A 面和立体声字样、中心孔；开通后跟着唱片慢慢转 */
+function RecordLabel({ text }: { text: string }) {
+  const id = useId();
+  return (
+    <span className="member-label" aria-hidden="true">
+      <svg viewBox="-32 -32 64 64">
+        <defs>
+          <radialGradient id={`${id}disc`}>
+            <stop offset="0" className="lb-stop-in" />
+            <stop offset="0.72" className="lb-stop-mid" />
+            <stop offset="1" className="lb-stop-out" />
+          </radialGradient>
+          <path id={`${id}ring`} d="M -23 0 a 23 23 0 1 1 46 0 a 23 23 0 1 1 -46 0" />
+        </defs>
+        <circle r="31" className="lb-disc" fill={`url(#${id}disc)`} />
+        <circle r="28" className="lb-line" />
+        <circle r="12.5" className="lb-line" />
+        <text className="lb-text">
+          <textPath href={`#${id}ring`} textLength="144" lengthAdjust="spacing">
+            {text}
+          </textPath>
+        </text>
+        <text y="-4.6" textAnchor="middle" className="lb-small">
+          SIDE A
+        </text>
+        <text y="7.4" textAnchor="middle" className="lb-small">
+          STEREO
+        </text>
+        <circle r="1.7" className="lb-hole" />
+      </svg>
+    </span>
+  );
+}
 
 /**
  * 会员卡：播放授权的状态和会员邀请码入口。
@@ -98,6 +176,10 @@ export function MemberCard() {
   const term = timed ? (expiresMs - now) / (expiresMs - Date.parse(auth?.grantedAt ?? '')) : NaN;
   const soon = timed && expiresMs - now < 86_400_000;
 
+  // 标签上那圈小字
+  const ring = `${site.brand.big.toUpperCase()} · ${site.brand.small} · ${
+    permanent && number ? `MEMBER · Nº ${String(number).padStart(3, '0')}` : timed ? 'MEMBER · 限时' : 'MEMBER CARD'
+  } · `;
   const state = enabled ? 'MEMBER' : lapsed === 'expired' ? '已到期' : lapsed === 'revoked' ? '已撤销' : signedIn ? '未开通' : '游客';
   const label = permanent
     ? number ? `第 ${number} 位永久会员` : '永久会员'
@@ -107,7 +189,8 @@ export function MemberCard() {
   return (
     <div className="member">
       <div className={`member-card ${enabled ? 'gold' : ''} ${soon ? 'soon' : ''}`} role="img" aria-label={label}>
-        <span className="member-grooves" aria-hidden="true" />
+        <Guilloche />
+        <RecordLabel text={ring} />
         <div className="member-top">
           <span className="member-brand">
             {site.brand.big}

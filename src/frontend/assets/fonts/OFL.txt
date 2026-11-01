@@ -1,5 +1,5 @@
 © 2017-2024 Adobe (http://www.adobe.com/).
-Noto Serif CJK SC Bold, subset to the glyphs the member card uses (pyftsubset --font-number=2).
+Noto Serif CJK SC Regular, subset to the glyphs the member card uses (pyftsubset --font-number=2).
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

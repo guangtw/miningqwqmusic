@@ -736,6 +736,16 @@ html[data-motion='reduced'] *::after {
 .member-card.gold {
   animation: foil 7s ease-in-out infinite alternate;
 }
+/* 开通后唱片标签跟着慢慢转 */
+.member-card.gold .member-label svg {
+  animation: member-spin 36s linear infinite;
+  will-change: transform;
+}
+@keyframes member-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 /* 限时会员的余量槽从左往右走到当前位置 */
 .member-term i {
   animation: member-term-in 1.1s var(--ease-out) 0.2s both;
@@ -747,6 +757,7 @@ html[data-motion='reduced'] *::after {
 }
 @media (prefers-reduced-motion: reduce) {
   .member-card.gold,
+  .member-card.gold .member-label svg,
   .member-term i {
     animation: none;
   }

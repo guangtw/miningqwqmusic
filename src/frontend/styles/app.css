@@ -2263,12 +2263,12 @@ mark.hl {
   overflow: hidden;
   transform: translateY(100%);
   visibility: hidden;
-  transition: transform 0.6s var(--ease-out), visibility 0s linear 0.6s, --tint-h 1.2s var(--ease-soft), --tint-s 1.2s var(--ease-soft);
+  transition: transform 0.6s var(--ease-out), visibility 0s linear 0.6s;
 }
 .nowplaying.open {
   transform: none;
   visibility: visible;
-  transition: transform 0.6s var(--ease-out), --tint-h 1.2s var(--ease-soft), --tint-s 1.2s var(--ease-soft);
+  transition: transform 0.6s var(--ease-out);
 }
 .np-glow {
   position: absolute;
@@ -2435,9 +2435,56 @@ mark.hl {
     radial-gradient(circle closest-side, #2c2c2f 0 93%, #a19e96 94% 96.5%, #55534e 97.5% 100%);
   box-shadow: 0 18px 40px -16px rgba(0, 0, 0, 0.7), inset 0 0 0 2px rgba(255, 255, 255, 0.04);
 }
-.deck-vinyl {
+/* 唱盘上的一格：唱片 + 它自己的影子。换唱片时托起、甩走、落下都动这一层 */
+.deck-slot {
   position: absolute;
   inset: 2%;
+}
+.deck-slot.leaving {
+  pointer-events: none;
+}
+/* 谁离镜头近谁在上：下一首是新唱片从上方落下，上一首是旧唱片朝镜头拿走 */
+.deck-slot.leaving[data-dir='1'],
+.deck-slot.entering[data-dir='-1'] {
+  z-index: 1;
+}
+.deck-slot.leaving[data-dir='-1'],
+.deck-slot.entering[data-dir='1'] {
+  z-index: 2;
+}
+.deck-vinyl {
+  position: absolute;
+  inset: 0;
+}
+/* 唱片抬起时投在唱盘上的影子：预先画好的一块柔边圆，只动透明度和位移 */
+.deck-drop {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.5) 82%, rgba(0, 0, 0, 0.22) 92%, transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+/* 唱片落稳时从唱盘边漾开的一圈光 */
+.deck-ring {
+  position: absolute;
+  inset: 1%;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, #fff);
+  opacity: 0;
+  pointer-events: none;
+}
+/* 落针：针尖处一圈细纹 */
+.deck-touch {
+  position: absolute;
+  z-index: 6;
+  width: 9%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 10px -2px color-mix(in srgb, var(--accent) 60%, transparent);
+  opacity: 0;
+  pointer-events: none;
 }
 .deck-led {
   position: absolute;
@@ -2459,8 +2506,15 @@ mark.hl {
   bottom: 4.6%;
   color: var(--ink-3);
 }
-.tonearm,
-.tonearm-base {
+/* 唱臂整套压在所有唱片（包括正在换的那两张）上面 */
+.tonearm {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.tonearm > *,
+.tonearm svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2468,10 +2522,18 @@ mark.hl {
   overflow: visible;
   pointer-events: none;
 }
-.tonearm-base {
+/* 唱臂和影子各自是一层合成层，每帧只改 transform，绕支点（88%, 14%）转 */
+.arm-swing,
+.arm-shadow {
+  transform-origin: 88% 14%;
+  will-change: transform;
+}
+.arm-base-layer {
   filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.2));
 }
-/* 唱臂的影子：Turntable 每帧按抬起高度错开、调淡（不用 drop-shadow 滤镜，Safari 上每帧重绘滤镜很卡） */
+.arm-shadow {
+  opacity: 0.22;
+}
 .arm-shadow rect {
   fill: #000;
 }

@@ -2,7 +2,7 @@
    日间（paper）为默认，夜间（night）为深色。<html data-theme> 指定，未指定时跟随系统。
    强调色 = 当前播放封面的色相 + 饱和度，明度按主题固定，保证对比度。 */
 
-/* 注册成真正的数值属性，换歌时颜色才能平滑过渡而不是跳变 */
+/* 注册成数值属性。换歌时不在根元素上过渡它们（整页每帧重算样式会掉帧），见 App.tsx */
 @property --accent-h {
   syntax: '<number>';
   inherits: true;
@@ -74,15 +74,13 @@
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
   --ease-soft: cubic-bezier(0.4, 0, 0.2, 1);
   color-scheme: light;
-
-  transition: --accent-h 1.2s var(--ease-soft), --accent-s 1.2s var(--ease-soft);
 }
 
 /* 含 var() 的自定义属性在声明处就算好了值，子元素改 --tint-h 不会影响继承下来的 --tint，
    所以凡是局部设置封面色相的容器，都要在自己身上重新声明一次 */
 .detail-head,
 .feature,
-.nowplaying {
+.np-glow {
   --tint: hsl(var(--tint-h) var(--tint-s) var(--tint-l) / var(--tint-a));
 }
 

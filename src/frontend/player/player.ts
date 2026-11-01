@@ -319,6 +319,11 @@ export function toggle() {
   void audio.play().catch(() => set({ playing: false }));
 }
 
+/** 上一首 / 下一首换到了哪一格、往哪个方向。唱机和播放台按方向换唱片；点列表、一起听同步算往后 */
+let step = { index: -1, dir: 1 as 1 | -1, at: 0 };
+export const swapDirection = (index = get().index): 1 | -1 =>
+  step.index === index && performance.now() - step.at < 2000 ? step.dir : 1;
+
 export function next(auto = false) {
   const { queue, index, mode } = get();
   if (!queue.length) return;
@@ -329,7 +334,8 @@ export function next(auto = false) {
     return;
   }
   history.push(index);
-  void resolveAndPlay(nextIndex(index));
+  step = { index: nextIndex(index), dir: 1, at: performance.now() };
+  void resolveAndPlay(step.index);
   emit('playback');
 }
 
@@ -342,7 +348,8 @@ export function prev() {
     return;
   }
   const back = mode === 'shuffle' ? history.pop() : undefined;
-  void resolveAndPlay(back ?? (index - 1 + queue.length) % queue.length);
+  step = { index: back ?? (index - 1 + queue.length) % queue.length, dir: -1, at: performance.now() };
+  void resolveAndPlay(step.index);
   emit('playback');
 }
 

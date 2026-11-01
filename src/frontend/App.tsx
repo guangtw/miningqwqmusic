@@ -9,13 +9,14 @@ import { QueueDrawer } from './components/QueueDrawer';
 import { Sidebar } from './components/Sidebar';
 import { Empty } from './components/States';
 import { Toast } from './components/Toast';
+import { RECORD_LAND_MS } from './components/Turntable';
 import { TrackMenu } from './components/TrackMenu';
 import { restoreSession, watchSessionRecovery } from './lib/account';
 import { watchSocial } from './lib/friends';
 import { watchListen } from './lib/listen';
-import { applyGlobalTint, DEFAULT_TINT, tintOf } from './lib/palette';
+import { applyGlobalTint, DEFAULT_TINT, tintOf, type Tint } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
-import { getSettings, subscribeSettings } from './lib/settings';
+import { getSettings, motionEnabled, subscribeSettings } from './lib/settings';
 import { useStore } from './lib/store';
 import { currentTrack, next, playerStore, prev, seek, toggle } from './player/player';
 import { uiStore } from './player/ui';
@@ -130,13 +131,23 @@ export function App() {
     root.dataset.motion = settings.motion;
   }, [settings.theme, settings.motion]);
 
-  // 全站强调色跟着正在播放的封面走（CSS 里注册了 @property，会平滑过渡）
+  // 全站强调色跟着正在播放的封面走。不在根元素上做颜色过渡：根上的继承属性一动，
+  // 整页每一帧都要重算样式、重画所有用到强调色的地方，换歌时连台式机都掉帧；
+  // 色相按数字插值还会从橙一路经过黄、绿才到蓝。改成一下子换掉：
+  // 唱机开着时等新唱片落稳那一刻再换（和唱盘的光圈、指示灯同一拍），收着时立刻换
   useEffect(() => {
     let alive = true;
-    if (!cover) applyGlobalTint(DEFAULT_TINT);
-    else tintOf(cover).then((t) => alive && applyGlobalTint(t));
+    let timer = 0;
+    const landAt = performance.now() + (uiStore.get().nowPlaying && motionEnabled() ? RECORD_LAND_MS : 0);
+    const apply = (t: Tint) => {
+      if (!alive) return;
+      timer = window.setTimeout(() => applyGlobalTint(t), Math.max(0, landAt - performance.now()));
+    };
+    if (!cover) apply(DEFAULT_TINT);
+    else void tintOf(cover).then(apply);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
   }, [cover]);
 

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coverOf, hasId } from '../api';
 import { libraryStore, toggleFavorite } from '../lib/account';
 import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
@@ -7,17 +7,18 @@ import { formatTime } from '../lib/format';
 import { useInsight } from '../lib/insight';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
+import { motionEnabled } from '../lib/settings';
 import { tintVars, useTint } from '../lib/palette';
 import { href, navigate } from '../lib/router';
 import { useStore } from '../lib/store';
-import { audioTime, currentTrack, playerStore, seek, toggle } from '../player/player';
+import { audioTime, currentTrack, playerStore, seek, swapDirection, toggle } from '../player/player';
 import { openTrackMenu, uiStore } from '../player/ui';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
 import { PopMenu } from './PopMenu';
-import { Turntable } from './Turntable';
+import { RECORD_LAND_MS, Turntable } from './Turntable';
 
 /** 歌词提前一点点亮，唱到时刚好在中间 */
 const LEAD_MS = 220;
@@ -31,6 +32,30 @@ export function NowPlaying() {
   const lyric = useStore(playerStore, (s) => s.lyric);
   const position = useStore(playerStore, (s) => s.position);
   const tint = useTint(track ? coverOf(track) : undefined);
+  // 背景光斑换色：先暗下去，新唱片落稳时换成新颜色再亮起来。
+  // 不对色相做过渡——数字插值会从橙经过黄、绿才到蓝，而且整块面板每帧都要重算、重画两块全屏大的渐变
+  const [glow, setGlow] = useState(tint);
+  const [glowDim, setGlowDim] = useState(false);
+  const swapAt = useRef(0);
+  useEffect(() => {
+    swapAt.current = performance.now();
+  }, [track?.id]);
+  useEffect(() => {
+    if (tint?.h === glow?.h && tint?.s === glow?.s) return;
+    if (!open || !motionEnabled()) {
+      setGlow(tint);
+      return;
+    }
+    setGlowDim(true);
+    const t = setTimeout(
+      () => {
+        setGlow(tint);
+        setGlowDim(false);
+      },
+      Math.max(420, swapAt.current + RECORD_LAND_MS - performance.now()),
+    );
+    return () => clearTimeout(t);
+  }, [tint]); // eslint-disable-line react-hooks/exhaustive-deps
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
   // 歌词 / 唱片内页二选一；百科只在面板打开时去问
   const [view, setView] = useState<'lyrics' | 'notes'>('lyrics');
@@ -110,6 +135,22 @@ export function NowPlaying() {
     setArmed(armed === i ? null : i);
   };
   const cancelTween = useRef<() => void>(() => undefined);
+  // 歌词行单独成一个 memo 组件：面板每次随播放进度重渲染时不用把几十行歌词重新过一遍。
+  // 回调走 ref，引用保持不变
+  const handlers = useRef<LineHandlers>(null!);
+  handlers.current = {
+    tap: tapLine,
+    seekTo: (ms, play) => {
+      setArmed(null);
+      userScrolledAt.current = 0;
+      seek(ms);
+      if (play && !playing) toggle();
+    },
+  };
+  const lineHandlers = useMemo<LineHandlers>(
+    () => ({ tap: (i) => handlers.current.tap(i), seekTo: (ms, play) => handlers.current.seekTo(ms, play) }),
+    [],
+  );
 
   // 每帧算当前行，只有换行时才触发渲染
   useFrame(() => {
@@ -172,9 +213,8 @@ export function NowPlaying() {
       aria-label="正在播放"
       aria-hidden={!open}
       ref={panelRef}
-      style={tintVars(tint)}
     >
-      <div className="np-glow" aria-hidden="true">
+      <div className={`np-glow ${glowDim ? 'dim' : ''}`} style={tintVars(glow)} aria-hidden="true">
         <i />
         <i />
       </div>
@@ -204,18 +244,19 @@ export function NowPlaying() {
               if (narrow && !(e.target as Element).closest('.arm-head')) enterFocus();
             }}
           >
-            <Turntable vtName={open ? 'np-disc' : undefined} active={open && !(narrow && focus)} />
+            <Turntable vtName={open ? 'np-disc' : undefined} open={open} active={open && !(narrow && focus)} />
           </div>
 
           <div className="np-info-col">
-            <div className="np-titles">
+            {/* 换歌时歌名、歌手顺着换唱片的方向滑进来 */}
+            <div className="np-titles" style={{ '--swap-x': `${swapDirection() * 26}px` } as React.CSSProperties}>
               <div className="np-name-row">
                 <h2 className="np-name" key={track.id}>
                   {track.name}
                 </h2>
                 <HeartButton className="show-sm" liked={liked} onToggle={() => toggleFavorite(track)} />
               </div>
-              <p className="np-by">
+              <p className="np-by" key={track.id}>
                 {track.artists.map((a, i) => (
                   <Fragment key={`${a.id}-${i}`}>
                     {i > 0 && ' / '}
@@ -299,41 +340,7 @@ export function NowPlaying() {
                   cancelTween.current();
                 }}
               >
-                {lines.map((l, i) => (
-                  <div
-                    key={i}
-                    role="button"
-                    tabIndex={0}
-                    className={`lyric-line ${i === active ? 'active' : ''} ${i < active ? 'past' : ''} ${i === armed ? 'armed' : ''}`}
-                    style={{ '--d': active < 0 ? 3 : Math.min(5, Math.abs(i - active)) } as React.CSSProperties}
-                    onClick={() => tapLine(i)}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' && e.key !== ' ') return;
-                      e.preventDefault();
-                      if (unsynced) return;
-                      userScrolledAt.current = 0;
-                      seek(l.timeMs);
-                    }}
-                  >
-                    <span>{l.text}</span>
-                    {i === armed && (
-                      <button
-                        className="lyric-go"
-                        aria-label={`从这句开始放（${formatTime(l.timeMs)}）`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setArmed(null);
-                          userScrolledAt.current = 0;
-                          seek(l.timeMs);
-                          if (!playing) toggle();
-                        }}
-                      >
-                        <Icon name="play" size={14} />
-                      </button>
-                    )}
-                    {l.translation && <small>{l.translation}</small>}
-                  </div>
-                ))}
+                <LyricLines lines={lines} active={active} armed={armed} unsynced={unsynced} on={lineHandlers} />
               </div>
             ) : (
               <p className="lyrics-empty" onClick={() => peek && enterFocus()}>
@@ -346,3 +353,58 @@ export function NowPlaying() {
     </section>
   );
 }
+
+interface LineHandlers {
+  tap: (i: number) => void;
+  /** 跳到这一句；play：没在放的话顺手开始放 */
+  seekTo: (ms: number, play: boolean) => void;
+}
+
+const LyricLines = memo(function LyricLines({
+  lines,
+  active,
+  armed,
+  unsynced,
+  on,
+}: {
+  lines: ReturnType<typeof displayLines>;
+  active: number;
+  armed: number | null;
+  unsynced: boolean;
+  on: LineHandlers;
+}) {
+  return (
+    <>
+      {lines.map((l, i) => (
+        <div
+          key={i}
+          role="button"
+          tabIndex={0}
+          className={`lyric-line ${i === active ? 'active' : ''} ${i < active ? 'past' : ''} ${i === armed ? 'armed' : ''}`}
+          style={{ '--d': active < 0 ? 3 : Math.min(5, Math.abs(i - active)) } as React.CSSProperties}
+          onClick={() => on.tap(i)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            if (!unsynced) on.seekTo(l.timeMs, false);
+          }}
+        >
+          <span>{l.text}</span>
+          {i === armed && (
+            <button
+              className="lyric-go"
+              aria-label={`从这句开始放（${formatTime(l.timeMs)}）`}
+              onClick={(e) => {
+                e.stopPropagation();
+                on.seekTo(l.timeMs, true);
+              }}
+            >
+              <Icon name="play" size={14} />
+            </button>
+          )}
+          {l.translation && <small>{l.translation}</small>}
+        </div>
+      ))}
+    </>
+  );
+});

@@ -5,7 +5,7 @@ import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { snap, transition } from '../lib/motion';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
-import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume, toggle, toggleMute } from '../player/player';
+import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume, swapDirection, toggle, toggleMute } from '../player/player';
 import { uiStore } from '../player/ui';
 import { listenStore } from '../lib/listen';
 import { HeartButton } from './HeartButton';
@@ -36,8 +36,17 @@ export function toggleNowPlaying(open = !uiStore.get().nowPlaying, then?: () => 
 function closeNowPlaying(instant: boolean) {
   if (!uiStore.get().nowPlaying) return;
   const update = () => uiStore.set({ nowPlaying: false });
-  if (instant) snap(update);
-  else transition(update, 'np-close');
+  if (instant) return snap(update);
+  // 收起过渡里唱臂单独一层跟着面板往下沉，沉到播放台上沿就被裁掉，看起来是钻到了播放台后面
+  // （motion.css 的 np-arm）。裁剪线和下沉距离要按这一刻的布局算
+  const arm = document.querySelector('.nowplaying .tonearm')?.getBoundingClientRect();
+  const bar = document.querySelector('.player')?.getBoundingClientRect();
+  if (arm && bar) {
+    const root = document.documentElement.style;
+    root.setProperty('--arm-clip', `${Math.round(bar.top - arm.top)}px`);
+    root.setProperty('--np-h', `${window.innerHeight}px`);
+  }
+  transition(update, 'np-close');
 }
 
 // 换页等别的途径关掉了面板：那条历史记录不再代表它。
@@ -68,8 +77,8 @@ export function PlayerBar() {
       <SeekBar compact />
       <div className="np">
         {track ? (
-          // key 变化时整块重新挂载，触发换歌的滑入动画
-          <div className="np-swap" key={track.id}>
+          // key 变化时整块重新挂载，触发换歌的滑入动画：下一首从右边进来，上一首从左边
+          <div className="np-swap" key={track.id} data-dir={swapDirection()}>
             <button onClick={() => toggleNowPlaying()} aria-label="打开正在播放" style={{ flex: 'none' }}>
               <Vinyl
                 cover={coverOf(track)}

@@ -27,7 +27,7 @@ export async function GET(request: Request, context: Context) {
       requestedUnblockMode === "force_off"
         ? "force_off"
         : canUseUnblock
-          ? (requestedUnblockMode ?? "force_on")
+          ? (requestedUnblockMode ?? "auto")
           : "force_off";
     let effectiveLevel: PlayQualityLevel | undefined = requestedLevel;
     if (requestedLevel) {

@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNeteaseLikeAdapterFromEnv, NeteaseLikeAdapter } from "@/src/lib/music/providers/netease-like";
 import { MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
 
+const inspection = vi.hoisted(() => vi.fn());
+vi.mock("@/src/lib/music/audio-inspection", () => ({ inspectAudio: inspection }));
+
 function createAdapter(overrides?: Partial<ConstructorParameters<typeof NeteaseLikeAdapter>[0]>) {
   return new NeteaseLikeAdapter({
     baseUrl: "https://music.internal.test",
@@ -88,6 +91,8 @@ describe("NeteaseLikeAdapter mapping", () => {
   afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.restoreAllMocks();
+    inspection.mockReset();
+    inspection.mockResolvedValue({ ok: true, durationMs: 240000, title: "Test Song", artists: ["Singer A"] });
   });
 
   it("shares the complete same-track resolution, including duration and audio probes", async () => {
@@ -121,10 +126,10 @@ describe("NeteaseLikeAdapter mapping", () => {
       adapter.getPlaySource("1", { unblockMode: "force_on" })
     ]);
     expect(guest.url).toContain("false.mp3");
-    expect(authorized.url).toContain("true.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(authorized.url).toContain("false.mp3");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     await adapter.getPlaySource("1", { unblockMode: "force_on" });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("recovers from a hanging primary provider without disabling search or another provider", async () => {
@@ -135,7 +140,7 @@ describe("NeteaseLikeAdapter mapping", () => {
       if (init?.method === "HEAD") return headResponse();
       if (url.pathname === "/song/detail") return trackDetailResponse();
       if (url.pathname === "/search") return jsonResponse({ result: { songCount: 0, songs: [] } });
-      if (url.pathname === "/song/url/v1" && url.searchParams.get("unblock") === "true") {
+      if (url.pathname === "/song/url/match" && url.searchParams.get("source") === "unm") {
         return new Promise((_resolve, reject) => init!.signal!.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")), { once: true }));
       }
       if (url.pathname === "/song/url/v1") return jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] });
@@ -147,8 +152,8 @@ describe("NeteaseLikeAdapter mapping", () => {
     await expect(play).resolves.toMatchObject({ url: "https://cdn.test/healthy.mp3", preview: false });
     await expect(adapter.searchTracks({ keyword: "test", page: 1, pageSize: 10 })).resolves.toMatchObject({ total: 0 });
     const matches = fetchMock.mock.calls.filter(([url]) => new URL(String(url)).pathname === "/song/url/match");
-    expect(matches).toHaveLength(1);
-    expect(new URL(String(matches[0][0])).searchParams.get("source")).toBe("msls");
+    expect(matches).toHaveLength(2);
+    expect(matches.map(([url]) => new URL(String(url)).searchParams.get("source"))).toEqual(["unm", "msls"]);
   });
 
   it("maps search result to Track list", async () => {
@@ -362,424 +367,99 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(source.ttlSeconds).toBe(1200);
   });
 
-  it("tries only configured providers in order, avoiding an uncontrolled default sweep", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo", "kugou", "migu"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }]
-      }),
-      jsonResponse({ code: 500, data: [] }, 500),
-      jsonResponse({ code: 500, data: [] }, 500),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/full-kuwo.mp3", time: 250000 }]
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-kuwo.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-
-    const forcedPrimaryUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    const unblockFirstUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    const unblockSecondUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
-    expect(forcedPrimaryUrl.pathname).toContain("/song/url/v1");
-    expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(forcedPrimaryUrl.searchParams.get("source")).toBe("kuwo");
-    expect(unblockFirstUrl.searchParams.get("source")).toBe("kuwo");
-    expect(unblockSecondUrl.searchParams.get("source")).toBe("kugou");
-  });
-
-  it("attempts unblock when default source url is empty", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo", "kugou"]
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ id: 108485, url: null, code: 200 }]
-      }),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/unblock-kuwo.mp3", time: 198000 }]
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/unblock-kuwo.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/v1");
-    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).searchParams.get("unblock")).toBe("true");
-  });
-
-  it("attempts unblock when default source has restriction signal without preview time", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["migu"]
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        code: 200,
-        data: [{ url: "https://cdn.test/restricted.mp3", code: 404, time: 220000 }]
-      }),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/unblock-migu.mp3", time: 220000 }]
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/unblock-migu.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-  });
-
-  it("keeps attempting unblock in force_on mode when primary source is still preview", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-force-on.mp3", time: 30000 }]
-      }),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/full-force-on.mp3", time: 220000 }]
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485", { unblockMode: "force_on" });
-    expect(result.url).toBe("https://cdn.test/full-force-on.mp3");
-    expect(result.preview).toBe(false);
-    expect(result.resolvedVia).toBe("unblock");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-
-    const primaryUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
-    expect(primaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/match");
-  });
-
-  it("retries /song/url/v1 with unblock=true before falling back to match", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["unm"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
-      }),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/full-v1-forced.mp3", time: 220000 }]
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-v1-forced.mp3");
-    expect(result.preview).toBe(false);
-    expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-
-    const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
-    const secondUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    expect(firstUrl.pathname).toContain("/song/url/v1");
-    expect(firstUrl.searchParams.get("unblock")).toBeNull();
-    expect(secondUrl.pathname).toContain("/song/url/v1");
-    expect(secondUrl.searchParams.get("unblock")).toBe("true");
-  });
-
-  it("falls back to match only after forced /song/url/v1 is still restricted", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["unm"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
-      }),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-forced.mp3", time: 30000 }]
-      }),
-      jsonResponse({
-        code: 200,
-        data: "https://cdn.test/full-from-unm.flac"
-      })
-    ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-from-unm.flac");
-    expect(result.preview).toBe(false);
-    expect(result.resolvedVia).toBe("unblock");
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-
-    const forcedPrimaryUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    const matchUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    expect(forcedPrimaryUrl.pathname).toContain("/song/url/v1");
-    expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(matchUrl.pathname).toContain("/song/url/match");
-  });
-
-  it("rejects misreported full candidates when HEAD size still matches a 30 second preview", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["unm"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch(
-      [
-        jsonResponse({
-          data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
-        }),
-        jsonResponse({
-          code: 200,
-          data: "https://cdn.test/fake-full-from-v1.flac"
-        }),
-        jsonResponse({
-          code: 200,
-          data: "https://cdn.test/real-full-from-unm.flac"
-        })
-      ],
-      {
-        headResponses: [headResponse(481115), headResponse(9_003_055)]
-      }
-    );
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/real-full-from-unm.flac");
-    expect(result.resolvedVia).toBe("unblock");
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-
-    const forcedPrimaryUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    const matchUrl = new URL(String(fetchMock.mock.calls[4]?.[0]));
-    expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(matchUrl.pathname).toContain("/song/url/match");
-    expect(matchUrl.searchParams.get("source")).toBe("unm");
-  });
-
-  it("falls back to the original preview source when every unrestricted candidate probes as a short clip", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["unm"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch(
-      [
-        jsonResponse({
-          data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
-        }),
-        jsonResponse({
-          code: 200,
-          data: "https://cdn.test/fake-full-from-v1.flac"
-        }),
-        jsonResponse({
-          code: 200,
-          data: "https://cdn.test/fake-full-from-unm.flac"
-        }),
-        jsonResponse({ data: [] })
-      ],
-      {
-        headResponses: [headResponse(481115), headResponse(481115)]
-      }
-    );
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/preview-auto.mp3");
-    expect(result.preview).toBe(true);
-    expect(result.restrictionReason).toBe("vip_preview");
-    expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-  });
-
-  it("keeps unrestricted candidates when the probe cannot confirm length", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["unm"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch(
-      [
-        jsonResponse({
-          data: [{ url: "https://cdn.test/preview-auto.mp3", time: 30000 }]
-        }),
-        jsonResponse({
-          code: 200,
-          data: "https://cdn.test/full-without-length.flac"
-        })
-      ],
-      {
-        headResponses: [headResponseWithoutLength()]
-      }
-    );
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-without-length.flac");
-    expect(result.preview).toBe(false);
-    expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+  it.each(["auto", "force_on", "force_off"] as const)("tries the original recording first in %s mode", async unblockMode => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ id: 108485, url: "https://cdn.test/original.mp3", time: 240000 }] })]);
+    await expect(adapter.getPlaySource("108485", { unblockMode })).resolves.toMatchObject({ url: "https://cdn.test/original.mp3", resolvedVia: "primary" });
+    expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("unblock")).toBe("false");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/song/url/match"))).toBe(false);
+    expect(inspection).not.toHaveBeenCalled();
   });
 
   it.each([
-    {
-      name: "freeTrialInfo",
-      primary: {
-        data: [{ url: "https://cdn.test/restricted-free-trial-info.mp3", time: 220000, freeTrialInfo: { start: 0 } }]
-      }
-    },
-    {
-      name: "freeTrialPrivilege",
-      primary: {
-        data: [
-          {
-            url: "https://cdn.test/restricted-free-trial-privilege.mp3",
-            time: 220000,
-            freeTrialPrivilege: { cannotListenReason: 1 }
-          }
-        ]
-      }
-    },
-    {
-      name: "freeTimeTrialPrivilege",
-      primary: {
-        data: [
-          {
-            url: "https://cdn.test/restricted-free-time-trial.mp3",
-            time: 220000,
-            freeTimeTrialPrivilege: { remainTime: 30, type: 1 }
-          }
-        ]
-      }
-    },
-    {
-      name: "restriction message",
-      primary: {
-        data: [{ url: "https://cdn.test/restricted-message.mp3", time: 220000, message: "仅可试听片段" }]
-      }
-    }
-  ])("attempts unblock when primary source contains $name restriction signal", async ({ primary }) => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo"]
-    });
+    { name: "30 second preview", primary: { data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] } },
+    { name: "45 second preview", primary: { data: [{ url: "https://cdn.test/preview.mp3", time: 45000 }] } },
+    { name: "empty URL", primary: { data: [{ url: null }] } },
+    { name: "trial metadata", primary: { data: [{ url: "https://cdn.test/preview.mp3", time: 240000, freeTrialInfo: { start: 0, end: 30 } }] } },
+    { name: "trial privilege", primary: { data: [{ url: "https://cdn.test/preview.mp3", freeTrialPrivilege: { cannotListenReason: 1 } }] } },
+    { name: "time trial privilege", primary: { data: [{ url: "https://cdn.test/preview.mp3", freeTimeTrialPrivilege: { remainTime: 30, type: 1 } }] } },
+    { name: "restriction message", primary: { data: [{ url: "https://cdn.test/preview.mp3", message: "仅可试听片段" }] } }
+  ])("still resolves a full verified source after $name", async ({ primary }) => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["msls"] });
+    const fetchMock = mockPlaySourceFetch([jsonResponse(primary), jsonResponse({ code: 200, data: "https://cdn.test/full.mp3" })]);
+    await expect(adapter.getPlaySource("108485", { unblockMode: "force_on" })).resolves.toMatchObject({ url: "https://cdn.test/full.mp3", preview: false, resolvedVia: "unblock" });
+    const requests = fetchMock.mock.calls.map(([url]) => new URL(String(url))).filter(url => url.pathname === "/song/url/match");
+    expect(requests).toHaveLength(1);
+    expect(requests[0].searchParams.get("source")).toBe("msls");
+  });
+
+  it.each([
+    { name: "another singer", audio: { durationMs: 240000, title: "Test Song", artists: ["Singer B"] } },
+    { name: "a cover", audio: { durationMs: 240000, title: "Test Song (cover Singer A)", artists: ["Singer B"] } },
+    { name: "accompaniment", audio: { durationMs: 240000, title: "Test Song（伴奏）", artists: ["Singer A"] } },
+    { name: "live recording", audio: { durationMs: 240000, title: "Test Song (Live)", artists: ["Singer A"] } },
+    { name: "a different length", audio: { durationMs: 180000, title: "Test Song", artists: ["Singer A"] } },
+    { name: "a disguised preview", audio: { durationMs: 30000, title: "Test Song", artists: ["Singer A"] } },
+    { name: "unknown duration", audio: { title: "Test Song", artists: ["Singer A"] } },
+    { name: "unidentified cross-platform audio", audio: { durationMs: 240000 } },
+    { name: "mismatched native file", audio: { nativeNetease: true, durationMs: 180000 } }
+  ])("skips $name and continues to the next provider", async ({ audio }) => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
     const fetchMock = mockPlaySourceFetch([
-      jsonResponse(primary),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/full-after-restriction.mp3", time: 230000 }]
-      })
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] }),
+      // A requested ID and reported full time must not override the actual file.
+      jsonResponse({ data: [{ id: 108485, url: "https://cdn.test/wrong.mp3", time: 240000 }] }),
+      jsonResponse({ data: "https://cdn.test/correct.mp3" })
     ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-after-restriction.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/song/url/v1");
-    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).searchParams.get("unblock")).toBe("true");
+    inspection.mockResolvedValueOnce({ ok: true, ...audio });
+    await expect(adapter.getPlaySource("108485")).resolves.toMatchObject({ url: "https://cdn.test/correct.mp3", preview: false });
+    expect(inspection.mock.calls.map(([url]) => url)).toEqual(["https://cdn.test/wrong.mp3", "https://cdn.test/correct.mp3"]);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/song/url/match"))).toHaveLength(2);
   });
 
-  it("falls back to default preview source when all unblock attempts fail", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo", "kugou"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
-      })
-    );
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/preview-default.mp3");
-    expect(result.preview).toBe(true);
-    expect(result.restrictionReason).toBe("vip_preview");
-    expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+  it("preserves untagged original NetEase full audio from an ID-based unblock provider", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["msls"] });
+    mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30040, freeTrialInfo: { start: 0, end: 30 } }] }),
+      jsonResponse({ data: "https://m701.music.126.net/full.mp3" })
+    ], { trackDurationMs: 225013 });
+    inspection.mockResolvedValueOnce({ ok: true, nativeNetease: true, durationMs: 225044.9 });
+    await expect(adapter.getPlaySource("108485")).resolves.toMatchObject({ url: "https://m701.music.126.net/full.mp3", preview: false, resolvedVia: "unblock" });
   });
 
-  it("prefers the least restricted candidate when all unblock attempts remain limited", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo", "kugou"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
-      })
-    );
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-unblock.mp3", time: 45000 }]
-      })
-    );
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({
-        data: [{ url: "https://cdn.test/restricted-no-preview.mp3", time: 220000, freeTrialPrivilege: { playReason: "vip" } }]
-      })
-    );
-    fetchMock.mockResolvedValueOnce(jsonResponse({ code: 500, data: [] }, 500));
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/restricted-no-preview.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-  });
-
-  it("parses song url match when data is a url string", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
-      }),
-      jsonResponse({
-        code: 200,
-        data: "https://cdn.test/full-from-string.flac"
-      })
+  it("keeps the original preview if every alternate is a different recording", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] }),
+      jsonResponse({ data: "https://cdn.test/other.mp3" })
     ]);
-
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-from-string.flac");
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    inspection.mockResolvedValueOnce({ ok: true, durationMs: 240000, title: "Test Song", artists: ["Other Singer"] });
+    await expect(adapter.getPlaySource("108485")).resolves.toMatchObject({ url: "https://cdn.test/preview.mp3", preview: true, resolvedVia: "primary" });
   });
 
-  it("falls back to the next configured source after an unavailable source", async () => {
-    const adapter = createAdapter({
-      pathPlayUrlUnblock: "/song/url/match",
-      unblockSources: ["kuwo", "kugou"],
-      vipPreviewMaxMs: 60000
-    });
-    const fetchMock = mockPlaySourceFetch([
-      jsonResponse({
-        data: [{ url: "https://cdn.test/preview-default.mp3", time: 30000 }]
-      }),
-      jsonResponse({ code: 500, data: [] }, 500),
-      jsonResponse({ code: 500, data: [] }, 500),
-      jsonResponse({
-        data: [{ url: "https://cdn.test/full-from-kugou.mp3", time: 240000 }]
-      })
+  it("does not call alternate providers for guests even when the original is a preview", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] })]);
+    await expect(adapter.getPlaySource("108485", { unblockMode: "force_off" })).resolves.toMatchObject({ preview: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(inspection).not.toHaveBeenCalled();
+  });
+
+  it("continues to another provider after an inspection timeout", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm", "msls"] });
+    mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] }),
+      jsonResponse({ data: "https://cdn.test/timeout.mp3" }),
+      jsonResponse({ data: "https://cdn.test/healthy.mp3" })
     ]);
+    inspection.mockResolvedValueOnce({ ok: false });
+    await expect(adapter.getPlaySource("108485")).resolves.toMatchObject({ url: "https://cdn.test/healthy.mp3" });
+  });
 
-    const result = await adapter.getPlaySource("108485");
-    expect(result.url).toBe("https://cdn.test/full-from-kugou.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(6);
-
-    const forcedPrimaryUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    const kuwoUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    const kugouUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
-    expect(forcedPrimaryUrl.pathname).toContain("/song/url/v1");
-    expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(kuwoUrl.searchParams.get("source")).toBe("kuwo");
-    expect(kugouUrl.searchParams.get("source")).toBe("kugou");
+  it("keeps native full audio when HEAD length is unknown", async () => {
+    const adapter = createAdapter();
+    mockPlaySourceFetch([jsonResponse({ data: [{ url: "https://cdn.test/original.mp3", time: 240000 }] })], { headResponses: [headResponseWithoutLength()] });
+    await expect(adapter.getPlaySource("108485")).resolves.toMatchObject({ url: "https://cdn.test/original.mp3", preview: false });
   });
 
   it("maps banner targetType to executable discover item type with external link fallback", async () => {

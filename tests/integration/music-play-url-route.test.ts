@@ -198,7 +198,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     });
   });
 
-  it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {
+  it("defaults to auto when entitlement is enabled and request omits unblock mode", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(
@@ -252,7 +252,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1004", {
       level: undefined,
-      unblockMode: "force_on"
+      unblockMode: "auto"
     });
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");

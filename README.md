@@ -75,7 +75,7 @@ MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
 - 你的上游如果暂时无 API Key，可保持 `MUSIC_SOURCE_API_KEY=` 为空
 - `MUSIC_SOURCE_PLAY_LEVEL` 用于透传到 `/song/url/v1` 的 `level` 参数（例如 `standard`、`exhigh`）
 - `MUSIC_SOURCE_VIP_PREVIEW_MAX_MS`：判定试听直链阈值（默认 `60000`）
-- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
+- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；始终先用 `/song/url/v1?unblock=false` 获取原曲，会员遇到试听、缺歌或原地址校验失败时才按配置顺序解灰。备用文件需要实际音频时长校验；跨平台音源还需音频标签中的歌名、歌手吻合，保留版本后缀，不能仅凭同名替换。
 - `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `unm,msls,qijieya`）；这是当前用于止血的优先级，优先避开会回落到 30 秒试听链的旧 source 组合
 - `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
 - `ACCOUNT_SERVICE_BASE_URL`：可选，独立登录服务地址。配置后站内 `/api/account/*` 会代理到该服务，前端显示“登录同步”入口；未配置则保持纯游客模式。

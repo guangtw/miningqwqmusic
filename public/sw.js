@@ -1,4 +1,4 @@
-const CACHE_NAME = "qwq-music-shell-v6";
+const CACHE_NAME = "qwq-music-shell-v7";
 const OFFLINE_URL = "/offline";
 
 const ASSET_CACHE = [

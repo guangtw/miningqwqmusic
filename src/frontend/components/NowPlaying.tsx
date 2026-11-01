@@ -18,6 +18,7 @@ import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
 import { PopMenu } from './PopMenu';
+import { QualityMenu } from './QualityMenu';
 import { Turntable } from './Turntable';
 
 /** 歌词提前一点点亮，唱到时刚好在中间 */
@@ -240,11 +241,15 @@ export function NowPlaying() {
           <div
             className="np-deck-col"
             onClick={(e) => {
-              // 手机上点唱机进全屏歌词；拖唱臂不算
-              if (narrow && !(e.target as Element).closest('.arm-head')) enterFocus();
+              // 手机上点唱机进全屏歌词；拖唱臂、点音质铭牌和它弹出的面板（挂在 body 上，React 事件照样冒泡上来）不算
+              if (narrow && !(e.target as Element).closest('.arm-head, .quality, .q-panel')) enterFocus();
             }}
           >
-            <Turntable vtName={open ? 'np-disc' : undefined} open={open} active={open && !(narrow && focus)} />
+            <div className="np-deck-stack">
+              <Turntable vtName={open ? 'np-disc' : undefined} open={open} active={open && !(narrow && focus)} />
+              {/* 手机上音质不放播放台（会把播放队列挤出去），挪到唱机正下方 */}
+              {narrow && <QualityMenu plate className="np-quality" />}
+            </div>
           </div>
 
           <div className="np-info-col">

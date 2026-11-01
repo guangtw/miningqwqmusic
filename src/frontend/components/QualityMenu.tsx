@@ -17,15 +17,16 @@ const PANEL_W = 368;
  * 播放台上的音质标签 + 弹出的音质面板。
  * 标签显示后端实际给的音质，高音质直接用对应标识。
  * 面板挂到 body 上：播放台本身是毛玻璃，嵌在里面的玻璃只能模糊播放台自己，透不到后面的页面。
+ * plate：手机上正在播放页里唱机下面的那枚「铭牌」样式（左边小字「音质」，右边标识）
  */
-export function QualityMenu() {
+export function QualityMenu({ plate = false, className = '' }: { plate?: boolean; className?: string }) {
   const [open, setOpen] = useState(false);
   const { mounted, state } = usePresence(open, 200);
   const chosen = useSyncExternalStore(subscribeSettings, () => getSettings().quality, () => getSettings().quality);
   const level = useStore(playerStore, (s) => s.level);
   const track = useStore(playerStore, (s) => currentTrack(s));
   const [avail, setAvail] = useState<TrackQualityAvailability | null>(null);
-  const [pos, setPos] = useState<{ left: number; bottom: number; width: number; origin: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; origin: number; maxHeight?: number } | null>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -42,18 +43,30 @@ export function QualityMenu() {
     };
   }, [open, track, avail]);
 
-  // 面板对准标签的正上方，贴着窗口边时往里收
+  // 面板对准标签的正上方，贴着窗口边时往里收。上方放不下（比如唱机下面那枚铭牌）就往下弹；
+  // 上下都放不下（手机上铭牌在屏幕中间、面板又高）就在屏幕里尽量贴着标签往下放，再不够就面板里面滚动
   const place = useCallback(() => {
     const r = chipRef.current?.getBoundingClientRect();
     if (!r) return;
-    const width = Math.min(PANEL_W, window.innerWidth - 24);
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(PANEL_W, vw - 24);
     const cx = r.left + r.width / 2;
-    const left = Math.max(12, Math.min(window.innerWidth - width - 12, cx - width / 2));
-    setPos({ left, bottom: window.innerHeight - r.top + 14, width, origin: cx - left });
+    const left = Math.max(12, Math.min(vw - width - 12, cx - width / 2));
+    const origin = cx - left;
+    const height = panelRef.current?.scrollHeight ?? 420;
+    if (height <= r.top - 26) return setPos({ left, bottom: vh - r.top + 14, width, origin });
+    const maxHeight = vh - 24;
+    const top = Math.max(12, Math.min(r.bottom + 12, vh - Math.min(height, maxHeight) - 12));
+    setPos({ left, top, width, origin, maxHeight });
   }, []);
   useLayoutEffect(() => {
     if (open) place();
   }, [open, place]);
+  // 面板挂上之后才量得到真实高度，再对一次位
+  useLayoutEffect(() => {
+    if (open && mounted) place();
+  }, [open, mounted, place]);
 
   // 点外面、按 Esc、换页时收起；窗口变化时重新对位
   useEffect(() => {
@@ -79,7 +92,7 @@ export function QualityMenu() {
   const downgraded = !!level && level !== chosen;
 
   return (
-    <div className="quality">
+    <div className={`quality ${plate ? 'q-plate' : ''} ${className}`}>
       <button
         ref={chipRef}
         className={`q-chip ${shown.mark ? `has-mark kind-${shown.mark.kind}` : ''} ${open ? 'on' : ''}`}
@@ -89,6 +102,7 @@ export function QualityMenu() {
         aria-label={`音质：${shown.label}`}
         title="音质"
       >
+        {plate && <span className="q-plate-label mono">音质</span>}
         <span className="swap-icon" key={shown.key}>
           <QualityMark option={shown} withLabel={shown.mark?.kind === 'sq' || shown.mark?.kind === 'spatial'} />
         </span>
@@ -99,11 +113,11 @@ export function QualityMenu() {
         createPortal(
           <div
             ref={panelRef}
-            className="q-panel"
+            className={`q-panel ${pos.top != null ? 'q-below' : ''} ${pos.maxHeight ? 'q-fit' : ''}`}
             role="dialog"
             aria-label="音质"
             data-state={state}
-            style={{ left: pos.left, bottom: pos.bottom, width: pos.width, '--origin': `${pos.origin}px` } as React.CSSProperties}
+            style={{ left: pos.left, top: pos.top, bottom: pos.bottom, width: pos.width, maxHeight: pos.maxHeight, '--origin': `${pos.origin}px` } as React.CSSProperties}
           >
             <header className="q-panel-head">
               <h3>音质</h3>

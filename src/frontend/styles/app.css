@@ -1804,6 +1804,51 @@ mark.hl {
 .quality {
   position: relative;
 }
+/* 唱机和它下面的音质铭牌：桌面上铭牌不出现，这层不参与排版 */
+.np-deck-stack {
+  display: contents;
+}
+/* 手机上正在播放页里唱机下面的音质铭牌：左边小字「音质」，竖线隔开，右边是当前音质的标识。
+   描边、底色和下面那排「加到歌单 / 唱片内页」一个路数 */
+.q-plate .q-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 32px;
+  min-width: 0;
+  padding: 0 4px 0 13px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 60%, transparent);
+  transition: transform 0.25s var(--ease-spring), border-color 0.2s, background 0.2s;
+}
+.q-plate .q-chip.on {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+/* 上下都放不下时面板贴在屏幕里，内容在面板里面滚动 */
+.q-panel.q-fit {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.q-plate .q-chip .qm-plain,
+.q-plate .q-chip:hover .qm-plain,
+.q-plate .q-chip.on .qm-plain {
+  height: auto;
+  padding: 0 9px 0 0;
+  box-shadow: none;
+  color: var(--ink);
+}
+.q-plate .q-chip .qm {
+  margin-right: 2px;
+}
+.q-plate-label {
+  padding-right: 9px;
+  border-right: 1px solid var(--line);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
 /* 播放台上的小标签：普通音质是描边文字，高音质直接是对应的标识 */
 .q-chip {
   display: inline-grid;
@@ -4673,8 +4718,27 @@ html {
   .player.np-open .t-prev {
     display: inline-grid;
   }
+  /* 音质不放展开的播放台（标识宽一点就会把播放队列挤出去），挪到唱机正下方的铭牌上 */
   .player.np-open .quality {
+    display: none;
+  }
+  .np-deck-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .quality.np-quality {
     display: block;
+  }
+  /* 唱机按「这一栏的高度减去下面的铭牌」定尺寸：矮屏（iPhone SE 一类）上唱机小一点，铭牌不会压到歌名 */
+  .np-deck-col {
+    container-type: size;
+  }
+  @supports (height: 1cqh) {
+    .np-deck-col .deck {
+      width: min(80vw, 40svh, calc(100cqh - 46px));
+    }
   }
   .player.np-open .t-prev,
   .player.np-open .nudge-right {

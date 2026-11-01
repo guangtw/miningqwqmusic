@@ -166,7 +166,7 @@ const expiringSoon = () => !!loaded && Date.now() > loaded.expiresAt - api.playU
 async function resolveAndPlay(
   index: number,
   opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean } = {},
-) {
+): Promise<void> {
   const { queue } = get();
   const track = queue[index];
   if (!track) return;

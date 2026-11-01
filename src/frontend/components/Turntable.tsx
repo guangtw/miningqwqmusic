@@ -161,17 +161,8 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
   // 臂架上的唱臂不压在唱片上，飞来的唱片不会在过渡结束时从唱臂上面「跳」到下面
   const parkUntil = useRef(0);
   const wasOpen = useRef(open);
-  // 停臂这段时间唱片也不转：一来像真唱机（放稳了、落针了才转起来），
-  // 二来打开过渡里唱片是「活」的一层，一直在转的话 iPhone 上每帧都得重画它
-  const [settling, setSettling] = useState(false);
-  useEffect(() => {
-    if (!settling) return;
-    const t = setTimeout(() => setSettling(false), PARK_MS);
-    return () => clearTimeout(t);
-  }, [settling]);
   useLayoutEffect(() => {
     if (open && !wasOpen.current && motionEnabled()) {
-      setSettling(true);
       const a = arm.current;
       a.angle.snap(REST);
       a.lift.snap(0);
@@ -279,7 +270,7 @@ export function Turntable({ vtName, active = true, open = active }: { vtName?: s
             <Vinyl
               cover={r.cover}
               // 面板收起时唱盘也不转，省下一层一直在合成的动画
-              spinning={!r.leaving && !r.entering && playing && drag == null && active && !settling}
+              spinning={!r.leaving && !r.entering && playing && drag == null && active}
               className="deck-vinyl"
               labelPx={400}
               ref={(el) => {

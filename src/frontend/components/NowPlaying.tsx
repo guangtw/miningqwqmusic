@@ -18,7 +18,7 @@ import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
 import { PopMenu } from './PopMenu';
-import { RECORD_LAND_MS, Turntable } from './Turntable';
+import { Turntable } from './Turntable';
 
 /** 歌词提前一点点亮，唱到时刚好在中间 */
 const LEAD_MS = 220;
@@ -32,30 +32,28 @@ export function NowPlaying() {
   const lyric = useStore(playerStore, (s) => s.lyric);
   const position = useStore(playerStore, (s) => s.position);
   const tint = useTint(track ? coverOf(track) : undefined);
-  // 背景光斑换色：先暗下去，新唱片落稳时换成新颜色再亮起来。
-  // 不对色相做过渡——数字插值会从橙经过黄、绿才到蓝，而且整块面板每帧都要重算、重画两块全屏大的渐变
-  const [glow, setGlow] = useState(tint);
-  const [glowDim, setGlowDim] = useState(false);
-  const swapAt = useRef(0);
+  // 背景光斑换色：新旧两套光斑交叉淡化，颜色直接融过去（CSS 见 motion.css）。
+  // 新的一套先以透明挂上，下一帧再去掉 in，透明度过渡才会播；旧的一套淡完再卸掉。
+  // 面板收着时直接换，不演
+  const [glows, setGlows] = useState(() => [{ key: 0, tint, phase: 'on' as 'in' | 'on' | 'out' }]);
   useEffect(() => {
-    swapAt.current = performance.now();
-  }, [track?.id]);
-  useEffect(() => {
-    if (tint?.h === glow?.h && tint?.s === glow?.s) return;
-    if (!open || !motionEnabled()) {
-      setGlow(tint);
-      return;
-    }
-    setGlowDim(true);
-    const t = setTimeout(
-      () => {
-        setGlow(tint);
-        setGlowDim(false);
-      },
-      Math.max(420, swapAt.current + RECORD_LAND_MS - performance.now()),
-    );
-    return () => clearTimeout(t);
+    setGlows((prev) => {
+      const cur = prev[prev.length - 1];
+      if (cur.tint?.h === tint?.h && cur.tint?.s === tint?.s) return prev;
+      if (!open || !motionEnabled()) return [{ key: cur.key + 1, tint, phase: 'on' }];
+      // 连着切歌时，还在淡出的那几套接着淡，不要一下子消失
+      return [...prev.map((g) => ({ ...g, phase: 'out' as const })), { key: cur.key + 1, tint, phase: 'in' }];
+    });
   }, [tint]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (glows.some((g) => g.phase === 'in')) {
+      const id = requestAnimationFrame(() => requestAnimationFrame(() => setGlows((p) => p.map((g) => (g.phase === 'in' ? { ...g, phase: 'on' } : g)))));
+      return () => cancelAnimationFrame(id);
+    }
+    if (!glows.some((g) => g.phase === 'out')) return;
+    const t = setTimeout(() => setGlows((p) => p.filter((g) => g.phase !== 'out')), 1300);
+    return () => clearTimeout(t);
+  }, [glows]);
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
   // 歌词 / 唱片内页二选一；百科只在面板打开时去问
   const [view, setView] = useState<'lyrics' | 'notes'>('lyrics');
@@ -214,10 +212,12 @@ export function NowPlaying() {
       aria-hidden={!open}
       ref={panelRef}
     >
-      <div className={`np-glow ${glowDim ? 'dim' : ''}`} style={tintVars(glow)} aria-hidden="true">
-        <i />
-        <i />
-      </div>
+      {glows.map((g) => (
+        <div key={g.key} className={`np-glow ${g.phase === 'on' ? '' : g.phase}`} style={tintVars(g.tint)} aria-hidden="true">
+          <i />
+          <i />
+        </div>
+      ))}
       <header className="np-head">
         {focus && track ? (
           <button className="np-mini" onClick={exitFocus} aria-label="回到唱机">

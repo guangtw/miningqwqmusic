@@ -93,6 +93,9 @@ try {
     phase = 'tests';
     dependencies(root, path.join(stage, 'music'));
     dependencies(loginRoot, path.join(stage, 'login'));
+    // npm ci does not reliably generate the Prisma client in a clean export.
+    // Generate from the exported schema without loading the developer's .env/DB.
+    npm(path.join(stage, 'login'), ['exec', '--', 'prisma', 'generate']);
     // Keep file-level DB setup independent without exhausting SQLite/Windows I/O.
     // Tests that intentionally issue concurrent requests still run unchanged.
     npm(path.join(stage, 'login'), ['run', 'test:run', '--', '--fileParallelism=false']);

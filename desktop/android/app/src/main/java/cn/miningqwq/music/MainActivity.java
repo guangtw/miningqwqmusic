@@ -86,8 +86,10 @@ public final class MainActivity extends Activity {
         settings.setGeolocationEnabled(false);
         settings.setSafeBrowsingEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setMediaPlaybackRequiresUserGesture(true);
-        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.0");
+        // The site resolves a signed URL asynchronously after a user taps Play.
+        // WebView otherwise rejects that later play() call after the gesture expires.
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.1");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setBackgroundColor(Color.TRANSPARENT);
@@ -113,7 +115,12 @@ public final class MainActivity extends Activity {
                         if (!mainFrame || !NavigationPolicy.isTrusted(origin.toString())) return;
                         try {
                             JSONObject payload = new JSONObject(message.getData());
-                            if (payload.optString("type").startsWith("blob-")) {
+                            if (payload.optString("type").equals("persist-session")) {
+                                // Refresh rotates and revokes the previous server token. Commit
+                                // its replacement before the page treats the request as complete.
+                                CookieManager.getInstance().flush();
+                                reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":true}");
+                            } else if (payload.optString("type").startsWith("blob-")) {
                                 downloads.transfer(payload, ok -> {
                                     if (!destroyed) reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":" + ok + "}");
                                 });

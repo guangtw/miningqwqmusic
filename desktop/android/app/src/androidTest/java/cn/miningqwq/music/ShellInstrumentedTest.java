@@ -38,7 +38,7 @@ public class ShellInstrumentedTest {
     private void waitForShell() throws Exception {
         long until = System.currentTimeMillis() + 45_000;
         while (System.currentTimeMillis() < until) {
-            if ("true".equals(js("!!window.__miningAndroidShell && !!document.body"))) return;
+            if ("true".equals(js("!!window.__miningAndroidShell && !!document.querySelector('.player')"))) return;
             Thread.sleep(250);
         }
         fail("Online website and Android shell did not become ready");
@@ -54,6 +54,8 @@ public class ShellInstrumentedTest {
             assertFalse(web.getSettings().getAllowFileAccess());
             assertFalse(web.getSettings().getAllowContentAccess());
             assertFalse(web.getSettings().getJavaScriptCanOpenWindowsAutomatically());
+            assertFalse(web.getSettings().getMediaPlaybackRequiresUserGesture());
+            assertEquals(android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW, web.getSettings().getMixedContentMode());
             assertTrue(web.getSettings().supportMultipleWindows());
             assertFalse(web.isVerticalScrollBarEnabled());
             assertFalse(new ShellChromeClient(activity).onCreateWindow(web, true, true, null));
@@ -105,5 +107,12 @@ public class ShellInstrumentedTest {
             if (!found) Thread.sleep(100);
         }
         assertTrue("Blob download did not reach Android Downloads", found);
+    }
+
+    @Test public void insecureMediaIsUpgradedAndOriginalProgressBarIsPreserved() throws Exception {
+        waitForShell();
+        assertEquals("true", js("(() => { const a=new Audio();a.preload='none';a.src='http://m701.music.126.net/test.mp3';return a.src==='https://m701.music.126.net/test.mp3'; })()"));
+        assertEquals("true", js("(() => { const a=new Audio();a.preload='none';a.setAttribute('src','http://bd-er.kuwo.cn/test.mp3');return a.src==='https://bd-er.kuwo.cn/test.mp3'; })()"));
+        assertEquals("An original progress indicator must remain visible", "true", js("[...document.querySelectorAll('.player .mini-progress,.player .progress-row')].some(element=>getComputedStyle(element).display!=='none' && element.getClientRects().length>0)"));
     }
 }

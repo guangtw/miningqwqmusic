@@ -24,6 +24,39 @@
   const trusted = url => url.protocol === 'https:' && url.hostname === 'echo.miningqwq.cn' && (!url.port || url.port === '443') && !url.username && !url.password;
   const resolve = value => { try { return new URL(value, location.href); } catch { return null; } };
 
+  // Set-Cookie is processed before fetch resolves, but WebView may leave it only
+  // in memory until a later disk flush. A rotating refresh cookie must be durable
+  // before the caller receives a successful authentication response.
+  const fetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await fetch(...args);
+    const url = resolve(args[0] instanceof Request ? args[0].url : args[0]);
+    if (window.MiningAndroid && response.ok && url && trusted(url)
+      && /^\/api\/account\/auth\/(login|register|refresh|logout|logout-all|change-password)\/?$/.test(url.pathname))
+      await transfer({ type: 'persist-session' });
+    return response;
+  };
+
+  // Music providers still return HTTP CDN URLs. Upgrade passive media before
+  // WebView's mixed-content check, while keeping cleartext and mixed content denied.
+  const secureMediaUrl = value => {
+    const url = resolve(value);
+    if (!url || url.protocol !== 'http:') return value;
+    url.protocol = 'https:';
+    return url.href;
+  };
+  const mediaSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
+  Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+    ...mediaSrc,
+    set(value) { mediaSrc.set.call(this, secureMediaUrl(value)); },
+  });
+  const setAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if (String(name).toLowerCase() === 'src' && (this instanceof HTMLMediaElement || this instanceof HTMLSourceElement))
+      value = secureMediaUrl(value);
+    return setAttribute.call(this, name, value);
+  };
+
   // Native callbacks also deny all of these, including requests from subframes.
   window.alert = () => {};
   window.confirm = () => false;

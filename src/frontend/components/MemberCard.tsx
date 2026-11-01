@@ -11,10 +11,23 @@ const day = (iso?: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 };
+const stamp = (iso?: string | null) => {
+  const d = new Date(iso ?? '');
+  return Number.isNaN(d.getTime()) ? '' : `${day(iso!)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+/** 限时会员还剩多久：满一天按天，不足一天按小时，再不足按分钟，都向上取整（刚兑换的 3 天码显示 3 天） */
+const remain = (ms: number): [number, string] => {
+  if (ms >= 86_400_000) return [Math.ceil(ms / 86_400_000), '天'];
+  if (ms >= 3_600_000) return [Math.ceil(ms / 3_600_000), '小时'];
+  return [Math.max(1, Math.ceil(ms / 60_000)), '分钟'];
+};
 
 /**
  * 会员卡：播放授权的状态和会员邀请码入口。
- * 没开通是一张黑色唱片纹的卡；开通后换成香槟金箔卡，写上来源和开通日期。
+ * 没开通是一张黑色唱片纹的卡；开通后换成香槟金箔卡。
+ * 永久会员压一个大号序号（第几位），限时会员压剩余时长、写到期时间，底下一道细槽显示这期还剩多少。
+ * 账户服务没给会员类型（旧版本）时，照旧写来源和开通日期。
  */
 export function MemberCard() {
   const status = useStore(authStore, (s) => s.status);
@@ -31,6 +44,24 @@ export function MemberCard() {
   }, [signedIn, user?.id]);
 
   const enabled = signedIn && !!auth?.enabled;
+  const expiresMs = Date.parse(auth?.expiresAt ?? '');
+  const permanent = enabled && auth?.membershipKind === 'permanent';
+  const timed = enabled && auth?.membershipKind === 'timed' && Number.isFinite(expiresMs);
+  const number = auth?.memberNumber ?? null;
+
+  // 限时会员的倒计时半分钟走一次
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!timed) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, [timed]);
+  // 到点了以服务端为准再问一次，卡片随之变回未开通
+  const due = timed && now >= expiresMs;
+  useEffect(() => {
+    if (due) void refreshEntitlement().catch(() => undefined);
+  }, [due]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,10 +69,19 @@ export function MemberCard() {
     if (c.length < 4) return setError('邀请码至少 4 位。');
     setBusy(true);
     setError(null);
+    const before = timed ? auth?.expiresAt : undefined;
     try {
       const r = await redeemCode(c);
-      if (r.enabled) {
-        toast('开通了。正在放的歌会按新权限重新取音源。');
+      if (r.enabled && before && r.membershipKind === 'timed' && r.expiresAt === before) {
+        setError('这个邀请码已经用在你的账号上了，到期时间没变。');
+      } else if (r.enabled) {
+        toast(
+          r.membershipKind === 'timed' && r.expiresAt
+            ? `${before ? '续上了' : '开通了'}，${stamp(r.expiresAt)} 到期。`
+            : before
+              ? '升级成永久会员了。'
+              : '开通了。正在放的歌会按新权限重新取音源。',
+        );
         setCode('');
       } else setError('邀请码已提交，但账号暂时没有拿到授权，稍后刷新看看。');
     } catch (err) {
@@ -52,27 +92,66 @@ export function MemberCard() {
   };
 
   const source = auth?.source === 'invite' ? `邀请码${auth.inviteLabel ? `「${auth.inviteLabel}」` : ''}` : auth?.source === 'manual' ? '管理员开通' : '';
+  const lapsed = signedIn && !enabled ? auth?.status : undefined;
+  const [left, unit] = timed ? remain(expiresMs - now) : [0, ''];
+  // 这一期（最近一次开通或续期到到期）还剩多少，画成卡片底部的细槽
+  const term = timed ? (expiresMs - now) / (expiresMs - Date.parse(auth?.grantedAt ?? '')) : NaN;
+  const soon = timed && expiresMs - now < 86_400_000;
+
+  const state = enabled ? 'MEMBER' : lapsed === 'expired' ? '已到期' : lapsed === 'revoked' ? '已撤销' : signedIn ? '未开通' : '游客';
+  const label = permanent
+    ? number ? `第 ${number} 位永久会员` : '永久会员'
+    : timed ? `限时会员，剩 ${left} ${unit}，${stamp(auth?.expiresAt)} 到期`
+    : enabled ? '播放授权已开通' : lapsed === 'expired' ? '限时会员已到期' : '播放授权未开通';
 
   return (
     <div className="member">
-      <div className={`member-card ${enabled ? 'gold' : ''}`} aria-label={enabled ? '播放授权已开通' : '播放授权未开通'}>
+      <div className={`member-card ${enabled ? 'gold' : ''} ${soon ? 'soon' : ''}`} role="img" aria-label={label}>
         <span className="member-grooves" aria-hidden="true" />
         <div className="member-top">
           <span className="member-brand">
             {site.brand.big}
             <small>{site.brand.small}</small>
           </span>
-          <span className="member-state mono">{enabled ? 'MEMBER' : signedIn ? '未开通' : '游客'}</span>
+          <span className="member-state">{state}</span>
         </div>
-        <div className="member-title">播放授权</div>
+        {permanent && number ? (
+          <div className="member-title ranked">
+            <b className="member-no">
+              <sup>Nº</sup>
+              {number}
+            </b>
+            <span className="member-kind">永久会员</span>
+          </div>
+        ) : timed ? (
+          <div className="member-title ranked">
+            <b className="member-no">{left}</b>
+            <span className="member-kind">
+              {unit} · 限时会员
+            </span>
+          </div>
+        ) : (
+          <div className="member-title">{permanent ? '永久会员' : '播放授权'}</div>
+        )}
+        {Number.isFinite(term) && (
+          <span className="member-term" aria-hidden="true">
+            <i style={{ '--left': Math.min(1, Math.max(0.03, term)) } as React.CSSProperties} />
+          </span>
+        )}
         <div className="member-bottom mono">
           <span>{signedIn ? displayName(user!) : '登录后开通'}</span>
-          {enabled && (
+          {timed ? (
+            <span>{stamp(auth?.expiresAt)} 到期</span>
+          ) : permanent && auth?.grantedAt ? (
+            <span>{day(auth.grantedAt)} 开通</span>
+          ) : enabled ? (
             <span>
               {source}
               {auth?.grantedAt && ` · ${day(auth.grantedAt)}`}
             </span>
-          )}
+          ) : lapsed === 'expired' && auth?.expiresAt ? (
+            <span>{day(auth.expiresAt)} 到期</span>
+          ) : null}
         </div>
       </div>
 
@@ -87,28 +166,34 @@ export function MemberCard() {
               登录后填邀请码
             </button>
           ) : null
-        ) : enabled ? (
-          <p className="muted small">已开通，不需要再填邀请码。授权被撤销时这里会变回未开通。</p>
+        ) : enabled && !timed ? (
+          <p className="muted small">
+            {permanent ? '永久有效，不需要再填邀请码。' : '已开通，不需要再填邀请码。'}授权被撤销时这里会变回未开通。
+          </p>
         ) : (
-          <form className="member-form" onSubmit={submit} noValidate>
-            <input
-              className="member-input mono"
-              value={code}
-              onChange={(e) => {
-                setCode(e.target.value.toUpperCase());
-                setError(null);
-              }}
-              placeholder="填会员邀请码"
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={64}
-              aria-label="会员邀请码"
-              aria-invalid={!!error}
-            />
-            <button className="btn solid sm" disabled={busy || !code.trim()}>
-              {busy ? '开通中…' : '开通'}
-            </button>
-          </form>
+          <>
+            {timed && <p className="muted small">到期前再填限时码，会从到期时间往后顺延；填永久码直接升级成永久会员。</p>}
+            {lapsed === 'expired' && <p className="muted small">限时会员已到期，填新的邀请码重新开通。</p>}
+            <form className="member-form" onSubmit={submit} noValidate>
+              <input
+                className="member-input mono"
+                value={code}
+                onChange={(e) => {
+                  setCode(e.target.value.toUpperCase());
+                  setError(null);
+                }}
+                placeholder={timed ? '填邀请码续期或升级' : '填会员邀请码'}
+                autoComplete="off"
+                spellCheck={false}
+                maxLength={64}
+                aria-label="会员邀请码"
+                aria-invalid={!!error}
+              />
+              <button className="btn solid sm" disabled={busy || !code.trim()}>
+                {busy ? (timed ? '续期中…' : '开通中…') : timed ? '续期' : '开通'}
+              </button>
+            </form>
+          </>
         )}
         {error && <p className="field-error">{error}</p>}
       </div>

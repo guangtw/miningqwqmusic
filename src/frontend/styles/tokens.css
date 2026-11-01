@@ -63,6 +63,10 @@
   --display: 'Space Grotesk Variable', 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
   --sans: var(--display);
   --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  /* 会员卡专用：连笔花体站标、Didone 衬线数字、宋体标题（只打包卡面用到的几个字，见 app.css） */
+  --script: 'Great Vibes', 'Snell Roundhand', 'Apple Chancery', cursive;
+  --didone: 'Bodoni Moda', 'Didot', 'Bodoni 72', 'Georgia', serif;
+  --serif-sc: 'Member Serif SC', 'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC', serif;
 
   --gutter: 48px;
   --sidebar: 220px;

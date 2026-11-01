@@ -736,8 +736,18 @@ html[data-motion='reduced'] *::after {
 .member-card.gold {
   animation: foil 7s ease-in-out infinite alternate;
 }
+/* 限时会员的余量槽从左往右走到当前位置 */
+.member-term i {
+  animation: member-term-in 1.1s var(--ease-out) 0.2s both;
+}
+@keyframes member-term-in {
+  from {
+    transform: scaleX(0);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .member-card.gold {
+  .member-card.gold,
+  .member-term i {
     animation: none;
   }
 }

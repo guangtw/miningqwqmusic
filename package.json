@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@fontsource-variable/space-grotesk": "^5.3.0",
+    "@fontsource/bodoni-moda": "^5.3.0",
+    "@fontsource/great-vibes": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "next": "^15.3.2",
     "react": "^18.3.1",

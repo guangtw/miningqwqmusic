@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/space-grotesk";
 import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/great-vibes/400.css";
+import "@fontsource/bodoni-moda/600.css";
 import "@/src/frontend/styles/tokens.css";
 import "@/src/frontend/styles/app.css";
 import "@/src/frontend/styles/motion.css";

@@ -3510,6 +3510,17 @@ mark.hl {
 }
 
 /* ============ 会员卡 ============ */
+/* 卡面标题的宋体：Noto Serif CJK SC Bold，只留卡面会用到的字（约 8 KB，许可见同目录 OFL.txt）。
+   改卡面文案加了新字，需要重新子集化：
+   pyftsubset NotoSerifCJK-Bold.ttc --font-number=2 --text="…" --layout-features='*' --flavor=woff2
+   没收进去的字会落到后面的系统宋体。 */
+@font-face {
+  font-family: 'Member Serif SC';
+  font-weight: 700;
+  font-display: swap;
+  src: url('../assets/fonts/member-serif-sc-700.woff2') format('woff2');
+  unicode-range: U+4E45, U+4F1A, U+5206, U+5458, U+5531, U+5929, U+5C0F, U+6388, U+64AD, U+653E, U+65F6, U+6743, U+6C38, U+7247, U+884C, U+949F, U+9650;
+}
 .member {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
@@ -3549,31 +3560,48 @@ mark.hl {
   align-items: flex-start;
 }
 .member-brand {
-  font-weight: 800;
-  font-size: 18px;
-  letter-spacing: -0.03em;
-  line-height: 1;
+  font-family: var(--script);
+  font-weight: 400;
+  font-size: 36px;
+  line-height: 0.82;
+  margin: -2px 0 0 -2px;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 .member-brand small {
   display: block;
-  margin-top: 3px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.3em;
-  opacity: 0.7;
+  margin: 4px 0 0 3px;
+  font-family: var(--serif-sc);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.55em;
+  line-height: 1;
+  text-shadow: none;
+  opacity: 0.68;
 }
 .member-state {
-  font-size: 10px;
-  letter-spacing: 0.18em;
-  padding: 4px 8px;
+  font-family: var(--didone);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  padding: 4px 9px 3px 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.22);
 }
 .member-title {
   margin-top: auto;
-  font-size: 24px;
+  font-family: var(--serif-sc);
+  font-size: 21px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.08em;
+}
+/* 内衬一圈细线，像证书和烫金卡的压边 */
+.member-card::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  pointer-events: none;
 }
 .member-bottom {
   display: flex;
@@ -3603,11 +3631,76 @@ mark.hl {
 .member-card.gold .member-state {
   border-color: rgba(58, 42, 12, 0.35);
 }
+/* 金卡上的花体站标和标题压进金箔：上暗下亮 */
+.member-card.gold .member-brand,
+.member-card.gold .member-title {
+  text-shadow: 0 -1px 0 rgba(90, 60, 10, 0.2), 0 1px 0 rgba(255, 248, 225, 0.7);
+}
+.member-card.gold::after {
+  border-color: rgba(58, 42, 12, 0.2);
+  box-shadow: 0 1px 0 rgba(255, 248, 225, 0.45), inset 0 1px 0 rgba(255, 248, 225, 0.45);
+}
 .member-card.gold .member-bottom {
   opacity: 0.85;
 }
+.member-title.ranked {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+/* 大大的序号：高反差 Didone 数字，像钢印压进金箔 */
+.member-no {
+  font-family: var(--didone);
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 0.74;
+  letter-spacing: -0.03em;
+  font-variant-numeric: lining-nums;
+}
+.member-no sup {
+  margin-right: 0.12em;
+  font-size: 0.3em;
+  letter-spacing: 0.04em;
+  vertical-align: 1.9em;
+  line-height: 0;
+}
+.member-card.gold .member-no {
+  color: #2c1f07;
+  text-shadow: 0 -1px 0 rgba(90, 60, 10, 0.28), 0 1px 0 rgba(255, 248, 225, 0.75);
+}
+.member-kind {
+  font-size: 13px;
+  letter-spacing: 0.32em;
+  white-space: nowrap;
+  opacity: 0.88;
+}
+/* 这一期还剩多少：一道刻在金箔上的细槽，剩下的部分用深铜色填上 */
+.member-term {
+  position: relative;
+  height: 3px;
+  margin-top: 9px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(58, 42, 12, 0.14);
+  box-shadow: inset 0 1px 0 rgba(58, 42, 12, 0.2), 0 1px 0 rgba(255, 248, 225, 0.6);
+}
+.member-term i {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  transform: scaleX(var(--left, 1));
+  background: linear-gradient(90deg, #6a4a14, #3a2a0c);
+}
+/* 不足一天：剩余时长和细槽换成更暖的赭色提个醒 */
+.member-card.soon .member-kind {
+  color: #7a2e0c;
+}
+.member-card.soon .member-term i {
+  background: linear-gradient(90deg, #a24a16, #6e2a0a);
+}
 .member-side {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   justify-items: start;
 }

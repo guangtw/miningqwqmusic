@@ -3,6 +3,7 @@
 // 1. 正在播放页、全屏歌词这类全屏浮层各占一条历史记录（URL 不变），系统返回先关浮层，不会直接退出网站。
 // 2. iOS / 安卓的侧滑返回自带一段「上一页滑进来」的动画，浏览器已经把旧页面画出来了，
 //    这时再播自己的切页过渡就会先跳回首页、再从头演一遍。能判断出是系统手势时就不播。
+import { isIOS } from './device';
 
 interface Layer {
   id: number;
@@ -16,8 +17,6 @@ let seq = Date.now();
 let after: (() => void) | null = null;
 let uaTransitionAt = -Infinity;
 let edgeTouchAt = -Infinity;
-
-const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
 // 旧版 Safari 没有 hasUAVisualTransition：从屏幕边缘起手的触摸之后紧跟着的返回，按侧滑算
 window.addEventListener(

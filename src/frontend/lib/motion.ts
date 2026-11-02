@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { flushSync } from 'react-dom';
+import { isIPhone } from './device';
 import { tintOf } from './palette';
 import { motionEnabled } from './settings';
 import { createStore } from './store';
@@ -25,6 +26,10 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
     update();
     return;
   }
+  if (kind === 'page' && isIPhone()) {
+    flipPage(update);
+    return;
+  }
   running = true;
   const root = document.documentElement;
   root.dataset.vt = kind;
@@ -35,6 +40,33 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
     running = false;
     delete root.dataset.vt;
   });
+}
+
+/**
+ * iPhone 上换页不走视图过渡：Safari 会把整个主区域拍成一张「活」快照——长歌单能有几万像素高，
+ * 封面每加载一张、每一行入场动画每走一帧，这张快照都要整块重画，打开歌单就卡成幻灯片。
+ * 这里直接换页，新页面靠自己的 CSS 入场动画出现；共享封面用 FLIP 从卡片飞到头图，只动一张图的 transform。
+ */
+function flipPage(update: () => void) {
+  const from = document.querySelector<HTMLElement>('.hero-active')?.getBoundingClientRect();
+  flushSync(update);
+  const to = document.querySelector<HTMLElement>('.hero-active');
+  const end = to?.getBoundingClientRect();
+  if (!from || !to || !end?.width || !from.width) return;
+  // 起点或终点不在屏幕上（卡片早被滚走了）就不飞，免得从屏幕外横穿过来
+  const onScreen = (r: DOMRect) => r.bottom > 0 && r.top < window.innerHeight;
+  if (!onScreen(from) || !onScreen(end)) return;
+  to.animate(
+    [
+      {
+        transformOrigin: '0 0',
+        transform: `translate(${from.left - end.left}px, ${from.top - end.top}px) scale(${from.width / end.width}, ${from.height / end.height})`,
+      },
+      { transformOrigin: '0 0', transform: 'none' },
+    ],
+    // 和桌面上 ::view-transition-group(hero) 同一条曲线、同一个时长
+    { duration: 620, easing: 'cubic-bezier(0.3, 0.9, 0.25, 1)' },
+  );
 }
 
 /** 正在播视图过渡时返回它播完的 Promise，没在播返回 null */

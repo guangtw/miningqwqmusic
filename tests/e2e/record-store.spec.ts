@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -218,6 +218,43 @@ test('play, pause and switching songs fade the audio in and out', async ({ page 
   await expect.poll(volume, { intervals: [10] }).toBeLessThan(0.3);
   await expect.poll(volume).toBeCloseTo(0.8);
   await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+});
+
+test.describe('iPhone', () => {
+  test.use({ userAgent: devices['iPhone 13'].userAgent });
+
+  test('long playlists open without a page snapshot, render in batches and keep the scroll position', async ({ page }) => {
+    await backend(page);
+    const many = Array.from({ length: 300 }, (_, i) => ({ ...tracks[i % 2], id: String(1000 + i), name: `长歌单 ${i}` }));
+    await page.route('**/api/music/playlist/**', (route) => route.fulfill({ json: { code: 0, data: { ...playlist, tracks: many }, message: 'ok', traceId: 'e2e' } }));
+    await page.addInitScript(() => {
+      const w = window as unknown as { __vt: number };
+      w.__vt = 0;
+      const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+      const start = doc.startViewTransition?.bind(doc);
+      if (start) doc.startViewTransition = (cb) => { w.__vt += 1; return start(cb); };
+    });
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-device', 'iphone');
+    await page.locator('.card .sleeve').first().click();
+    await expect(page.locator('.detail-title')).toHaveText('本期精选');
+    // 封面自己飞过去，不拍整页快照
+    expect(await page.evaluate(() => (window as unknown as { __vt: number }).__vt)).toBe(0);
+    expect(await page.locator('.detail-art .hero-active').evaluate((el) => el.getAnimations().length)).toBeGreaterThan(0);
+    // 先画一屏多，剩下的分批补齐
+    const first = await page.locator('.track').count();
+    expect(first).toBeGreaterThan(0);
+    expect(first).toBeLessThan(300);
+    await expect(page.locator('.track')).toHaveCount(300);
+    // 滚到深处、去别的页再返回，位置还在
+    await page.locator('.main').evaluate((m) => { m.scrollTop = 12000; });
+    const y = await page.locator('.main').evaluate((m) => m.scrollTop);
+    await page.evaluate(() => { location.hash = '#/album/b1'; });
+    await expect(page.locator('.detail-title')).toHaveText('测试专辑');
+    await page.goBack();
+    await expect(page.locator('.detail-title')).toHaveText('本期精选');
+    await expect.poll(() => page.locator('.main').evaluate((m) => m.scrollTop)).toBe(y);
+  });
 });
 
 test('daily epigraph starts the selected song at its lyric timestamp', async ({ page }) => {

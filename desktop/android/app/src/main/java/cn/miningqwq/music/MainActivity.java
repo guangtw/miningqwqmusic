@@ -31,6 +31,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity {
     private static final int FILE_REQUEST = 42;
@@ -47,6 +49,8 @@ public final class MainActivity extends Activity {
     };
     private final Runnable retryTask = this::retry;
     private NativeDownloads downloads;
+    private final ExecutorService cookieStorage = Executors.newSingleThreadExecutor();
+    private Boolean systemDark;
 
     @Override @SuppressWarnings("deprecation") public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -89,10 +93,12 @@ public final class MainActivity extends Activity {
         // The site resolves a signed URL asynchronously after a user taps Play.
         // WebView otherwise rejects that later play() call after the gesture expires.
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.1");
+        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.2");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
-        webView.setBackgroundColor(Color.TRANSPARENT);
+        // The document has its own opaque theme background. Avoid making its
+        // entire Android surface translucent; all CSS glass/blur stays intact.
+        webView.setBackgroundColor(Color.rgb(243, 242, 238));
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -118,8 +124,13 @@ public final class MainActivity extends Activity {
                             if (payload.optString("type").equals("persist-session")) {
                                 // Refresh rotates and revokes the previous server token. Commit
                                 // its replacement before the page treats the request as complete.
-                                CookieManager.getInstance().flush();
-                                reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":true}");
+                                String ack = payload.optString("ack");
+                                cookieStorage.execute(() -> {
+                                    CookieManager.getInstance().flush();
+                                    handler.post(() -> {
+                                        if (!destroyed) reply.postMessage("{\"ack\":" + JSONObject.quote(ack) + ",\"ok\":true}");
+                                    });
+                                });
                             } else if (payload.optString("type").startsWith("blob-")) {
                                 downloads.transfer(payload, ok -> {
                                     if (!destroyed) reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":" + ok + "}");
@@ -154,12 +165,15 @@ public final class MainActivity extends Activity {
     }
 
     @SuppressWarnings("deprecation") private void updateSystemBars(boolean dark) {
+        if (systemDark != null && systemDark == dark) return;
+        systemDark = dark;
         int flags = dark ? 0 : View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
         getWindow().getDecorView().setSystemUiVisibility(flags);
         int color = dark ? Color.rgb(23, 22, 20) : Color.rgb(243, 242, 238);
         getWindow().setStatusBarColor(color);
         getWindow().setNavigationBarColor(color);
         root.setBackgroundColor(color);
+        webView.setBackgroundColor(color);
     }
 
     void installShellScript() {
@@ -216,7 +230,10 @@ public final class MainActivity extends Activity {
 
     @Override protected void onResume() { super.onResume(); if (failed) retry(); }
 
-    @Override protected void onPause() { super.onPause(); CookieManager.getInstance().flush(); }
+    @Override protected void onPause() {
+        super.onPause();
+        cookieStorage.execute(() -> CookieManager.getInstance().flush());
+    }
 
     @Override public void onBackPressed() {
         if (webView.canGoBack() && !failed) webView.goBack();
@@ -229,6 +246,7 @@ public final class MainActivity extends Activity {
         if (connectivity != null) connectivity.unregisterNetworkCallback(networkCallback);
         if (fileCallback != null) fileCallback.onReceiveValue(null);
         downloads.close();
+        cookieStorage.shutdown();
         root.removeView(webView);
         webView.stopLoading();
         webView.destroy();

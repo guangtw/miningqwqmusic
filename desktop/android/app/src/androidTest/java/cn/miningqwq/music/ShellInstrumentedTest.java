@@ -115,4 +115,42 @@ public class ShellInstrumentedTest {
         assertEquals("true", js("(() => { const a=new Audio();a.preload='none';a.setAttribute('src','http://bd-er.kuwo.cn/test.mp3');return a.src==='https://bd-er.kuwo.cn/test.mp3'; })()"));
         assertEquals("An original progress indicator must remain visible", "true", js("[...document.querySelectorAll('.player .mini-progress,.player .progress-row')].some(element=>getComputedStyle(element).display!=='none' && element.getClientRects().length>0)"));
     }
+
+    @Test public void coversAndPaletteImagesLoadOverHttps() throws Exception {
+        waitForShell();
+        js("window.__coverQa=new Image();__coverQa.crossOrigin='anonymous';__coverQa.src='http://p3.music.126.net/-NVLOT5vt9I91LRiZV1TCQ==/109951170413587092.jpg?param=300y300';true");
+        long until = System.currentTimeMillis() + 20000;
+        while (System.currentTimeMillis() < until && !"true".equals(js("__coverQa.complete && __coverQa.naturalWidth>0"))) Thread.sleep(100);
+        assertEquals("True cover pixels must load, including CORS for the palette extractor", "true", js("__coverQa.naturalWidth>0 && __coverQa.src.startsWith('https://')"));
+        assertEquals("true", js("(() => {const i=new Image();i.setAttribute('src','http://p3.music.126.net/cover.jpg');i.srcset='http://p1.music.126.net/a.jpg 1x, http://p2.music.126.net/a.jpg 2x';return i.src.startsWith('https://')&&!i.srcset.includes('http://');})()"));
+        assertEquals("true", js("(() => {const i=new Image();i.src='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>';return i.src.startsWith('data:image/svg+xml,');})()"));
+        assertEquals("true", js("!window.MediaMetadata || new MediaMetadata({artwork:[{src:'http://p3.music.126.net/art.jpg'}]}).artwork[0].src.startsWith('https://')"));
+    }
+
+    @Test public void textAndAnimationMutationsDoNotRescanPageOrRecalculateTheme() throws Exception {
+        waitForShell();
+        js("(() => {window.__qaWork={scans:0,themeReads:0};const query=Document.prototype.querySelectorAll;const style=window.getComputedStyle;Document.prototype.querySelectorAll=function(...a){__qaWork.scans++;return query.apply(this,a)};window.getComputedStyle=function(...a){if(a[0]===document.documentElement)__qaWork.themeReads++;return style.apply(this,a)};const label=document.createElement('span');label.id='shell-perf-label';document.body.append(label);window.__qaWork.restore=()=>{Document.prototype.querySelectorAll=query;window.getComputedStyle=style;label.remove()};for(let i=0;i<500;i++){label.textContent=String(i);document.documentElement.style.setProperty('--shell-test-animation',String(i))}return true;})()");
+        assertEquals("No full-document scan for unrelated mutations", "0", js("__qaWork.scans"));
+        assertEquals("No root style read for unrelated animations", "0", js("__qaWork.themeReads"));
+        js("__qaWork.restore();document.documentElement.style.removeProperty('--shell-test-animation');true");
+        js("const dynamic=document.createElement('input');dynamic.id='shell-dynamic-field';document.body.append(dynamic);true");
+        js("document.getElementById('shell-dynamic-field').type='password';true");
+        assertEquals("Dynamic password fields remain protected", "true", js("document.getElementById('shell-dynamic-field').autocomplete==='new-password'"));
+        js("document.getElementById('shell-dynamic-field').remove();true");
+    }
+
+    @Test public void backgroundCookiePersistenceAcknowledgesWithoutReplacingWebsiteUi() throws Exception {
+        waitForShell();
+        CountDownLatch set = new CountDownLatch(1);
+        instrumentation.runOnMainSync(() -> android.webkit.CookieManager.getInstance().setCookie(
+                NavigationPolicy.HOME, "shell_storage_qa=durable; Path=/; Secure; Max-Age=60; SameSite=Lax", ignored -> set.countDown()));
+        assertTrue(set.await(5, TimeUnit.SECONDS));
+        js("window.__storageQa=false;window.__oldShellReply=MiningAndroid.onmessage;MiningAndroid.onmessage=e=>{const r=JSON.parse(e.data);if(r.ack==='storage-qa')window.__storageQa=r.ok;else __oldShellReply(e)};MiningAndroid.postMessage(JSON.stringify({type:'persist-session',ack:'storage-qa'}));true");
+        long deadline = System.currentTimeMillis() + 10000;
+        while (System.currentTimeMillis() < deadline && !"true".equals(js("__storageQa"))) Thread.sleep(50);
+        assertEquals("The background storage worker must acknowledge completion", "true", js("__storageQa"));
+        js("MiningAndroid.onmessage=__oldShellReply;true");
+        instrumentation.runOnMainSync(() -> android.webkit.CookieManager.getInstance().setCookie(
+                NavigationPolicy.HOME, "shell_storage_qa=; Path=/; Secure; Max-Age=0", null));
+    }
 }

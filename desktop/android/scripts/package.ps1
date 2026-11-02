@@ -1,4 +1,4 @@
-param([string]$Version = '1.0.1', [string]$SourceCommit)
+param([string]$Version = '1.0.2', [string]$SourceCommit)
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path $PSScriptRoot -Parent)
 try {

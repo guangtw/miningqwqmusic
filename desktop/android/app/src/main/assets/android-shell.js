@@ -37,25 +37,48 @@
     return response;
   };
 
-  // Music providers still return HTTP CDN URLs. Upgrade passive media before
-  // WebView's mixed-content check, while keeping cleartext and mixed content denied.
-  const secureMediaUrl = value => {
+  // Upgrade passive resources before WebView's mixed-content check. Keep data/
+  // blob URLs intact (generated artwork and downloaded files depend on them).
+  const secureResourceUrl = value => {
+    if (typeof value !== 'string' || !/^http:\/\//i.test(value)) return value;
     const url = resolve(value);
     if (!url || url.protocol !== 'http:') return value;
     url.protocol = 'https:';
     return url.href;
   };
-  const mediaSrc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
-  Object.defineProperty(HTMLMediaElement.prototype, 'src', {
-    ...mediaSrc,
-    set(value) { mediaSrc.set.call(this, secureMediaUrl(value)); },
-  });
+  const secureSrcset = value => typeof value === 'string'
+    ? value.replace(/(^|[\s,])http:\/\//gi, '$1https://') : value;
+  for (const [prototype, attribute, normalize] of [
+    [HTMLMediaElement.prototype, 'src', secureResourceUrl],
+    [HTMLImageElement.prototype, 'src', secureResourceUrl],
+    [HTMLImageElement.prototype, 'srcset', secureSrcset],
+    [HTMLSourceElement.prototype, 'src', secureResourceUrl],
+    [HTMLSourceElement.prototype, 'srcset', secureSrcset],
+    [HTMLVideoElement.prototype, 'poster', secureResourceUrl],
+  ]) {
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, attribute);
+    if (!descriptor?.set) continue;
+    Object.defineProperty(prototype, attribute, {
+      ...descriptor,
+      set(value) { descriptor.set.call(this, normalize(value)); },
+    });
+  }
   const setAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function (name, value) {
-    if (String(name).toLowerCase() === 'src' && (this instanceof HTMLMediaElement || this instanceof HTMLSourceElement))
-      value = secureMediaUrl(value);
+    const attribute = String(name).toLowerCase();
+    if ((attribute === 'src' || attribute === 'srcset' || attribute === 'poster')
+      && (this instanceof HTMLImageElement || this instanceof HTMLMediaElement || this instanceof HTMLSourceElement))
+      value = attribute === 'srcset' ? secureSrcset(value) : secureResourceUrl(value);
     return setAttribute.call(this, name, value);
   };
+  if (window.MediaMetadata) {
+    const Metadata = window.MediaMetadata;
+    window.MediaMetadata = class extends Metadata {
+      constructor(init = {}) {
+        super({ ...init, artwork: Array.from(init.artwork || [], art => ({ ...art, src: secureResourceUrl(art.src) })) });
+      }
+    };
+  }
 
   // Native callbacks also deny all of these, including requests from subframes.
   window.alert = () => {};
@@ -76,12 +99,17 @@
     try { if (navigator.credentials) Object.defineProperty(navigator.credentials, name, { value: noCredentials }); } catch {}
   }
 
-  const disableAutofill = root => {
-    const elements = root.querySelectorAll?.('input,textarea,form') || [];
-    for (const element of elements) {
-      element.setAttribute('autocomplete', element.type === 'password' ? 'new-password' : 'off');
-      element.setAttribute('data-ms-editor', 'false');
-    }
+  const protectField = element => {
+    const autocomplete = element.type === 'password' ? 'new-password' : 'off';
+    if (element.getAttribute('autocomplete') !== autocomplete) element.setAttribute('autocomplete', autocomplete);
+    if (element.getAttribute('data-ms-editor') !== 'false') element.setAttribute('data-ms-editor', 'false');
+  };
+  const protectSubtree = root => {
+    if (root.nodeType !== Node.ELEMENT_NODE) return;
+    if (root.matches('input,textarea,form')) protectField(root);
+    // Text updates in lyrics/time labels are not form changes. Only inspect a
+    // newly inserted element's descendants, never rescan the whole application.
+    if (root.firstElementChild) root.querySelectorAll('input,textarea,form').forEach(protectField);
   };
   const blobDownload = async anchor => {
     const response = await fetch(anchor.href);
@@ -115,15 +143,30 @@
   }, true);
 
   const ready = () => {
-    disableAutofill(document);
-    new MutationObserver(() => disableAutofill(document)).observe(document.body, { childList: true, subtree: true });
+    protectSubtree(document.body);
+    new MutationObserver(records => {
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          if (record.target.matches('input,textarea,form')) protectField(record.target);
+        }
+        else for (const added of record.addedNodes) protectSubtree(added);
+      }
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'] });
     // Only remove browser affordances. Existing layout and toast/dialog components are untouched.
     const style = document.createElement('style');
     style.textContent = 'html,body{overscroll-behavior:none}::-webkit-scrollbar{display:none}a,img{-webkit-touch-callout:none}';
     document.head.append(style);
-    const publishTheme = () => send({ type: 'state', dark: getComputedStyle(document.documentElement).colorScheme === 'dark' });
+    let lastDark;
+    const publishTheme = () => {
+      const dark = getComputedStyle(document.documentElement).colorScheme === 'dark';
+      if (dark === lastDark) return;
+      lastDark = dark;
+      send({ type: 'state', dark });
+    };
     publishTheme();
-    new MutationObserver(publishTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+    // --accent-h and transition geometry also change root.style. They do not
+    // change color-scheme and must not trigger a style flush or native repaint.
+    new MutationObserver(publishTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', publishTheme);
   };
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', ready, { once: true });

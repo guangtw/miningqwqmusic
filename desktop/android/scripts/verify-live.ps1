@@ -1,5 +1,10 @@
-param([string]$Serial = 'emulator-5554', [string]$Server = 'aliyun-ai')
+param([string]$Serial = 'emulator-5554', [string]$Server = 'aliyun-ai', [switch]$AllowProductionTestAccount)
 $ErrorActionPreference = 'Stop'
+if (-not $AllowProductionTestAccount) {
+    throw 'Production test account creation is disabled by default. Use guest-only ArtworkAuditInstrumentedTest and ShellInstrumentedTest, or explicitly pass -AllowProductionTestAccount in an authorized maintenance run.'
+}
+& ssh -o BatchMode=yes -o ConnectTimeout=8 $Server 'sudo -n true'
+if ($LASTEXITCODE -ne 0) { throw 'SSH cleanup access is unavailable; no production account was created.' }
 $project = Split-Path $PSScriptRoot -Parent
 if (-not $env:ANDROID_HOME) { throw 'Set ANDROID_HOME first.' }
 $adb = Join-Path $env:ANDROID_HOME 'platform-tools/adb.exe'

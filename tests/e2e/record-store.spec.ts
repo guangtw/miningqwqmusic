@@ -183,6 +183,43 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   expect(state.errors).toEqual([]);
 });
 
+test('play, pause and switching songs fade the audio in and out', async ({ page }) => {
+  await backend(page);
+  // 播放器的 <audio> 不挂在页面上：记下被播放的那个，好读它的音量
+  await page.addInitScript(() => {
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () { (window as unknown as { __audio: HTMLMediaElement }).__audio = this; return play.call(this); };
+  });
+  await page.goto('/#/search?q=晨光&type=song');
+  const bar = page.getByRole('contentinfo', { name: '播放控制' });
+  const volume = () => page.evaluate(() => (window as unknown as { __audio: HTMLMediaElement }).__audio.volume);
+  const paused = () => page.evaluate(() => (window as unknown as { __audio: HTMLMediaElement }).__audio.paused);
+  await page.locator('.track .t').first().click();
+  await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+  await expect.poll(volume).toBeCloseTo(0.8);
+  // 暂停：按钮立刻翻过来，声音淡完才真正停
+  await bar.getByRole('button', { name: '暂停', exact: true }).click();
+  await expect(bar.getByRole('button', { name: '播放', exact: true })).toBeVisible();
+  const fading = await page.evaluate(() => new Promise<number[]>((resolve) => {
+    const a = (window as unknown as { __audio: HTMLMediaElement }).__audio;
+    const seen: number[] = [];
+    const tick = () => { seen.push(a.paused ? -1 : a.volume); if (a.paused) resolve(seen); else requestAnimationFrame(tick); };
+    tick();
+  }));
+  expect(fading.length).toBeGreaterThan(3);
+  expect(fading.some((v) => v > 0.05 && v < 0.75)).toBe(true);
+  expect(await volume()).toBe(0);
+  // 继续播放从静音淡回来
+  await bar.getByRole('button', { name: '播放', exact: true }).click();
+  await expect.poll(paused).toBe(false);
+  await expect.poll(volume).toBeCloseTo(0.8);
+  // 换下一首：先淡出再换源，新歌再淡入
+  await bar.getByRole('button', { name: '下一首', exact: true }).click();
+  await expect.poll(volume, { intervals: [10] }).toBeLessThan(0.3);
+  await expect.poll(volume).toBeCloseTo(0.8);
+  await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+});
+
 test('daily epigraph starts the selected song at its lyric timestamp', async ({ page }) => {
   const state = await backend(page);
   await page.route('**/api/music/track/*/lyric', (route) => route.fulfill({ json: {

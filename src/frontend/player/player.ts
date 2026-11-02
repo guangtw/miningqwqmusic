@@ -47,7 +47,74 @@ export const playerStore = createStore<PlayerState>({
 
 const audio = new Audio();
 audio.preload = 'auto';
-audio.volume = playerStore.get().volume;
+// iOS Safari 的 volume 是只读的（永远读回 1），那里没法渐变，播放暂停照旧立刻生效
+audio.volume = 0.5;
+const canFade = audio.volume === 0.5;
+
+// ---- 淡入淡出 ----
+// 只动 audio.volume：播放地址在第三方 CDN 上、不保证带 CORS，接 Web Audio 增益节点会被浏览器静音
+const FADE_IN_MS = 450;
+const FADE_OUT_MS = 260;
+/** 渐变增益，乘在用户音量上 */
+let gain = 1;
+let fadeId = 0;
+/** 正在淡出、淡完就暂停：声音还在，但已经算暂停了 */
+let pausing = false;
+const applyVolume = () => { audio.volume = playerStore.get().volume * gain; };
+applyVolume();
+const audible = () => !audio.paused && !pausing;
+
+/** 把增益渐变到 to；中途被下一次渐变打断时得到 false */
+function fadeTo(to: number, ms: number): Promise<boolean> {
+  const id = ++fadeId;
+  const from = gain;
+  if (!canFade || document.hidden || from === to) {
+    gain = to;
+    applyVolume();
+    return Promise.resolve(true);
+  }
+  const start = performance.now();
+  const span = ms * Math.abs(to - from);
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (id !== fadeId) return resolve(false);
+      const t = Math.min(1, (performance.now() - start) / span);
+      // 振幅走平方曲线，听感上接近匀速
+      gain = from + (to - from) * (to > from ? t * t : 1 - (1 - t) * (1 - t));
+      applyVolume();
+      if (t < 1) setTimeout(tick, 16);
+      else resolve(true);
+    };
+    tick();
+  });
+}
+
+/** 淡出后暂停；淡出途中又按了播放就作罢 */
+function softPause() {
+  if (!audible()) return;
+  if (!canFade) return audio.pause();
+  pausing = true;
+  set({ playing: false });
+  void fadeTo(0, FADE_OUT_MS).then((done) => {
+    if (!done) return;
+    pausing = false;
+    audio.pause();
+  });
+}
+
+/** 播放并淡入：暂停中的从静音起，淡出到一半的从当前音量接着淡回来 */
+function softPlay(): Promise<void> {
+  const id = ++fadeId;
+  if (pausing) {
+    pausing = false;
+    set({ playing: true });
+  } else if (audio.paused) {
+    gain = canFade ? 0 : 1;
+    applyVolume();
+  }
+  // 等真正出声再淡入，缓冲的那段不白白耗掉渐变
+  return audio.play().then(() => { if (id === fadeId) void fadeTo(1, FADE_IN_MS); });
+}
 
 /** 当前 <audio> 里装的是哪首、地址何时过期 */
 let loaded: { id: string; expiresAt: number } | null = null;
@@ -60,7 +127,7 @@ let canAutoAdvance = () => true;
 let intendedPlaying = false;
 let retryNotBefore = 0;
 let remoteTarget: { positionMs: number; playing: boolean; receivedAt: number } | null = null;
-export const isPlaybackIntended = () => get().loading ? intendedPlaying : !audio.paused;
+export const isPlaybackIntended = () => get().loading ? intendedPlaying : audible();
 export function setAutoAdvanceGuard(guard: () => boolean) { canAutoAdvance = guard; }
 
 const set = playerStore.set;
@@ -102,7 +169,7 @@ export const currentTrack = (s: PlayerState = get()) => s.queue[s.index] ?? null
 /** 高精度播放位置（毫秒），给进度条、歌词逐帧读取 */
 export const audioTime = () => audio.currentTime * 1000;
 export const audioDuration = () => (Number.isFinite(audio.duration) ? audio.duration * 1000 : get().duration);
-export const isAudioPlaying = () => !audio.paused;
+export const isAudioPlaying = audible;
 
 // ---- 持久化 ----
 let lastSaved = '';
@@ -116,7 +183,9 @@ playerStore.subscribe(() => {
 });
 
 // ---- <audio> 事件 ----
-audio.addEventListener('timeupdate', () => set({ position: audio.currentTime * 1000 }));
+/** 换歌时上一首还在淡出：它的进度和播完不能算到新歌头上 */
+const outgoing = () => !!loaded && loaded.id !== currentTrack()?.id;
+audio.addEventListener('timeupdate', () => { if (!outgoing()) set({ position: audio.currentTime * 1000 }); });
 audio.addEventListener('durationchange', () => {
   if (Number.isFinite(audio.duration)) set({ duration: audio.duration * 1000 });
 });
@@ -132,10 +201,11 @@ audio.addEventListener('playing', () => {
   }
 });
 function advanceOnEnd() {
+  if (outgoing()) return;
   if (!canAutoAdvance()) { set({ playing: false }); return; }
   if (get().mode === 'one') {
     audio.currentTime = 0;
-    void audio.play().catch(() => set({ playing: false }));
+    void softPlay().catch(() => set({ playing: false }));
     emit('seek');
   } else next(true);
 }
@@ -183,7 +253,10 @@ async function resolveAndPlay(
   intendedPlaying = opts.autoplay !== false;
   const fresh = opts.resumeAt == null;
   const token = ++loadToken;
-  audio.pause();
+  // 上一首先淡出，和取地址同时进行；淡完再换源
+  pausing = false;
+  if (!audio.paused) set({ playing: false });
+  const silenced = fadeTo(0, FADE_OUT_MS).then(() => { if (token === loadToken) audio.pause(); });
   if (fresh) {
     renewedOnce = false;
     recentPushed = false;
@@ -197,6 +270,8 @@ async function resolveAndPlay(
     const src = await music.playUrl(track.id, getSettings().quality, authStore.get().token);
     if (token !== loadToken) return;
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
+    await silenced;
+    if (token !== loadToken) return;
     loaded = { id: track.id, expiresAt: expiryOf(src) };
     audio.src = src.url;
     const alignRemote = () => {
@@ -220,7 +295,7 @@ async function resolveAndPlay(
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
     if (remoteTarget) alignRemote();
-    if (intendedPlaying) await audio.play().catch(() => {
+    if (intendedPlaying) await softPlay().catch(() => {
       if (token === loadToken) set({ playing: false });
     });
     if (token !== loadToken) return;
@@ -328,15 +403,15 @@ export function toggle() {
   if (s.loading && loaded?.id !== track.id) {
     intendedPlaying = !intendedPlaying;
     if (remoteTarget) remoteTarget.playing = intendedPlaying;
-    if (!intendedPlaying) audio.pause();
+    if (!intendedPlaying) softPause();
     return;
   }
   if (loaded?.id !== track.id) return void resolveAndPlay(s.index);
-  if (!audio.paused) { intendedPlaying = false; return audio.pause(); }
+  if (audible()) { intendedPlaying = false; return softPause(); }
   intendedPlaying = true;
   // 暂停太久地址可能过期，先续签
   if (expiringSoon()) return void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: true });
-  void audio.play().catch(() => set({ playing: false }));
+  void softPlay().catch(() => set({ playing: false }));
 }
 
 /** 上一首 / 下一首换到了哪一格、往哪个方向。唱机和播放台按方向换唱片；点列表、一起听同步算往后 */
@@ -405,7 +480,7 @@ export function applyRemote(r: { queue: Track[]; index: number; positionMs: numb
   }
   if (currentTrack(s)?.id === track.id && s.loading) {
     set({ index: r.index });
-    if (!r.playing) audio.pause();
+    if (!r.playing) softPause();
     return;
   }
   // 房间里的队列只带当前这首前后一段，传来传去序号会挪：认歌不认序号，同一首就只改序号、不重新加载
@@ -418,16 +493,16 @@ export function applyRemote(r: { queue: Track[]; index: number; positionMs: numb
     audio.currentTime = r.positionMs / 1000;
     set({ position: r.positionMs });
   }
-  if (r.playing && audio.paused) {
+  if (r.playing && !audible()) {
     if (expiringSoon()) void resolveAndPlay(r.index, { resumeAt: r.positionMs, autoplay: true });
-    else void audio.play().catch(() => toast('浏览器拦下了自动播放，点一下播放键跟上大家。'));
-  } else if (!r.playing && !audio.paused) audio.pause();
+    else void softPlay().catch(() => toast('浏览器拦下了自动播放，点一下播放键跟上大家。'));
+  } else if (!r.playing && audible()) softPause();
 }
 
 export function setVolume(v: number) {
-  audio.volume = Math.max(0, Math.min(1, v));
   audio.muted = false;
-  set({ volume: audio.volume, muted: false });
+  set({ volume: Math.max(0, Math.min(1, v)), muted: false });
+  applyVolume();
 }
 
 export function toggleMute() {
@@ -452,6 +527,8 @@ export function cycleMode() {
 
 function unload() {
   loadToken += 1;
+  fadeId += 1;
+  pausing = false;
   audio.pause();
   audio.removeAttribute('src');
   audio.load();
@@ -491,10 +568,10 @@ function updateMediaSession(track: Track) {
 }
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => { if (audio.paused) toggle(); });
+  navigator.mediaSession.setActionHandler('play', () => { if (!audible()) toggle(); });
   navigator.mediaSession.setActionHandler('pause', () => {
     intendedPlaying = false;
-    audio.pause();
+    softPause();
     emit('playback');
   });
   navigator.mediaSession.setActionHandler('previoustrack', prev);

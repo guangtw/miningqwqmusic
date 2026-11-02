@@ -22,12 +22,18 @@ let finished: Promise<void> = Promise.resolve();
  */
 export function transition(update: () => void, kind: TransitionKind = 'page') {
   const doc = document as ViewTransitionDoc;
-  if (!doc.startViewTransition || !motionEnabled() || running) {
+  if (!motionEnabled() || running) {
     update();
     return;
   }
-  if (kind === 'page' && isIPhone()) {
-    flipPage(update);
+  if ((kind === 'np-open' || kind === 'np-close') && isIPhone()) {
+    deckMotion(update, kind);
+    return;
+  }
+  if (!doc.startViewTransition) {
+    // iOS 17 及更早没有视图过渡：封面照样自己飞
+    if (kind === 'page' && isIPhone()) flipPage(update);
+    else update();
     return;
   }
   running = true;
@@ -42,11 +48,7 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
   });
 }
 
-/**
- * iPhone 上换页不走视图过渡：Safari 会把整个主区域拍成一张「活」快照——长歌单能有几万像素高，
- * 封面每加载一张、每一行入场动画每走一帧，这张快照都要整块重画，打开歌单就卡成幻灯片。
- * 这里直接换页，新页面靠自己的 CSS 入场动画出现；共享封面用 FLIP 从卡片飞到头图，只动一张图的 transform。
- */
+/** 不支持视图过渡的 iPhone 上换页：直接换，共享封面用 FLIP 从卡片飞到头图，只动一张图的 transform */
 function flipPage(update: () => void) {
   const from = document.querySelector<HTMLElement>('.hero-active')?.getBoundingClientRect();
   flushSync(update);
@@ -67,6 +69,88 @@ function flipPage(update: () => void) {
     // 和桌面上 ::view-transition-group(hero) 同一条曲线、同一个时长
     { duration: 620, easing: 'cubic-bezier(0.3, 0.9, 0.25, 1)' },
   );
+}
+
+const DISC_MS = 700;
+const DISC_EASE = 'cubic-bezier(0.3, 1.05, 0.3, 1)';
+const PANEL_MS = 600;
+
+/**
+ * iPhone 上开合唱机不走视图过渡：WebKit 给全屏面板和播放台拍快照那一下，主线程要停两百多毫秒。
+ * 画面按桌面上的视图过渡还原，但只用合成层上的 transform 动画：
+ * - 面板靠它自己的 CSS 过渡升起 / 沉下（.nowplaying 的 transform）
+ * - 唱机上的那张唱片复制一份，压在播放台之上，从播放台的小唱片飞到唱盘（收起时反过来），真唱片等它落地再露出来
+ * - 手机播放台变高 / 变矮是一下子重排的，再补一段 transform 位移，看起来是上沿平滑地升起 / 落下
+ */
+function deckMotion(update: () => void, kind: 'np-open' | 'np-close') {
+  const open = kind === 'np-open';
+  const root = document.documentElement;
+  const bar = document.querySelector<HTMLElement>('.player');
+  const barTop = bar?.getBoundingClientRect().top;
+  const disc = () => document.querySelector<HTMLElement>('.nowplaying .deck-slot:not(.leaving) .deck-vinyl');
+  const mini = () => document.querySelector<HTMLElement>('.player .mini-vinyl');
+  const before = (open ? mini() : disc())?.getBoundingClientRect();
+  const leaving = open ? null : disc();
+
+  running = true;
+  root.dataset.deckAnim = kind;
+  flushSync(update);
+
+  let barShift = 0;
+  if (bar && barTop != null) {
+    barShift = barTop - bar.getBoundingClientRect().top;
+    if (Math.abs(barShift) > 1)
+      bar.animate([{ transform: `translateY(${barShift}px)` }, { transform: 'none' }], {
+        duration: 500,
+        easing: 'cubic-bezier(0.3, 1.1, 0.4, 1)',
+      });
+  }
+
+  const target = open ? disc() : mini();
+  let after = target?.getBoundingClientRect();
+  if (after) {
+    // 读到的是动画第一帧的位置：打开时面板还在屏幕下面（它的 top 就是要升的距离），收起时播放台还在旧高度
+    const panelTop = open ? (document.querySelector('.nowplaying')?.getBoundingClientRect().top ?? 0) : 0;
+    after = new DOMRect(after.left, after.top - panelTop - (open ? 0 : barShift), after.width, after.height);
+  }
+  const big = open ? target : leaving;
+  const tasks: Promise<unknown>[] = [new Promise((r) => setTimeout(r, PANEL_MS))];
+  if (before?.width && after?.width && big && target) {
+    // 复制大唱片（标签图清晰），按大唱片的位置摆好，再用 transform 缩到小唱片那里
+    const bigRect = open ? after : before;
+    const smallRect = open ? before : after;
+    const clone = big.cloneNode(true) as HTMLElement;
+    clone.removeAttribute('style');
+    clone.classList.add('disc-flight');
+    Object.assign(clone.style, {
+      left: `${bigRect.left}px`,
+      top: `${bigRect.top}px`,
+      width: `${bigRect.width}px`,
+      height: `${bigRect.height}px`,
+    });
+    document.body.append(clone);
+    const small = `translate(${smallRect.left - bigRect.left}px, ${smallRect.top - bigRect.top}px) scale(${smallRect.width / bigRect.width})`;
+    const hidden = [target, big];
+    hidden.forEach((el) => (el.style.opacity = '0'));
+    const flight = clone.animate(
+      open ? [{ transform: small }, { transform: 'none' }] : [{ transform: 'none' }, { transform: small }],
+      { duration: DISC_MS, easing: DISC_EASE, fill: 'forwards' },
+    );
+    tasks.push(
+      flight.finished
+        .catch(() => undefined)
+        .then(() => {
+          hidden.forEach((el) => (el.style.opacity = ''));
+          // 真唱片可能转在另一个角度：复制品淡出去，不硬切
+          return clone.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, fill: 'forwards' }).finished.catch(() => undefined);
+        })
+        .then(() => clone.remove()),
+    );
+  }
+  finished = Promise.all(tasks).then(() => {
+    running = false;
+    delete root.dataset.deckAnim;
+  });
 }
 
 /** 正在播视图过渡时返回它播完的 Promise，没在播返回 null */

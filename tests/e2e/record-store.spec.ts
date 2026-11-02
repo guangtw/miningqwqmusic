@@ -223,25 +223,25 @@ test('play, pause and switching songs fade the audio in and out', async ({ page 
 test.describe('iPhone', () => {
   test.use({ userAgent: devices['iPhone 13'].userAgent });
 
-  test('long playlists open without a page snapshot, render in batches and keep the scroll position', async ({ page }) => {
+  test('long playlists render in batches after the page transition, and the record player opens without a snapshot', async ({ page }) => {
     await backend(page);
     const many = Array.from({ length: 300 }, (_, i) => ({ ...tracks[i % 2], id: String(1000 + i), name: `长歌单 ${i}` }));
     await page.route('**/api/music/playlist/**', (route) => route.fulfill({ json: { code: 0, data: { ...playlist, tracks: many }, message: 'ok', traceId: 'e2e' } }));
     await page.addInitScript(() => {
-      const w = window as unknown as { __vt: number };
-      w.__vt = 0;
+      const w = window as unknown as { __vt: string[] };
+      w.__vt = [];
       const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
       const start = doc.startViewTransition?.bind(doc);
-      if (start) doc.startViewTransition = (cb) => { w.__vt += 1; return start(cb); };
+      if (start) doc.startViewTransition = (cb) => { w.__vt.push(document.documentElement.dataset.vt ?? ''); return start(cb); };
     });
+    const transitions = () => page.evaluate(() => (window as unknown as { __vt: string[] }).__vt);
     await page.goto('/');
     await expect(page.locator('html')).toHaveAttribute('data-device', 'iphone');
     await page.locator('.card .sleeve').first().click();
     await expect(page.locator('.detail-title')).toHaveText('本期精选');
-    // 封面自己飞过去，不拍整页快照
-    expect(await page.evaluate(() => (window as unknown as { __vt: number }).__vt)).toBe(0);
-    expect(await page.locator('.detail-art .hero-active').evaluate((el) => el.getAnimations().length)).toBeGreaterThan(0);
-    // 先画一屏多，剩下的分批补齐
+    // 换页照旧是视图过渡（封面飞到头图）
+    expect(await transitions()).toEqual(['page']);
+    // 先画一屏，过渡播完再分批补齐
     const first = await page.locator('.track').count();
     expect(first).toBeGreaterThan(0);
     expect(first).toBeLessThan(300);
@@ -254,6 +254,18 @@ test.describe('iPhone', () => {
     await page.goBack();
     await expect(page.locator('.detail-title')).toHaveText('本期精选');
     await expect.poll(() => page.locator('.main').evaluate((m) => m.scrollTop)).toBe(y);
+    // 开合唱机不拍快照：唱片复制一份飞过去，落地后收掉
+    await page.locator('.track .t').first().click();
+    const before = (await transitions()).length;
+    await page.locator('.player .np-text').click();
+    await expect(page.locator('.nowplaying')).toHaveClass(/open/);
+    await expect(page.locator('.disc-flight')).toHaveCount(1);
+    await expect(page.locator('.disc-flight')).toHaveCount(0);
+    await expect(page.locator('html')).not.toHaveAttribute('data-deck-anim');
+    await page.locator('.np-head').getByRole('button', { name: /收起/ }).click();
+    await expect(page.locator('.nowplaying')).not.toHaveClass(/open/);
+    await expect(page.locator('.disc-flight')).toHaveCount(0);
+    expect((await transitions()).length).toBe(before);
   });
 });
 

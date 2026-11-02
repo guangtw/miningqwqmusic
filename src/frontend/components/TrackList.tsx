@@ -3,6 +3,7 @@ import { hasId, type Track } from '../api';
 import { libraryStore, toggleFavorite } from '../lib/account';
 import { isIPhone } from '../lib/device';
 import { formatTime, sideLabel } from '../lib/format';
+import { transitionSettled } from '../lib/motion';
 import { href, useRoute } from '../lib/router';
 import { useStore } from '../lib/store';
 import { movePlaylistTrack } from '../lib/playlists';
@@ -31,8 +32,10 @@ interface Props {
 
 /** 入场动画只给前若干行，长列表后面的直接出现 */
 const STAGGER_ROWS = 24;
-/** iPhone 上长列表先画够一屏多的行，剩下的每隔一会儿补一批：一口气挂上几百行，点开歌单那一下会卡住半秒 */
-const FIRST_ROWS = 40;
+/**
+ * iPhone 上长列表先只画够一屏的行，等换页过渡播完再每隔一会儿补一批：
+ * 一口气挂上几百行，点开歌单那一下会卡住半秒；过渡途中补行，Safari 还得整块重画新页面的快照
+ */
 const BATCH_ROWS = 80;
 const BATCH_GAP_MS = 60;
 
@@ -136,16 +139,24 @@ export function TrackList({ tracks, sides = false, showAlbum = true, playlistId,
   );
 }
 
-/** 要先画几行：iPhone 上先画一屏多，返回到长列表中间时至少画到离开时的位置（不然滚动位置恢复不了） */
+/** 要先画几行：iPhone 上先画一屏，返回到长列表中间时至少画到离开时的位置（不然滚动位置恢复不了） */
 function useProgressiveCount(total: number) {
   const { scrollY } = useRoute();
-  const [count, setCount] = useState(() =>
-    isIPhone() ? Math.max(FIRST_ROWS, Math.ceil((scrollY + window.innerHeight) / 48) + 10) : Infinity,
-  );
+  const [count, setCount] = useState(() => (isIPhone() ? Math.ceil((scrollY + window.innerHeight) / 48) + 4 : Infinity));
   useEffect(() => {
     if (count >= total) return;
-    const id = setTimeout(() => setCount((c) => c + BATCH_ROWS), BATCH_GAP_MS);
-    return () => clearTimeout(id);
+    let alive = true;
+    let id = 0;
+    const more = () => {
+      if (alive) id = window.setTimeout(() => setCount((c) => c + BATCH_ROWS), BATCH_GAP_MS);
+    };
+    const wait = transitionSettled();
+    if (wait) void wait.then(more);
+    else more();
+    return () => {
+      alive = false;
+      clearTimeout(id);
+    };
   }, [count, total]);
   return count;
 }

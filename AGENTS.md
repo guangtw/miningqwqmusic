@@ -15,7 +15,7 @@
 - 这台机器取不到真实播放地址（`play-url` 返回 3002），播放相关改动用请求拦截桩音频验证。
 - Playwright 没装自带浏览器时，用临时配置指向 `/usr/bin/chromium` 跑，`INSTABOX_HEADLESS=1` 保持无头；跑完删掉临时配置和 `test-results/`。
 - 不主动开公网预览。用户明确要预览时才用 `instabox-port publish 3010 --private`（只给带 `_token` 的私有链接），看完即 `instabox-port unpublish 3010`。
-- iPhone 有单独的渲染路径：`<html data-device="iphone">`（`app/layout.tsx` 内联脚本写入，JS 侧用 `src/frontend/lib/device.ts`）。换页不走视图过渡、封面用 FLIP 飞，长歌单分批渲染。测 iPhone 性能用 Playwright 自带 WebKit + `devices['iPhone 13']`，对生产构建测（开发模式的 React 会把渲染耗时放大几倍）；跑之前去掉 `HTTP(S)_PROXY`（否则 WebKit 连不上本机），上下文加 `serviceWorkers: 'block'`（生产版注册了 sw.js，请求会绕过 `page.route` 桩）。
+- iPhone 有单独的渲染路径：`<html data-device="iphone">`（`app/layout.tsx` 内联脚本写入，JS 侧用 `src/frontend/lib/device.ts`）。换页照旧走视图过渡，长歌单先画一屏、过渡播完再分批补；开合唱机不走视图过渡（`motion.ts` 的 `deckMotion`：面板 CSS 滑动 + 复制一张唱片飞过去 + 播放台 transform 位移），因为 WebKit 拍全屏面板快照要卡两百多毫秒。测 iPhone 性能用 Playwright 自带 WebKit + `devices['iPhone 13']`，对生产构建测（开发模式的 React 会把渲染耗时放大几倍），并且：去掉 `HTTP(S)_PROXY`（否则 WebKit 连不上本机）；上下文加 `serviceWorkers: 'block'`（生产版注册了 sw.js，请求会绕过 `page.route` 桩）；`deviceScaleFactor: 1`（这台机器是软件合成，3 倍像素下合成成本会盖过主线程上的真问题）；音频用假播放（覆盖 `HTMLMediaElement` 的 play/currentTime），真解码会吃 CPU 污染测量。
 - 账户服务单个请求默认最多 400 个 JSON 字段（`AUTH_JSON_BODY_MAX_FIELDS`），自建歌单在前端按字段预算分卷存储（见 `src/frontend/lib/playlists.ts`），改歌单存储格式时保持兼容。
 
 <!-- CODEGRAPH_START -->

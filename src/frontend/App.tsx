@@ -105,31 +105,12 @@ function useShortcuts() {
   }, []);
 }
 
-export function App() {
-  const route = useRoute();
-  const settings = useSyncExternalStore(subscribeSettings, getSettings);
+/** 单独一个组件订阅正在放的封面：换歌时只有它重渲染，不会把整个应用（含几百行的歌单）从根上重渲染一遍 */
+function GlobalTint() {
   const cover = useStore(playerStore, (s) => {
     const t = currentTrack(s);
     return t ? coverOf(t) : undefined;
   });
-  const mainRef = useRef<HTMLElement>(null);
-
-  useShortcuts();
-
-  useEffect(() => {
-    const stop = watchSessionRecovery();
-    void restoreSession();
-    watchSocial();
-    const stopListen = watchListen();
-    return () => { stopListen?.(); stop(); };
-  }, []);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    if (settings.theme === 'auto') root.removeAttribute('data-theme');
-    else root.dataset.theme = settings.theme;
-    root.dataset.motion = settings.motion;
-  }, [settings.theme, settings.motion]);
 
   // 全站强调色跟着正在播放的封面走。不在根元素上做颜色过渡：根上的继承属性一动，
   // 整页每一帧都要重算样式、重画所有用到强调色的地方，换歌时连台式机都掉帧；
@@ -150,6 +131,30 @@ export function App() {
       clearTimeout(timer);
     };
   }, [cover]);
+  return null;
+}
+
+export function App() {
+  const route = useRoute();
+  const settings = useSyncExternalStore(subscribeSettings, getSettings);
+  const mainRef = useRef<HTMLElement>(null);
+
+  useShortcuts();
+
+  useEffect(() => {
+    const stop = watchSessionRecovery();
+    void restoreSession();
+    watchSocial();
+    const stopListen = watchListen();
+    return () => { stopListen?.(); stop(); };
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (settings.theme === 'auto') root.removeAttribute('data-theme');
+    else root.dataset.theme = settings.theme;
+    root.dataset.motion = settings.motion;
+  }, [settings.theme, settings.motion]);
 
   // 切页时回到顶部（返回时回到离开时的位置），收起浮层。
   // 用 layout effect：要在视图过渡拍新快照之前滚好
@@ -160,6 +165,7 @@ export function App() {
 
   return (
     <div className="app">
+      <GlobalTint />
       <Sidebar />
       <main className="main" ref={mainRef}>
         <View route={route} />

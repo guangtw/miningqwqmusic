@@ -129,6 +129,26 @@ html[data-vt='np-close']::view-transition-old(np-arm) {
   animation: vt-arm-sink 0.48s var(--ease-soft) both;
 }
 
+/* iPhone 开合唱机（不走视图过渡，见 motion.ts 的 deckMotion）：
+   飞行中的唱片压在播放台之上；这一会儿播放台用实色底——它在位移，毛玻璃每帧都得重新模糊背后；
+   面板里的子元素过渡瞬间到位（收着时歌词当前行不更新，一打开十几行一起播过渡），面板自己的滑动照常 */
+.disc-flight {
+  position: fixed;
+  z-index: 60;
+  margin: 0;
+  pointer-events: none;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+html[data-deck-anim] .player {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: var(--glass-solid);
+}
+html[data-deck-anim] .nowplaying * {
+  transition: none !important;
+}
+
 /* 过渡进行中关掉面板自己的 CSS 过渡，避免两套动画打架 */
 html[data-vt] .nowplaying,
 html[data-snap] .nowplaying,
@@ -153,7 +173,7 @@ html[data-vt] .player {
 }
 /* 过渡结束后从实色慢慢回到半透明毛玻璃，不要一下子跳回去。
    只在「没有 data-vt」时带过渡，进入过渡时的切换仍是瞬间的，快照拍到的就是实色。 */
-html:not([data-vt]) .player {
+html:not([data-vt]):not([data-deck-anim]) .player {
   transition: background-color 0.35s var(--ease-soft), left 0.55s var(--ease-out);
 }
 /* 手机上打开 / 收起唱机时播放台会变高 / 变矮（只剩播放键 ↔ 整套控件）。

@@ -17,15 +17,15 @@
 - 顶层导航与原生消息只接受精确的正式 HTTPS 来源；拒绝外站、非标准端口、带用户信息的 URL、`intent:`、`file:` 和浏览器内部协议，不调用默认浏览器。新窗口内的站内链接改为当前页面导航；外链不打开。
 - 保持安全浏览、HTTPS 校验与混合内容限制。网络/证书错误不显示 Chromium 默认错误页，不另建提醒体系；主页面首次加载失败时只保留应用背景，每 10 秒及网络恢复/返回应用时重试。已加载页面的接口提醒由网站原有逻辑处理。
 - HTTP 音频、封面、头像、取色用图片、`srcset` 和系统媒体封面在设置地址前升级为 HTTPS，不放开明文流量或混合内容。生成封面的 SVG/data URL 与 Blob URL 保持原样。允许网页在异步取得歌曲地址后开始播放，避免 Android 将点击后的异步播放误判为无手势播放。
-- 登录、注册、续期和退出的成功响应，必须等原生 Cookie 存储完成落盘确认才交还网页；串行后台线程负责磁盘 I/O，完成后回到主线程确认，避免在滚动或动画的 UI 线程上同步保存。保留 HttpOnly Cookie 与现有服务端轮换机制，不把刷新令牌复制到 JavaScript、LocalStorage 或 SharedPreferences。页面暂停时仍额外保存 Cookie。
+- 登录、注册、续期和退出的成功响应，必须等原生 Cookie 存储完成落盘确认才交还网页。v1.0.3 回到 v1.0.1 的同步保存及确认路径。保留 HttpOnly Cookie 与现有服务端轮换机制，不把刷新令牌复制到 JavaScript、LocalStorage 或 SharedPreferences。页面暂停时仍额外保存 Cookie。
 - 用户主动选择头像或导入文件时，使用 Android 系统文件选择器。下载通过 Android 下载服务或受来源约束的消息桥保存，支持网页 Blob 下载，不打开浏览器下载页。Android 10+ 保存至 `Download/MiningQwQMusic/`；Android 8–9 保存至应用专属外部 Downloads 目录。Blob 单文件上限 256 MiB，按块确认传输以限制内存。
 - Android 返回键先返回站内历史，首页返回桌面；不额外加入退出确认弹窗。
 
-## 性能与视觉约束
+## 缓存、回滚与视觉约束
 
-不修改网站 CSS、动效参数、图片尺寸、模糊、阴影、透明度或页面结构。壳层只扫描新插入的表单子树，忽略歌词/时间的文本变化；字段属性未变时不重复写入。主题监听只针对 `data-theme` 与系统主题，不监听强调色和过渡几何变量；JS 与原生两端均去重，避免重复跨线程通信与系统栏重绘。Android WebView 使用不透明的主题底色以免整个原生表面参与透明合成，网页内部的玻璃/模糊/阴影仍由原 CSS 渲染；硬件加速显式保持开启。
+不修改网站 CSS、动效参数、图片尺寸、模糊、阴影、透明度或页面结构。v1.0.3 按用户要求撤回 v1.0.2 的壳层性能改动：表单扫描、主题监听、原生透明背景与 Cookie 保存线程恢复 v1.0.1 实现。保留 v1.0.2 的 HTTPS 封面修复、游客封面检查和生产测试账号保护。
 
-同一 1000 卡片 DOM、120 次文本和根样式更新的对照中，v1.0.1 额外触发 120 次全页扫描、720 次字段属性写入、120 次主题样式读取与 120 次原生主题消息；v1.0.2 对这些无关变化均不触发上述工作。此数据衡量壳层额外工作，不代表实体手机帧率倍数。设备上的最终流畅度还受 WebView 版本和 GPU 性能影响。
+APK 不包含网页 HTML/JS/CSS 或 WebView 内核；在线加载网站，使用系统 WebView 默认的 HTTP 资源缓存、站点 Service Worker 与站点已有的数据缓存。没有实现原生页面保活、独立离线页面包或持久页面缓存。返回加载问题尚未在实体用户设备上定位，回滚不等于已证明该问题修复。
 
 没有新增网页提醒、重绘前端、修改服务端或引入私有音源密钥。此版是轻量 WebView 壳层，未实现原生前台播放服务；长时间后台/锁屏保活和不同厂商的省电策略尚不作保证。系统安装提示、系统文件选择器与第三方输入法本身的界面属于 Android 系统行为。
 
@@ -41,7 +41,7 @@ cd desktop/android
 .\gradlew.bat connectedDebugAndroidTest
 ```
 
-常规测试覆盖来源边界、首次导航前的自动填充配置、新窗口与外链拦截、实际网页中的脚本弹窗/动态密码表单、网络错误页隐藏、HTTPS 音源与真实图片加载、动态密码字段、无关变化不触发全页扫描或主题计算、后台 Cookie 保存确认、原有进度条保留，以及 Blob 文件写入 Downloads 后的内容校验。`ArtworkAuditInstrumentedTest` 以游客身份验证首页、滚动后的卡片、歌单、曲目封面、排行榜、歌手与专辑的可见图片，要求 `naturalWidth > 0`，不以占位块代替加载成功。
+常规测试覆盖来源边界、首次导航前的自动填充配置、新窗口与外链拦截、实际网页中的脚本弹窗/动态密码表单、网络错误页隐藏、HTTPS 音源与真实图片加载、Cookie 保存确认、原有进度条保留，以及 Blob 文件写入 Downloads 后的内容校验。返回用例通过系统触摸进入榜单，再调用原生返回入口，确认回到已加载的首页时保留同一网页且不出现数据加载占位；这不覆盖用户实体设备上的所有返回路径。`ArtworkAuditInstrumentedTest` 以游客身份验证首页、滚动后的卡片、歌单、曲目封面、排行榜、歌手与专辑的可见图片，要求 `naturalWidth > 0`，不以占位块代替加载成功。
 
 `LiveSessionInstrumentedTest` 为显式启用的真实联调测试，常规运行时跳过。仅接受随机生成的 `android-qa-<32位随机标识>@example.test` 测试身份，使用生产 API 注册临时账号。`bootstrap` 创建/登录测试身份，`coldStart` 在独立应用进程验证恢复；`refreshThenAwaitKill` 在 Cookie 轮换成功后发出检查点，宿主立即强制结束应用，再运行 `coldStart` 验证；`actualMedia` 从真实后端取得两首歌曲并验证音频时间前进。测试密码只存在测试代码的临时设备数据中，发行 APK 不包含这些测试类；测试结束须按随机邮箱和测试昵称精确删除临时账号及关联数据。
 
@@ -56,7 +56,7 @@ cd desktop/android
 ```powershell
 # 首次生成发行密钥。已有密钥时必须恢复并复用，不能重新生成。
 .\scripts\init-signing.ps1
-.\scripts\package.ps1 -Version 1.0.2 -SourceCommit (git rev-parse HEAD)
+.\scripts\package.ps1 -Version 1.0.3 -SourceCommit (git rev-parse HEAD)
 ```
 
 `signing.properties`、发行密钥、SDK 路径、构建目录和 `artifacts/` 都在 Git 忽略列表。首次生成的密钥与签名配置恢复副本保存在 `%LOCALAPPDATA%\MiningQwQMusicAndroid\signing\`；请私下备份，后续版本复用同一密钥才能覆盖升级。密钥和密码不得上传 GitHub。

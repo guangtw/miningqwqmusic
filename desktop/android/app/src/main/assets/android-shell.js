@@ -99,17 +99,12 @@
     try { if (navigator.credentials) Object.defineProperty(navigator.credentials, name, { value: noCredentials }); } catch {}
   }
 
-  const protectField = element => {
-    const autocomplete = element.type === 'password' ? 'new-password' : 'off';
-    if (element.getAttribute('autocomplete') !== autocomplete) element.setAttribute('autocomplete', autocomplete);
-    if (element.getAttribute('data-ms-editor') !== 'false') element.setAttribute('data-ms-editor', 'false');
-  };
-  const protectSubtree = root => {
-    if (root.nodeType !== Node.ELEMENT_NODE) return;
-    if (root.matches('input,textarea,form')) protectField(root);
-    // Text updates in lyrics/time labels are not form changes. Only inspect a
-    // newly inserted element's descendants, never rescan the whole application.
-    if (root.firstElementChild) root.querySelectorAll('input,textarea,form').forEach(protectField);
+  const disableAutofill = root => {
+    const elements = root.querySelectorAll?.('input,textarea,form') || [];
+    for (const element of elements) {
+      element.setAttribute('autocomplete', element.type === 'password' ? 'new-password' : 'off');
+      element.setAttribute('data-ms-editor', 'false');
+    }
   };
   const blobDownload = async anchor => {
     const response = await fetch(anchor.href);
@@ -143,30 +138,15 @@
   }, true);
 
   const ready = () => {
-    protectSubtree(document.body);
-    new MutationObserver(records => {
-      for (const record of records) {
-        if (record.type === 'attributes') {
-          if (record.target.matches('input,textarea,form')) protectField(record.target);
-        }
-        else for (const added of record.addedNodes) protectSubtree(added);
-      }
-    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'] });
+    disableAutofill(document);
+    new MutationObserver(() => disableAutofill(document)).observe(document.body, { childList: true, subtree: true });
     // Only remove browser affordances. Existing layout and toast/dialog components are untouched.
     const style = document.createElement('style');
     style.textContent = 'html,body{overscroll-behavior:none}::-webkit-scrollbar{display:none}a,img{-webkit-touch-callout:none}';
     document.head.append(style);
-    let lastDark;
-    const publishTheme = () => {
-      const dark = getComputedStyle(document.documentElement).colorScheme === 'dark';
-      if (dark === lastDark) return;
-      lastDark = dark;
-      send({ type: 'state', dark });
-    };
+    const publishTheme = () => send({ type: 'state', dark: getComputedStyle(document.documentElement).colorScheme === 'dark' });
     publishTheme();
-    // --accent-h and transition geometry also change root.style. They do not
-    // change color-scheme and must not trigger a style flush or native repaint.
-    new MutationObserver(publishTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    new MutationObserver(publishTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', publishTheme);
   };
   if (document.readyState === 'loading') addEventListener('DOMContentLoaded', ready, { once: true });

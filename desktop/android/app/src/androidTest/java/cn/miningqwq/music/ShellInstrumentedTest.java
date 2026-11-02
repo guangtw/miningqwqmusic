@@ -44,6 +44,28 @@ public class ShellInstrumentedTest {
         fail("Online website and Android shell did not become ready");
     }
 
+    private void tap(String selector) throws Exception {
+        org.json.JSONObject bounds = new org.json.JSONObject(new org.json.JSONTokener(js(
+                "JSON.stringify((()=>{const r=document.querySelector(" + org.json.JSONObject.quote(selector)
+                        + ").getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,width:innerWidth}})())")).nextValue().toString());
+        int[] origin = new int[2];
+        AtomicReference<Float> scale = new AtomicReference<>();
+        instrumentation.runOnMainSync(() -> {
+            web.getLocationOnScreen(origin);
+            scale.set((float) web.getWidth());
+        });
+        float factor = scale.get() / (float) bounds.getDouble("width");
+        float x = origin[0] + (float) bounds.getDouble("x") * factor;
+        float y = origin[1] + (float) bounds.getDouble("y") * factor;
+        long down = android.os.SystemClock.uptimeMillis();
+        android.view.MotionEvent press = android.view.MotionEvent.obtain(down, down, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+        android.view.MotionEvent release = android.view.MotionEvent.obtain(down, down + 60, android.view.MotionEvent.ACTION_UP, x, y, 0);
+        try {
+            instrumentation.sendPointerSync(press);
+            instrumentation.sendPointerSync(release);
+        } finally { press.recycle(); release.recycle(); }
+    }
+
     @Test public void nativePolicyBlocksAutofillAndBrowserUiBeforeNavigation() {
         instrumentation.runOnMainSync(() -> {
             assertEquals(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS, web.getImportantForAutofill());
@@ -127,19 +149,28 @@ public class ShellInstrumentedTest {
         assertEquals("true", js("!window.MediaMetadata || new MediaMetadata({artwork:[{src:'http://p3.music.126.net/art.jpg'}]}).artwork[0].src.startsWith('https://')"));
     }
 
-    @Test public void textAndAnimationMutationsDoNotRescanPageOrRecalculateTheme() throws Exception {
+    @Test public void nativeBackReturnsToWarmHomeWithoutDocumentReloadOrLoadingState() throws Exception {
         waitForShell();
-        js("(() => {window.__qaWork={scans:0,themeReads:0};const query=Document.prototype.querySelectorAll;const style=window.getComputedStyle;Document.prototype.querySelectorAll=function(...a){__qaWork.scans++;return query.apply(this,a)};window.getComputedStyle=function(...a){if(a[0]===document.documentElement)__qaWork.themeReads++;return style.apply(this,a)};const label=document.createElement('span');label.id='shell-perf-label';document.body.append(label);window.__qaWork.restore=()=>{Document.prototype.querySelectorAll=query;window.getComputedStyle=style;label.remove()};for(let i=0;i<500;i++){label.textContent=String(i);document.documentElement.style.setProperty('--shell-test-animation',String(i))}return true;})()");
-        assertEquals("No full-document scan for unrelated mutations", "0", js("__qaWork.scans"));
-        assertEquals("No root style read for unrelated animations", "0", js("__qaWork.themeReads"));
-        js("__qaWork.restore();document.documentElement.style.removeProperty('--shell-test-animation');true");
-        js("const dynamic=document.createElement('input');dynamic.id='shell-dynamic-field';document.body.append(dynamic);true");
-        js("document.getElementById('shell-dynamic-field').type='password';true");
-        assertEquals("Dynamic password fields remain protected", "true", js("document.getElementById('shell-dynamic-field').autocomplete==='new-password'"));
-        js("document.getElementById('shell-dynamic-field').remove();true");
+        long until = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < until && !"true".equals(js("!!document.querySelector('.masthead') && !document.querySelector('.main .loading')"))) Thread.sleep(100);
+        assertEquals("Home must finish its initial load", "true", js("!document.querySelector('.main .loading')"));
+        js("window.__backDocumentMarker=true;true");
+        tap("a[href=\"#/charts\"]");
+        until = System.currentTimeMillis() + 30_000;
+        while (System.currentTimeMillis() < until && !"true".equals(js("location.hash==='#/charts' && !document.querySelector('.main .loading') && !!document.querySelector('.toplist')"))) Thread.sleep(100);
+        assertEquals("Charts route must be entered", "true", js("location.hash==='#/charts'"));
+        js("window.__backShowedLoading=false;window.__backObserver=new MutationObserver(()=>{if(location.hash!=='#/charts'&&document.querySelector('.main .loading'))window.__backShowedLoading=true});__backObserver.observe(document.querySelector('.main'),{childList:true,subtree:true});true");
+        instrumentation.runOnMainSync(() -> activity.onBackPressed());
+        until = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < until && !"true".equals(js("location.hash==='' || location.hash==='#/'"))) Thread.sleep(100);
+        Thread.sleep(1000);
+        assertEquals("Returning must preserve the same document", "true", js("window.__backDocumentMarker===true"));
+        assertEquals("Warm home must not show a data loading state", "false", js("window.__backShowedLoading"));
+        assertEquals("Home route must be restored", "true", js("location.hash==='' || location.hash==='#/'"));
+        js("__backObserver.disconnect();true");
     }
 
-    @Test public void backgroundCookiePersistenceAcknowledgesWithoutReplacingWebsiteUi() throws Exception {
+    @Test public void cookiePersistenceAcknowledgesWithoutReplacingWebsiteUi() throws Exception {
         waitForShell();
         CountDownLatch set = new CountDownLatch(1);
         instrumentation.runOnMainSync(() -> android.webkit.CookieManager.getInstance().setCookie(
@@ -148,7 +179,7 @@ public class ShellInstrumentedTest {
         js("window.__storageQa=false;window.__oldShellReply=MiningAndroid.onmessage;MiningAndroid.onmessage=e=>{const r=JSON.parse(e.data);if(r.ack==='storage-qa')window.__storageQa=r.ok;else __oldShellReply(e)};MiningAndroid.postMessage(JSON.stringify({type:'persist-session',ack:'storage-qa'}));true");
         long deadline = System.currentTimeMillis() + 10000;
         while (System.currentTimeMillis() < deadline && !"true".equals(js("__storageQa"))) Thread.sleep(50);
-        assertEquals("The background storage worker must acknowledge completion", "true", js("__storageQa"));
+        assertEquals("Cookie storage must acknowledge completion", "true", js("__storageQa"));
         js("MiningAndroid.onmessage=__oldShellReply;true");
         instrumentation.runOnMainSync(() -> android.webkit.CookieManager.getInstance().setCookie(
                 NavigationPolicy.HOME, "shell_storage_qa=; Path=/; Secure; Max-Age=0", null));

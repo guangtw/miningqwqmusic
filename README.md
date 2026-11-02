@@ -4,7 +4,7 @@
 
 独立 Android WebView 壳层，沿用正式站点、现有页面与提醒体系，关闭密码自动填充、浏览器弹窗、新窗口和外部浏览器跳转。源码与打包说明位于 [desktop/android](desktop/android/README.md)。
 
-[下载 Android APK](https://github.com/guangtw/miningqwqmusic/releases/tag/android-v1.0.2)
+[下载 Android APK](https://github.com/guangtw/miningqwqmusic/releases/tag/android-v1.0.3)
 
 ## Windows 客户端
 

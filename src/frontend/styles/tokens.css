@@ -51,6 +51,8 @@
   --arm-metal-dark: #8d8a82;
   --shadow-1: 0 1px 2px rgba(17, 17, 17, 0.06), 0 8px 24px -12px rgba(17, 17, 17, 0.22);
   --shadow-2: 0 2px 6px rgba(17, 17, 17, 0.06), 0 24px 60px -24px rgba(17, 17, 17, 0.38);
+  /* 嵌在容器里的小胶囊（分段控件选中项）：阴影收在 4px 内边距以内 */
+  --shadow-inset-pill: 0 1px 2px rgba(17, 17, 17, 0.08), 0 2px 4px -2px rgba(17, 17, 17, 0.12);
   --accent-l: 47%;
   --tint-l: 62%;
   --tint-a: 0.32;
@@ -116,6 +118,7 @@
     --arm-metal-dark: #7c7973;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -12px rgba(0, 0, 0, 0.7);
     --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.4), 0 30px 70px -24px rgba(0, 0, 0, 0.85);
+    --shadow-inset-pill: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
     --accent-l: 64%;
     --tint-l: 48%;
     --tint-a: 0.38;
@@ -150,6 +153,7 @@
   --arm-metal-dark: #7c7973;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px -12px rgba(0, 0, 0, 0.7);
   --shadow-2: 0 2px 8px rgba(0, 0, 0, 0.4), 0 30px 70px -24px rgba(0, 0, 0, 0.85);
+  --shadow-inset-pill: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
   --accent-l: 64%;
   --tint-l: 48%;
   --tint-a: 0.38;

@@ -3032,7 +3032,7 @@ mark.hl {
 .seg a.on {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: var(--shadow-1);
+  box-shadow: var(--shadow-inset-pill);
 }
 .seg-sm button {
   height: 30px;

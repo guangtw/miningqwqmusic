@@ -37,6 +37,13 @@ async function api(path, method='GET', body, authenticated=true) {
   try {
     const registered=await api('/api/account/auth/register','POST',{email,password,nickname:'Deployment QA'},false);
     createdId=registered.data.user.id; token=registered.data.accessToken;
+    for (const [path, method] of [['/api/account/admin/mail', 'GET'], ['/api/account/admin/mail/verify', 'POST']]) {
+      const denied = await fetch(origin + path, { method, headers: { authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(10000) });
+      if (denied.status !== 403 || denied.headers.get('cache-control') !== 'no-store') throw Error('Mail administrator permission check failed');
+      const anonymous = await fetch(origin + path, { method, signal: AbortSignal.timeout(10000) });
+      if (anonymous.status !== 401) throw Error('Mail administrator endpoint accepts unauthenticated access');
+    }
+    console.log('MAIL_ADMINISTRATOR_BOUNDARY_REGRESSION_PASSED');
     if(!registered.headers.get('set-cookie')?.includes('HttpOnly')) throw Error('Refresh cookie is not HttpOnly');
 
     const originalCookie=[...cookies.entries()].map(([key,value])=>key+'='+value).join('; ');

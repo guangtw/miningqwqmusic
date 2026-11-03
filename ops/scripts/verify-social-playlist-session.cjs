@@ -30,7 +30,7 @@ async function api(user, route, body, expected = 200, method = body === undefine
   check(response.status === expected && (expected !== 200 || payload.code === 0), 'Social QA: ' + route + ' HTTP ' + response.status);
   return payload.data;
 }
-async function untilMessage(id) {
+async function untilMessage(id, type = 'message.created') {
   let buffer = '';
   const decoder = new TextDecoder();
   for (;;) {
@@ -40,7 +40,10 @@ async function untilMessage(id) {
     const blocks = buffer.split(/\r?\n\r?\n/); buffer = blocks.pop();
     for (const block of blocks) {
       const data = block.match(/^data:\s*(.+)$/m)?.[1];
-      if (data && JSON.parse(data).payload?.message?.id === id) return;
+      if (data) {
+        const event = JSON.parse(data);
+        if (event.type === type && event.payload?.message?.id === id) return event.payload.message;
+      }
     }
   }
 }
@@ -85,11 +88,35 @@ async function untilMessage(id) {
     await api(a, 'library/imported-playlists/' + playlist.id + '/order', { expectedRevision: saved.revision, trackIds: ['a', 'b'] }, 409, 'PUT');
     const snapshot = await api(a, 'library/snapshot');
     check(snapshot.importedPlaylists[playlist.id].coverUrl.endsWith('/b.jpg'), 'Snapshot cover is stale');
+    const sharedTrack = await api(a, path(b) + '/messages', { clientMessageId: 'shared-track', kind: 'track', resource: track('186016') });
+    check(sharedTrack.message.kind === 'track' && sharedTrack.message.content.track.id === '186016', 'Typed track card missing');
+    check((await untilMessage(sharedTrack.message.id)).content.track.id === '186016', 'Typed track SSE missing');
+    const sharedPlaylist = await api(a, path(b) + '/messages', { clientMessageId: 'shared-playlist', kind: 'playlist', playlistId: playlist.id });
+    const sharedResource = await api(b, 'messages/' + sharedPlaylist.message.id + '/resource');
+    check(sharedResource.playlist.tracks.length === 2 && sharedResource.playlist.tracks[0].id === 'b', 'Private playlist share snapshot incorrect');
+    await api(a, path(b) + '/messages', { clientMessageId: 'shared-album', kind: 'album', resource: { id: '32311', name: 'QA Album', artists: [] } });
+    const friendAgain = await api(a, 'friends/requests', { userId: b.id });
+    await api(b, 'friends/requests/' + friendAgain.id + '/accept', {});
+    const room = await api(a, 'listen/rooms', { playbackState: { queue: [track('186016')], currentIndex: 0, currentTimeMs: 0,
+      isPlaying: false, mode: 'sequence', updatedAt: new Date().toISOString() } });
+    const invitation = await api(a, 'listen/rooms/' + room.id + '/invites', { friendUserId: b.id });
+    const retryInvite = await api(a, 'listen/rooms/' + room.id + '/invites', { friendUserId: b.id });
+    check(invitation.messageId && retryInvite.messageId === invitation.messageId, 'Listen invitation message missing or duplicated');
+    const invitationCard = await api(b, 'messages/' + invitation.messageId);
+    check(invitationCard.kind === 'listen_invite' && invitationCard.content.invitation.status === 'pending', 'Pending invitation card incorrect');
+    check((await untilMessage(invitation.messageId)).content.invitation.status === 'pending', 'Invitation created SSE missing');
+    await api(b, 'listen/invites/' + invitation.id + '/accept', {});
+    check((await api(b, 'messages/' + invitation.messageId)).content.invitation.status === 'accepted', 'Invitation acceptance did not update message');
+    const updatedInvitation = await untilMessage(invitation.messageId, 'message.updated');
+    check(updatedInvitation.content.invitation.status === 'accepted' && updatedInvitation.sequence === invitationCard.sequence, 'Invitation updated SSE incorrect');
+    await api(b, 'listen/rooms/' + room.id + '/leave', {});
+    await api(a, 'listen/rooms/' + room.id + '/leave', {});
     const comments = await fetch(origin + '/api/music/track/186016/comments?sort=hot&limit=1', { signal: AbortSignal.timeout(30000) });
     const payload = await comments.json();
     check(comments.ok && payload.code === 0 && Array.isArray(payload.data.items), 'Read-only comments unavailable');
     const write = await fetch(origin + '/api/music/track/186016/comments', { method: 'POST', signal: AbortSignal.timeout(15000) });
     check(write.status === 405, 'Comments unexpectedly permit writes');
+    console.log('RICH_MESSAGES_AND_LISTEN_INVITATION_REGRESSION_PASSED');
     console.log('SOCIAL_COMMENTS_PLAYLIST_REGRESSION_PASSED');
   } finally {
     clearTimeout(deadline); abort.abort();

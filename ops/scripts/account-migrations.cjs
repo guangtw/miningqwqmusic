@@ -4,7 +4,8 @@ const crypto = require('node:crypto');
 const hash = text => crypto.createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
 const approved = [
   ['20261101130000_single_use_memberships', 'scripts/migrate-single-use-memberships.mjs'],
-  ['20261103120000_direct_messages', 'scripts/migrate-direct-messages.mjs']
+  ['20261103120000_direct_messages', 'scripts/migrate-direct-messages.mjs'],
+  ['20261103160000_rich_direct_messages', 'scripts/migrate-rich-direct-messages.mjs']
 ];
 
 /** Exact, ordered migration chain. Unknown schemas/SQL fail closed. No database work here. */

@@ -347,7 +347,8 @@ test('radio picks songs by pace, sati tags switch and liner notes show credits',
   await page.getByRole('tab', { name: '雨声', exact: true }).click();
   await expect(page.locator('.sound-title')).toHaveText('窗外的雨');
   await page.locator('.player .np-text').click();
-  await page.getByRole('button', { name: '唱片内页' }).click();
+  // The responsive chip reads “唱片 内页” on desktop and “内页” on mobile.
+  await page.getByRole('region', { name: '正在播放', exact: true }).getByRole('button', { name: /^(?:唱片\s*)?内页$/ }).click();
   await expect(page.locator('.notes-credits')).toContainText('某人');
   await expect(page.locator('.notes-tag')).toHaveText(['流行', '华语流行']);
   expect(state.calls.filter((c) => c.path.includes('/scene/sport')).length).toBe(11);

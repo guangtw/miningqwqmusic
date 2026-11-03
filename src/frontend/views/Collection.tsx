@@ -10,6 +10,7 @@ import { href } from '../lib/router';
 import { useAsync } from '../lib/useAsync';
 import { libraryStore } from '../lib/account';
 import { deletePlaylist, kindOf, linkPlaylist } from '../lib/playlists';
+import { openShare, sharedAlbum, sharedPlaylist, type ShareTarget } from '../lib/share';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { playList } from '../player/player';
@@ -36,6 +37,15 @@ export function PlayActions({ tracks, addable = false }: { tracks: Track[]; adda
         </button>
       )}
     </>
+  );
+}
+
+/** 分享给好友：卡片上只放展示用的快照，对方打开时按 id 重新取 */
+export function ShareButton({ target }: { target: ShareTarget }) {
+  return (
+    <button className="btn ghost" onClick={() => openShare(target)}>
+      <Icon name="share" /> 分享
+    </button>
   );
 }
 
@@ -87,6 +97,9 @@ export function PlaylistView({ id, source }: { id: string; source: 'playlist' | 
               <>
                 <PlayActions tracks={p.tracks} addable />
                 {source === 'playlist' && <KeepButton p={p} />}
+                {source === 'playlist' && (
+                  <ShareButton target={{ kind: 'playlist', playlist: sharedPlaylist({ ...p, trackCount: p.tracks.length }) }} />
+                )}
               </>
             )
           }
@@ -120,7 +133,14 @@ export function AlbumView({ id }: { id: string }) {
           ))}
           description={a?.description}
           meta={a && [`${a.tracks.length} 首`, a.tracks.length > 0 && totalTime(a.tracks)]}
-          actions={a && <PlayActions tracks={a.tracks} addable />}
+          actions={
+            a && (
+              <>
+                <PlayActions tracks={a.tracks} addable />
+                <ShareButton target={{ kind: 'album', album: sharedAlbum({ ...a, trackCount: a.tracks.length }) }} />
+              </>
+            )
+          }
           pending={!a}
         />
       )}

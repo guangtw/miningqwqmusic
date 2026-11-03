@@ -82,4 +82,6 @@ export const href = {
   accountSettings: () => '#/account?tab=settings',
   friends: () => '#/friends',
   chat: (userId: string) => `#/chat/${encodeURIComponent(userId)}`,
+  /** 私信里别人分享的自建歌单（快照只属于这条消息） */
+  shared: (userId: string, messageId: string) => `#/chat/${encodeURIComponent(userId)}/shared/${encodeURIComponent(messageId)}`,
 };

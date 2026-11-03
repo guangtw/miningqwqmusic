@@ -11,7 +11,7 @@ import { href, navigate } from '../lib/router';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
-import { PlayActions, totalTime } from './Collection';
+import { PlayActions, ShareButton, totalTime } from './Collection';
 
 const updatedLabel = (ts: number) => {
   const d = new Date(ts);
@@ -82,6 +82,7 @@ export function MyPlaylistView({ id }: { id: string }) {
             <button className="btn" onClick={() => uiStore.set({ playlist: { mode: 'edit', id } })}>
               <Icon name="edit" /> 编辑
             </button>
+            {pl.tracks.length > 0 && status === 'authenticated' && <ShareButton target={{ kind: 'mine', id }} />}
             {pl.tracks.length > 1 && !draft && (
               <button className="btn" onClick={() => setDraft(pl.tracks)}>
                 <Icon name="sort" /> 整理顺序

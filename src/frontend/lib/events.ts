@@ -2,11 +2,11 @@ import type { AccountEventDto, AccountEventPage } from '@/src/types/social';
 import { api } from '../config/site';
 import { accessToken, authed, authStore, libraryStore, pullLibrary } from './account';
 import { parseSse } from './listen';
-import { onMessageCreated, onMessageRead, refreshConversations, resetMessages } from './messages';
+import { onMessageCreated, onMessageRead, onMessageUpdated, refreshConversations, resetMessages } from './messages';
 import { readJSON, writeJSON } from './storage';
 
 /*
- * 账户事件：私信、已读、歌单变动都从这一条流来。
+ * 账户事件：私信（新消息、邀请状态更新）、已读、歌单变动都从这一条流来。
  * 启动顺序：用存下的游标把 /events 补拉完 → 接 SSE。游标只在事件处理完后前进，按账号分开存；
  * 断线用最后处理过的游标重连，服务端会从日志重放，重复的按 id 丢掉。
  * 推送流要带 Authorization 头，所以和一起听一样用 fetch 读流。
@@ -35,6 +35,9 @@ export function handleAccountEvent(ev: AccountEventDto) {
   switch (ev.type) {
     case 'message.created':
       onMessageCreated(ev.payload.message);
+      break;
+    case 'message.updated':
+      onMessageUpdated(ev.payload.message);
       break;
     case 'message.read':
       onMessageRead(ev.payload);

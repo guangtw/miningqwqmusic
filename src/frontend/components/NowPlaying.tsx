@@ -8,6 +8,7 @@ import { useInsight } from '../lib/insight';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
 import { motionEnabled } from '../lib/settings';
+import { openShare } from '../lib/share';
 import { tintVars, useTint } from '../lib/palette';
 import { href, navigate } from '../lib/router';
 import { useStore } from '../lib/store';
@@ -334,6 +335,16 @@ export function NowPlaying() {
                     }}
                   >
                     <Icon name="people" /> 一起听
+                  </button>
+                  <button
+                    role="menuitem"
+                    className="t-menu-item"
+                    onClick={() => {
+                      closeMore();
+                      openShare({ kind: 'track', track });
+                    }}
+                  >
+                    <Icon name="share" /> 分享给好友
                   </button>
                 </PopMenu>
               </div>

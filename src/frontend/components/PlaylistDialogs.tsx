@@ -11,7 +11,7 @@ import { Cover } from './Cover';
 import { Icon } from './Icon';
 
 /** 对话框外壳：遮罩、关闭按钮、Esc 关闭、打开时聚焦第一个输入框 */
-function Shell({ open, onClose, labelledBy, className = '', children }: { open: boolean; onClose: () => void; labelledBy: string; className?: string; children: React.ReactNode }) {
+export function Shell({ open, onClose, labelledBy, className = '', children }: { open: boolean; onClose: () => void; labelledBy: string; className?: string; children: React.ReactNode }) {
   const { mounted, state } = usePresence(open, 220);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {

@@ -167,6 +167,105 @@ describe('direct messages', () => {
   });
 });
 
+describe('music cards and listen invitations', () => {
+  const invite = (status: string, updatedAt: string) =>
+    msg(3, PEER, {
+      kind: 'listen_invite',
+      text: '[一起听邀请] 等待回应',
+      content: {
+        version: 1,
+        kind: 'listen_invite',
+        invitation: { inviteId: 'i1', roomId: 'r1', inviterUserId: PEER, inviteeUserId: ME, status: status as never, expiresAt: '2026-11-03T20:00:00Z', respondedAt: null },
+      },
+      updatedAt,
+    });
+
+  it('falls back to text for old, unknown or mismatched content', async () => {
+    const m = await import('@/src/frontend/lib/messages');
+    expect(m.cardOf(msg(1))).toBeNull();
+    expect(m.cardOf({ kind: 'image' as never, content: { version: 1, kind: 'image' } as never })).toBeNull();
+    expect(m.cardOf({ kind: 'track', content: { version: 2, kind: 'track' } as never })).toBeNull();
+    const card = msg(2, PEER, { kind: 'album', text: '[专辑] 叶惠美', content: { version: 1, kind: 'album', album: { id: '1', name: '叶惠美', artists: [] } } });
+    expect(m.cardOf(card)?.kind).toBe('album');
+    expect(m.previewText(card, false)).toBe('分享了专辑《叶惠美》');
+    expect(m.previewText(invite('pending', '2026-11-03T10:00:00Z'), false)).toBe('邀请你一起听');
+  });
+
+  it('replaces updated invitations in place without touching unread, and never goes back to an older state', async () => {
+    let summary = conversation({ lastMessage: invite('pending', '2026-11-03T10:00:00Z'), unreadCount: 1, lastReadSequence: 2 });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/messages?') || url.endsWith('/messages')
+          ? ok({ items: [msg(1), msg(2), invite('pending', '2026-11-03T10:00:00Z')], hasMore: false, nextBefore: 1, nextAfter: 3 })
+          : ok(summary),
+      ),
+    );
+    await signIn();
+    const m = await import('@/src/frontend/lib/messages');
+    await m.openThread(PEER);
+
+    m.onMessageUpdated(invite('accepted', '2026-11-03T10:05:00Z'));
+    m.onMessageUpdated(invite('pending', '2026-11-03T10:00:00Z')); // 晚到的旧状态
+    const s = m.messagesStore.get();
+    const status = (x: DirectMessageDto | null | undefined) => (x?.content as { invitation: { status: string } } | undefined)?.invitation.status;
+    expect(s.threads[PEER].messages.map((x) => x.sequence)).toEqual([1, 2, 3]);
+    expect(status(s.threads[PEER].messages[2])).toBe('accepted');
+    expect(status(s.conversations[PEER].lastMessage)).toBe('accepted');
+    expect(s.conversations[PEER].unreadCount).toBe(1);
+
+    // 摘要接口还拿着旧版本：不能把已接受盖回等待中
+    summary = conversation({ lastMessage: invite('pending', '2026-11-03T10:00:00Z'), unreadCount: 1, lastReadSequence: 2 });
+    await m.openThread(PEER);
+    expect(status(m.messagesStore.get().conversations[PEER].lastMessage)).toBe('accepted');
+  });
+
+  it('keeps the original card request for retries and builds clean share payloads', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    let online = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init: RequestInit) => {
+        if (init?.method === 'POST' && url.endsWith('/messages')) {
+          const body = JSON.parse(String(init.body));
+          bodies.push(body);
+          if (!online) throw new TypeError('offline');
+          return ok({ message: msg(3, ME, { clientMessageId: body.clientMessageId, kind: 'track', content: { version: 1, kind: 'track', track: body.resource } }), conversation: conversation() });
+        }
+        if (url.includes('/messages')) return ok({ items: [msg(1), msg(2)], hasMore: false, nextBefore: 1, nextAfter: 2 });
+        return ok(conversation());
+      }),
+    );
+    await signIn();
+    const m = await import('@/src/frontend/lib/messages');
+    const share = await import('@/src/frontend/lib/share');
+    await m.openThread(PEER);
+
+    const track = {
+      id: '186016',
+      name: '晴天',
+      artists: [{ id: '', name: '周杰伦' }, { id: '2', name: '  ' }],
+      album: { id: '18905', name: '叶惠美', coverUrl: 'data:image/png;base64,xx' },
+      durationMs: 269000.4,
+      url: 'https://example.test/audio.mp3',
+    } as unknown as Track;
+    expect(await share.shareTo(PEER, { kind: 'track', track }, '  这首  ')).toBe('failed');
+    const o = m.messagesStore.get().threads[PEER].outbox[0];
+    expect(o.preview?.kind).toBe('track');
+    expect(bodies[0]).toEqual({
+      clientMessageId: o.clientMessageId,
+      kind: 'track',
+      text: '这首',
+      resource: { id: '186016', name: '晴天', artists: [{ id: '0', name: '周杰伦' }], album: { id: '18905', name: '叶惠美' }, durationMs: 269000 },
+    });
+
+    online = true;
+    expect(await m.resend(PEER, o)).toBe('sent');
+    expect(bodies[1]).toEqual(bodies[0]);
+    expect(m.messagesStore.get().threads[PEER].outbox).toEqual([]);
+  });
+});
+
 describe('account events', () => {
   it('parses ids from SSE frames split across chunks', async () => {
     const { parseSse } = await import('@/src/frontend/lib/listen');

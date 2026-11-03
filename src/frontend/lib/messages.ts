@@ -1,4 +1,14 @@
-import type { ConversationPage, DirectConversationDto, DirectMessageDto, MessagePage, MessageSendResult, ReadResult } from '@/src/types/social';
+import type {
+  ConversationPage,
+  DirectConversationDto,
+  DirectMessageContent,
+  DirectMessageDto,
+  MessagePage,
+  MessageSendResult,
+  ReadResult,
+  SendDirectMessageInput,
+  SharedMessageResource,
+} from '@/src/types/social';
 import { ApiError, path } from '../api/http';
 import { api } from '../config/site';
 import { authed, authStore } from './account';
@@ -9,15 +19,24 @@ import { createStore } from './store';
  * - 新消息、已读位置从账户事件流来（events.ts 调 onMessageCreated / onMessageRead），HTTP 只做首屏和补拉
  * - 发送先放进 outbox 显示成半透明气泡，成功后用服务端的 message.id 合并，SSE 再来一遍也不会重复
  * - 未读数、发送额度以服务端摘要为准：本地先估一下，随后重新取一次摘要校正
+ * - 音乐卡片、一起听邀请和文字走同一条路；邀请状态变了会来 message.updated，按 updatedAt 新的替换旧的
  */
 
 const p = api.paths;
 export const MESSAGE_MAX = 2000;
 const PAGE = 30;
 
+/** 发送请求去掉 clientMessageId 的部分 */
+export type SendBody = SendDirectMessageInput extends infer U ? (U extends unknown ? Omit<U, 'clientMessageId'> : never) : never;
+
 export interface Outgoing {
   clientMessageId: string;
+  /** 文字消息的正文，或者卡片的附言 */
   text: string;
+  /** 第一次发的请求原样留着：重发时一个字都不改，服务端才认得是同一条 */
+  body: SendBody;
+  /** 卡片还没送达时先画出来的样子；文字消息为 null */
+  preview: DirectMessageContent | null;
   status: 'sending' | 'failed';
   error?: string;
   /** 被限流时：这个时间点之后自动重发 */
@@ -75,12 +94,14 @@ export function dismissNotice() {
 /** 补拉回来的旧消息不弹；正在看这个人的聊天、或者在好友页看着会话列表，也不弹 */
 function notify(peer: string, msg: DirectMessageDto) {
   if (document.visibilityState !== 'visible' || Date.now() - Date.parse(msg.createdAt) > 120_000) return;
+  // 一起听邀请有自己的右下角卡片
+  if (cardOf(msg)?.kind === 'listen_invite') return;
   const hash = location.hash;
   if (hash.startsWith('#/friends') || hash === `#/chat/${encodeURIComponent(peer)}`) return;
   noticeStore.set((s) => ({
     notice: {
       peerId: peer,
-      text: msg.text,
+      text: previewText(msg, false),
       count: s.notice?.peerId === peer ? s.notice.count + 1 : 1,
       key: (s.notice?.key ?? 0) + 1,
     },
@@ -103,6 +124,31 @@ export const conversationList = (s: MessagesState) =>
 
 export const unreadTotal = (s: MessagesState) => Object.values(s.conversations).reduce((n, c) => n + c.unreadCount, 0);
 
+/** 这条消息该按哪种样子画：旧缓存没有 kind 当文字；不认识的种类、版本也退回文字 */
+export function cardOf(m: Pick<DirectMessageDto, 'kind' | 'content'>): DirectMessageContent | null {
+  const c = m.content;
+  if (!m.kind || m.kind === 'text' || !c || c.version !== 1 || c.kind !== m.kind) return null;
+  return ['track', 'album', 'playlist', 'listen_invite'].includes(c.kind) ? c : null;
+}
+
+/** 会话列表、新消息卡片上的一行摘要 */
+export function previewText(m: DirectMessageDto, mine: boolean) {
+  const c = cardOf(m);
+  if (!c) return m.text;
+  if (c.kind === 'listen_invite') {
+    const s = c.invitation.status;
+    if (s === 'pending') return mine ? '邀请对方一起听' : '邀请你一起听';
+    if (s === 'accepted') return '一起听 · 已加入';
+    if (s === 'rejected') return '一起听 · 婉拒了';
+    return '一起听 · 邀请已失效';
+  }
+  const [label, name] = c.kind === 'track' ? ['歌曲', c.track.name] : c.kind === 'album' ? ['专辑', c.album.name] : ['歌单', c.playlist.name];
+  return c.caption ? `${c.caption}  [${label}]《${name}》` : `分享了${label}《${name}》`;
+}
+
+/** 同一条消息的两份：updatedAt 晚的那份是新的（旧数据没有 updatedAt 用 createdAt） */
+const stamp = (m: DirectMessageDto) => Date.parse(m.updatedAt ?? m.createdAt) || 0;
+
 const blankThread = (): Thread => ({ messages: [], outbox: [], hasOlder: false, loaded: false, loadingOlder: false, error: null });
 
 function peerOf(conversationId: string) {
@@ -121,10 +167,14 @@ function patchThread(peer: string, patch: Partial<Thread> | ((t: Thread) => Part
 function putConversation(peer: string, next: DirectConversationDto) {
   messagesStore.set((s) => {
     const cur = s.conversations[peer];
-    const merged =
+    let merged =
       cur?.lastMessage && (!next.lastMessage || cur.lastMessage.sequence > next.lastMessage.sequence)
         ? { ...cur, peer: next.peer, sendPolicy: next.sendPolicy, id: next.id ?? cur.id }
         : next;
+    // 同一条末条消息：本地已经收到更新过的状态（邀请被接受了），摘要里的旧版本不能盖回去
+    if (cur?.lastMessage && merged.lastMessage?.id === cur.lastMessage.id && stamp(cur.lastMessage) > stamp(merged.lastMessage)) {
+      merged = { ...merged, lastMessage: cur.lastMessage };
+    }
     return {
       conversations: {
         ...s.conversations,
@@ -142,7 +192,10 @@ function mergeMessages(peer: string, items: DirectMessageDto[]) {
   if (!items.length) return;
   patchThread(peer, (t) => {
     const byId = new Map(t.messages.map((m) => [m.id, m]));
-    for (const m of items) byId.set(m.id, m);
+    for (const m of items) {
+      const cur = byId.get(m.id);
+      if (!cur || stamp(m) >= stamp(cur)) byId.set(m.id, m);
+    }
     const sent = new Set(items.map((m) => m.clientMessageId));
     return {
       messages: [...byId.values()].sort((a, b) => a.sequence - b.sequence),
@@ -186,6 +239,8 @@ const listSoon = () => later('list', 400, () => void refreshConversations().catc
 /** 打开和某人的聊天：摘要 + 最近一页；已经开过的话只补新消息 */
 export async function openThread(peer: string) {
   const summary = refreshSummary(peer);
+  // 下面先失败的话 summary 没人等，它的失败别变成未处理的 rejection
+  summary.catch(() => undefined);
   const t = messagesStore.get().threads[peer];
   try {
     if (t?.loaded) await catchUp(peer);
@@ -254,17 +309,35 @@ export function discardOutgoing(peer: string, clientMessageId: string) {
 }
 
 /**
- * 发一条。重发时传原来的 clientMessageId：同一次发送服务端只记一次。
+ * 发一条文字。重发时传原来的 clientMessageId：同一次发送服务端只记一次。
  * 返回 'limit' 表示陌生人额度用完了（气泡收回，文字交还输入框）
  */
-export async function sendMessage(peer: string, text: string, clientMessageId = uuid()): Promise<'sent' | 'failed' | 'limit' | undefined> {
+export function sendMessage(peer: string, text: string, clientMessageId = uuid()) {
   const body = text.trim();
-  if (!body || body.length > MESSAGE_MAX) return;
+  if (!body || body.length > MESSAGE_MAX) return Promise.resolve(undefined);
+  return deliver(peer, { clientMessageId, text: body, body: { text: body }, preview: null });
+}
+
+/** 发一张音乐卡片。prepare 在真正提交前跑（自建歌单要先等本机改动同步上去），抛错就算没发出去 */
+export function sendCard(peer: string, body: SendBody, preview: DirectMessageContent, prepare?: () => Promise<void>) {
+  return deliver(peer, { clientMessageId: uuid(), text: ('text' in body && body.text) || '', body, preview }, prepare);
+}
+
+/** 失败的气泡点「重发」：同一个 id、同一份请求 */
+export function resend(peer: string, o: Outgoing) {
+  return deliver(peer, { clientMessageId: o.clientMessageId, text: o.text, body: o.body, preview: o.preview });
+}
+
+type Draft = Pick<Outgoing, 'clientMessageId' | 'text' | 'body' | 'preview'>;
+
+async function deliver(peer: string, d: Draft, prepare?: () => Promise<void>): Promise<'sent' | 'failed' | 'limit' | undefined> {
+  const { clientMessageId } = d;
   clearTimeout(timers.get(`retry:${clientMessageId}`));
-  setOutgoing(peer, { clientMessageId, text: body, status: 'sending' });
+  setOutgoing(peer, { ...d, status: 'sending' });
   const at = epoch;
   try {
-    const r = await authed<MessageSendResult>(path(p.directMessages, { id: peer }), { method: 'POST', body: { clientMessageId, text: body } });
+    await prepare?.();
+    const r = await authed<MessageSendResult>(path(p.directMessages, { id: peer }), { method: 'POST', body: { clientMessageId, ...d.body } });
     if (at !== epoch) return;
     // 第一条消息才有会话 id：先挂上摘要，再合并消息
     putConversation(peer, r.conversation);
@@ -280,16 +353,27 @@ export async function sendMessage(peer: string, text: string, clientMessageId = 
     }
     if (err?.code === 5805) {
       const wait = Math.max(1, err.retryAfterSeconds ?? 10) * 1000;
-      setOutgoing(peer, { clientMessageId, text: body, status: 'failed', error: '发得太快了，稍后自动重发', retryAt: Date.now() + wait });
-      timers.set(`retry:${clientMessageId}`, setTimeout(() => void sendMessage(peer, body, clientMessageId), wait));
+      setOutgoing(peer, { ...d, status: 'failed', error: '发得太快了，稍后自动重发', retryAt: Date.now() + wait });
+      timers.set(`retry:${clientMessageId}`, setTimeout(() => void deliver(peer, d), wait));
       return 'failed';
     }
     // 正文和之前的记录对不上：换一个新 id 再发就是新的一条
     const id = err?.code === 5803 ? uuid() : clientMessageId;
     if (id !== clientMessageId) discardOutgoing(peer, clientMessageId);
-    setOutgoing(peer, { clientMessageId: id, text: body, status: 'failed', error: (e as Error).message });
+    setOutgoing(peer, { ...d, clientMessageId: id, status: 'failed', error: (e as Error).message });
     return 'failed';
   }
+}
+
+/** 卡片对应的完整资源：自建歌单的快照带全部曲目，只有会话双方能取 */
+export function fetchShared(messageId: string) {
+  return authed<SharedMessageResource>(path(p.messageResource, { id: messageId }));
+}
+
+/** 接受、拒绝邀请之后取一次这条消息的最新状态（事件流也会推，先到先用） */
+export async function refreshMessage(messageId: string) {
+  const m = await authed<DirectMessageDto>(path(p.message, { id: messageId }));
+  onMessageUpdated(m);
 }
 
 /** 正在提交的已读位置：同一个会话一次只发一个请求，期间更靠后的位置攒着下次发 */
@@ -357,6 +441,18 @@ export function onMessageCreated(msg: DirectMessageDto) {
   }));
   if (!mine && msg.sequence > c.lastReadSequence) notify(peer, msg);
   summarySoon(peer);
+}
+
+/** 已有消息的内容变了（目前只有一起听邀请的状态）：原地替换，不算新消息、不动未读和排序 */
+export function onMessageUpdated(msg: DirectMessageDto) {
+  const peer = peerOf(msg.conversationId);
+  if (!peer) return listSoon();
+  const { threads, conversations } = messagesStore.get();
+  if (threads[peer]?.messages.some((m) => m.id === msg.id)) mergeMessages(peer, [msg]);
+  const c = conversations[peer];
+  if (c?.lastMessage?.id === msg.id && stamp(msg) >= stamp(c.lastMessage)) {
+    messagesStore.set((s) => ({ conversations: { ...s.conversations, [peer]: { ...s.conversations[peer], lastMessage: msg } } }));
+  }
 }
 
 export function onMessageRead(e: { conversationId: string; userId: string; lastReadSequence: number }) {

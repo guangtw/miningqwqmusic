@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { coverOf } from './api';
 import { DmNotice } from './components/DmNotice';
+import { ShareDialog } from './components/ShareDialog';
 import { ListenDrawer, ListenInviteCard } from './components/ListenDrawer';
 import { LoginDialog } from './components/LoginDialog';
 import { NowPlaying } from './components/NowPlaying';
@@ -34,6 +35,7 @@ import { MyPlaylistView } from './views/MyPlaylist';
 import { RadioView } from './views/Radio';
 import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
+import { SharedPlaylistView } from './views/SharedPlaylist';
 
 function View({ route }: { route: Route }) {
   const [section, id] = route.parts;
@@ -67,6 +69,7 @@ function View({ route }: { route: Route }) {
     case 'friends':
       return <FriendsView />;
     case 'chat':
+      if (route.parts[2] === 'shared' && route.parts[3]) return <SharedPlaylistView key={route.parts[3]} peerId={id} messageId={route.parts[3]} />;
       return <ChatView key={id} peerId={id} />;
     default:
       return (
@@ -186,6 +189,7 @@ export function App() {
       <PlaylistDialog />
       <ImportDialog />
       <TrackMenu />
+      <ShareDialog />
       <Toast />
     </div>
   );

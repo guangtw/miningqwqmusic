@@ -305,6 +305,13 @@ function sync(id: string, op: PendingOp, quiet = false) {
   });
 }
 
+/** 分享自建歌单前：把这张歌单本机还没交上去的改动先交了。分享的是云端已保存的版本 */
+export async function settlePlaylist(id: string) {
+  const op = libraryStore.get().pendingPlaylists[id];
+  if (op && op !== 'delete') await sync(id, op, true);
+  if (libraryStore.get().pendingPlaylists[id]) throw new Error('歌单还没同步上，联网后再分享。');
+}
+
 /** pullLibrary 拿到云端快照后调用：合并歌单，并把本机待同步的改动补上去 */
 export async function mergeCloudPlaylists(records: Record<string, ImportedPlaylist>, merge: boolean) {
   const { playlists: cloud, parts } = fromRecords(records);

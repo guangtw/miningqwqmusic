@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { ApiError, waitLabel } from '../api/http';
 import { login, register } from '../lib/account';
 import { redeemCode } from '../lib/membership';
 import { usePresence } from '../lib/motion';
@@ -20,8 +21,13 @@ export function LoginDialog() {
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [invite, setInvite] = useState('');
-  const [error, setError] = useState<{ field?: 'email' | 'password'; text: string } | null>(null);
+  const [error, setError] = useState<{ field?: 'email' | 'password'; text: string; timed?: boolean; locked?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
+  const [cooldown, setCooldown] = useState<{ email: string; mode: Mode; until: number } | null>(null);
+  const [clock, setClock] = useState(Date.now());
+  const remaining = cooldown?.email === email.trim().toLowerCase() && cooldown.mode === mode
+    ? Math.max(0, Math.ceil((cooldown.until - clock) / 1000)) : 0;
   const emailRef = useRef<HTMLInputElement>(null);
   const close = () => uiStore.set({ login: false });
 
@@ -37,13 +43,26 @@ export function LoginDialog() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!open || !cooldown || cooldown.until <= Date.now()) return;
+    setClock(Date.now());
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setClock(now);
+      if (now >= cooldown.until) window.clearInterval(timer);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [open, cooldown]);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting.current || remaining > 0) return;
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) return setError({ field: 'email', text: '填一个有效的邮箱。' });
     if (!password) return setError({ field: 'password', text: '填一下密码。' });
     // 注册时按账户服务的规则先查一遍，免得提交后只收到一句「内容不合规」
     const problem = mode === 'register' ? passwordProblem(password) : null;
     if (problem) return setError({ field: 'password', text: problem });
+    submitting.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -68,8 +87,17 @@ export function LoginDialog() {
       setPassword('');
       close();
     } catch (err) {
-      setError({ text: (err as Error).message });
+      const timed = err instanceof ApiError && err.status === 429 && !!err.retryAfterSeconds;
+      if (timed) {
+        const now = Date.now();
+        setClock(now);
+        setCooldown({ email: email.trim().toLowerCase(), mode, until: now + err.retryAfterSeconds! * 1000 });
+      }
+      const text = (err as Error).message;
+      setError({ text, timed, locked: err instanceof ApiError && err.code === 5206 && err.status === 429 });
+      toast(text);
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };
@@ -109,7 +137,7 @@ export function LoginDialog() {
               value={email}
               onChange={(e) => {
                 setEmail(e.target.value);
-                if (error?.field === 'email') setError(null);
+                setError(null);
               }}
               placeholder=" "
               aria-invalid={error?.field === 'email'}
@@ -153,9 +181,11 @@ export function LoginDialog() {
             </label>
           )}
           {error?.field === 'password' && <p className="field-error">{error.text}</p>}
-          {error && !error.field && <p className="field-error">{error.text}</p>}
-          <button className="btn solid wide" disabled={busy}>
-            {busy ? '请稍候…' : mode === 'login' ? '登录' : '注册并登录'}
+          {error && !error.field && <p className="field-error" role="alert">{error.timed
+            ? remaining > 0 ? `${error.locked ? '密码连续输错，登录已暂时保护。' : '尝试太频繁了。'}请在 ${waitLabel(remaining)}后再试。` : '现在可以再试一次了。'
+            : error.text}</p>}
+          <button className="btn solid wide" disabled={busy || remaining > 0}>
+            {busy ? '请稍候…' : remaining > 0 ? `${remaining} 秒后重试` : mode === 'login' ? '登录' : '注册并登录'}
           </button>
         </form>
       </div>

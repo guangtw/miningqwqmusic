@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { failure } from "@/src/lib/api-response";
 import { createTraceId } from "@/src/lib/trace";
 import { accountServiceUrl } from "@/src/lib/account-service";
+import { isIP } from "node:net";
 
 const FORWARDED_REQUEST_HEADERS = [
   "authorization",
@@ -34,6 +35,15 @@ function pickForwardHeaders(request: NextRequest): Headers {
     const value = request.headers.get(key);
     if (value) {
       headers.set(key, value);
+    }
+  }
+  // Enabled only for the deployment where Nginx overwrites X-Real-IP and both
+  // application ports listen on loopback. Never forward a client-supplied XFF chain.
+  if (process.env.ACCOUNT_TRUST_PROXY_HEADERS === "1") {
+    const ip = request.headers.get("x-real-ip")?.trim();
+    if (ip && isIP(ip)) {
+      headers.set("x-real-ip", ip);
+      headers.set("x-forwarded-for", ip);
     }
   }
   return headers;

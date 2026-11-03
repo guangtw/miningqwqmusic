@@ -308,6 +308,33 @@ test('a single playback timeout allows an immediate manual switch and lyrics do 
   expect(state.errors).toEqual([]);
 });
 
+test('login explains a lock, prevents duplicate submits and counts down before retrying', async ({ page }) => {
+  const state = await backend(page);
+  let attempts = 0;
+  await page.route('**/api/account/auth/login', async route => {
+    attempts++;
+    if (attempts === 1) return route.fulfill({ status: 429, headers: { 'retry-after': '3' }, json: { code: 5206, message: 'Too many failed login attempts', retryable: true } });
+    return route.fallback();
+  });
+  await page.goto('/#/account');
+  await page.locator('.main').getByRole('button', { name: '登录同步', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('input[type="email"]').fill('123456789@qq.com');
+  await dialog.locator('input[type="password"]').fill('test-password');
+  await dialog.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toContainText('密码连续输错');
+  await expect(page.locator('.toast')).toContainText('密码连续输错');
+  await expect(dialog.locator('button[type="submit"], .btn.solid')).toBeDisabled();
+  await dialog.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+  expect(attempts).toBe(1);
+  await expect(dialog.getByRole('button', { name: '登录', exact: true })).toBeEnabled({ timeout: 6000 });
+  await expect(dialog.locator('input[type="email"]')).toHaveValue('123456789@qq.com');
+  await dialog.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(attempts).toBe(2);
+  expect(state.errors).toEqual([]);
+});
+
 test('search categories, login, cloud sync and logout use the BFF contract', async ({ page }) => {
   const state = await backend(page);
   await page.goto('/#/search?q=晨光');

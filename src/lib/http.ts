@@ -6,7 +6,7 @@ type FetchRetryOptions = {
   retryDelayMs?: number;
   retryOnStatus?: number[];
   execute?: <R>(task: () => Promise<R>) => Promise<R>;
-  onBackpressure?: (ms?: number) => number | void;
+  onBackpressure?: (ms?: number, confirmedNetease?: boolean) => number | void;
   onUnavailable?: (ms: number) => void;
   beforeAttempt?: () => void;
 };
@@ -24,14 +24,14 @@ export function retryAfterMs(retryAfter: string | null): number | undefined {
   return Number.isFinite(requestedMs) ? Math.max(1000, requestedMs) : undefined;
 }
 
-function backpressure(status: number, retryAfter: string | null, options: FetchRetryOptions): never {
+function backpressure(status: number, retryAfter: string | null, options: FetchRetryOptions, confirmedNetease = false): never {
   const requestedMs = retryAfterMs(retryAfter);
   if (status === 503) {
     if (requestedMs) options.onUnavailable?.(requestedMs);
     throw new AppError("Upstream service unavailable", { code: 2010, status: 503, retryable: false,
       retryAfterSeconds: requestedMs ? Math.ceil(requestedMs / 1000) : undefined });
   }
-  const seconds = options.onBackpressure?.(requestedMs) ?? Math.ceil((requestedMs ?? 30000) / 1000);
+  const seconds = (confirmedNetease ? options.onBackpressure?.(requestedMs, true) : options.onBackpressure?.(requestedMs)) ?? Math.ceil((requestedMs ?? 30000) / 1000);
   throw new AppError(`Upstream requested a cooldown (${status})`, {
     code: 2002, status: 503, retryable: true, retryAfterSeconds: seconds
   });
@@ -72,7 +72,7 @@ export async function fetchWithRetry<T>(
           const response = await fetch(url, { ...init, signal });
           if (response.headers.get("x-echo-rate-limited") === "netease") {
             await response.body?.cancel();
-            backpressure(429, response.headers.get("retry-after"), options);
+            backpressure(429, response.headers.get("retry-after"), options, true);
           }
           if (!response.ok) {
             await response.body?.cancel();

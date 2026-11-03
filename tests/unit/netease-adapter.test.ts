@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNeteaseLikeAdapterFromEnv, NeteaseLikeAdapter } from "@/src/lib/music/providers/netease-like";
 import { MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
 
@@ -85,6 +85,7 @@ function mockPlaySourceFetch(
 }
 
 describe("NeteaseLikeAdapter mapping", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.restoreAllMocks();
   });
@@ -105,6 +106,17 @@ describe("NeteaseLikeAdapter mapping", () => {
     ]);
     await expect(adapter.getPlaySource("108485", { unblockMode: "force_on" })).rejects.toMatchObject({ code: 2002 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([false, true])("scopes an unconfirmed limit and propagates a confirmed NetEase limit: %s", async confirmed => {
+    vi.stubEnv("MUSIC_SOURCE_EGRESS_MANAGED", "1");
+    const adapter = createAdapter();
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("limited", { status: 429, headers: {
+      "retry-after": "30", ...(confirmed ? { "x-echo-rate-limited": "netease" } : {})
+    } })).mockResolvedValue(trackDetailResponse());
+    await expect(adapter.searchTracks({ keyword: "first", page: 1, pageSize: 1 })).rejects.toMatchObject({ code: confirmed ? 2002 : 2010 });
+    if (confirmed) await expect(adapter.getTrackDetail("108485")).rejects.toMatchObject({ code: 2002 });
+    else await expect(adapter.getTrackDetail("108485")).resolves.toMatchObject({ id: "108485" });
   });
 
   it("keeps guest and authorized play requests separate and never retains completed URLs", async () => {

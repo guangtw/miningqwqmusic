@@ -1,14 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
+import { MusicRequestCoordinator, getMusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
 import { musicContext, runMusicRequest, spendRequestBudget } from "@/src/lib/music/request-context";
 import { AppError } from "@/src/lib/errors";
 
 beforeEach(() => vi.useFakeTimers());
-afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const user = <T>(id: string, priority: number, task: () => T, signal?: AbortSignal) =>
   musicContext.run({ owner: id, priority, signal, budget: { remaining: 8 } }, task);
 
 describe("fifteen listeners sharing one upstream", () => {
+  it("removes duplicate BFF pacing when the real egress guard is managed", async () => {
+    vi.stubEnv("MUSIC_SOURCE_EGRESS_MANAGED", "1");
+    const gate = getMusicRequestCoordinator("http://managed-egress.example.test");
+    const starts: number[] = [];
+    const work = Array.from({ length: 6 }, () => gate.run(async () => { starts.push(Date.now()); }));
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.all(work);
+    expect(starts).toHaveLength(6);
+    expect(new Set(starts).size).toBe(1);
+  });
   it("spaces fifteen different songs without catch-up bursts and bounds in-flight work", async () => {
     const gate = new MusicRequestCoordinator();
     const starts: number[] = []; let active = 0, peak = 0;

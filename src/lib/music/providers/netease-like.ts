@@ -387,7 +387,14 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         retries: Math.min(1, this.config.retries),
         beforeAttempt: spendRequestBudget,
         execute: task => this.requests.run(task, scope),
-        onBackpressure: ms => this.requests.rateLimit(ms),
+        onBackpressure: (ms, confirmedNetease) => {
+          if (process.env.MUSIC_SOURCE_EGRESS_MANAGED === "1" && !confirmedNetease) {
+            this.requests.coolDown(ms ?? 30000, scope);
+            throw new AppError("当前音乐接口请求过多，请稍后再试。", { code: 2010, status: 503, retryable: true,
+              retryAfterSeconds: Math.ceil((ms ?? 30000) / 1000) });
+          }
+          return this.requests.rateLimit(ms);
+        },
         onUnavailable: ms => this.requests.coolDown(ms, scope)
       }
     ), ttlMs, 0, volatile || path === "/comment/new" ? 0 : Math.min(ttlMs * 3, 86400000));

@@ -19,10 +19,12 @@ describe("account proxy route", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.stubEnv("ACCOUNT_TRUST_PROXY_HEADERS", "0");
   });
 
   afterEach(() => {
     process.env.ACCOUNT_SERVICE_BASE_URL = originalEnv;
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -140,5 +142,17 @@ describe("account proxy route", () => {
     expect((fetchMock.mock.calls[0][1]?.headers as Headers).has("x-forwarded-for")).toBe(false);
     expect(fetchMock.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it.each([["192.0.2.1", "192.0.2.1"], ["2001:db8::1", "2001:db8::1"], ["invalid", null]])("rebuilds a canonical proxy address only in the protected topology: %s", async (realIp, expected) => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    vi.stubEnv("ACCOUNT_TRUST_PROXY_HEADERS", "1");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 0 }));
+    await POST(new NextRequest("http://localhost/api/account/auth/login", {
+      method: "POST", headers: { "x-real-ip": realIp, "x-forwarded-for": "203.0.113.9, 127.0.0.1" }, body: "{}"
+    }), createContext(["auth", "login"]));
+    const headers = fetchMock.mock.calls[0][1]?.headers as Headers;
+    expect(headers.get("x-real-ip")).toBe(expected);
+    expect(headers.get("x-forwarded-for")).toBe(expected);
   });
 });

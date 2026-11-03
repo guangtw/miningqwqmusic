@@ -32,7 +32,23 @@ export interface RequestInitEx {
 const hasCjk = (s: string) => /[一-鿿]/.test(s);
 
 /** 优先用配置里的中文说明；后端本来就是中文的照原样显示 */
-function friendlyMessage(code: number, message?: string): string {
+export function waitLabel(seconds: number): string {
+  return seconds >= 60 ? `${Math.ceil(seconds / 60)} 分钟` : `${Math.ceil(seconds)} 秒`;
+}
+
+export function retryAfterSeconds(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const seconds = /^\d+$/.test(value) ? Number(value) : Math.ceil((Date.parse(value) - Date.now()) / 1000);
+  return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
+}
+
+function friendlyMessage(code: number, message?: string, status = 0, retryAfter?: number, auth = false): string {
+  const wait = retryAfter ? `请在 ${waitLabel(retryAfter)}后再试。` : '请稍后再试。';
+  if (code === 5206 && status === 403) return '当前账号没有操作权限。';
+  if (code === 5206 && status === 429) return `密码连续输错，登录已暂时保护。${wait}`;
+  if (code === 5205 || (auth && status === 429)) return `尝试太频繁了，${wait}`;
+  if (auth && (status >= 500 || code === 5402 || code === 5403)) return '账户服务暂时连不上，请稍后再试。';
+  if (auth && code === 5207) return '登录请求未通过安全校验，请刷新页面后再试。';
   return api.errorText[code] ?? (message && hasCjk(message) ? message : api.errorFallback);
 }
 
@@ -42,6 +58,7 @@ function isFailure(p: unknown): p is ApiFailure {
 
 /** 调 BFF：成功返回 data，失败抛 ApiError（带后端的 code / traceId） */
 export async function request<T>(urlPath: string, init: RequestInitEx = {}): Promise<T> {
+  const auth = urlPath.startsWith('/api/account/auth/');
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(init.query ?? {})) if (v !== undefined && v !== '') qs.set(k, String(v));
   const url = `${api.base}${urlPath}${qs.size ? `?${qs}` : ''}`;
@@ -64,7 +81,7 @@ export async function request<T>(urlPath: string, init: RequestInitEx = {}): Pro
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e;
-    throw new ApiError('连不上服务，检查一下网络。', 5000, 0, undefined, true);
+    throw new ApiError(auth ? '连不上账户服务，检查一下网络后再试。' : '连不上服务，检查一下网络。', 5000, 0, undefined, true);
   }
 
   let payload: unknown = null;
@@ -72,14 +89,18 @@ export async function request<T>(urlPath: string, init: RequestInitEx = {}): Pro
     payload = await res.json();
   } catch {
     init.signal?.throwIfAborted();
-    throw new ApiError(`请求失败（HTTP ${res.status}）`, 5000, res.status);
+    const retry = retryAfterSeconds(res.headers.get('retry-after'));
+    throw new ApiError(friendlyMessage(5000, `请求失败（HTTP ${res.status}）`, res.status, retry, auth), 5000, res.status, undefined, res.status === 429 || res.status >= 500, retry);
   }
 
   if (res.ok && payload && typeof payload === 'object' && (payload as ApiSuccess<T>).code === 0) {
     return (payload as ApiSuccess<T>).data;
   }
   if (isFailure(payload)) {
-    throw new ApiError(friendlyMessage(payload.code, payload.message), payload.code, res.status, payload.traceId, payload.retryable, payload.retryAfterSeconds);
+    const retry = typeof payload.retryAfterSeconds === 'number' && Number.isFinite(payload.retryAfterSeconds) && payload.retryAfterSeconds > 0
+      ? Math.ceil(payload.retryAfterSeconds) : retryAfterSeconds(res.headers.get('retry-after'));
+    throw new ApiError(friendlyMessage(payload.code, payload.message, res.status, retry, auth), payload.code, res.status, payload.traceId, payload.retryable, retry);
   }
-  throw new ApiError(`请求失败（HTTP ${res.status}）`, 5000, res.status);
+  const retry = retryAfterSeconds(res.headers.get('retry-after'));
+  throw new ApiError(friendlyMessage(5000, `请求失败（HTTP ${res.status}）`, res.status, retry, auth), 5000, res.status, undefined, res.status === 429 || res.status >= 500, retry);
 }

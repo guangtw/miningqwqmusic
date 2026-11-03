@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync, spawn } = require('child_process');
-const { normalizeLegacyUnblockSources } = require('./music-source-config.cjs');
+const { normalizeLegacyUnblockSources, setEnvValues } = require('./music-source-config.cjs');
 const { selectAccountMigrations } = require('./account-migrations.cjs');
 if (process.getuid?.() !== 0) throw Error('Deployment requires the authorized sudo account');
 const packageDir = path.resolve(process.argv[2] || '');
@@ -26,17 +26,24 @@ const node = '/www/server/nvm/versions/node/v24.15.0/bin/node';
 const npmCli = '/www/server/nvm/versions/node/v24.15.0/lib/node_modules/npm/bin/npm-cli.js';
 const processes = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
 const originalLogin = processes.find(p => p.name === 'miningqwqlogin')?.pm2_env;
+const originalMusic = processes.find(p => p.name === 'miningqwqmusic')?.pm2_env;
 const originalUpstream = processes.find(p => p.name === 'ncm-api')?.pm2_env;
 const previousMusic = fs.realpathSync(musicBase + '/current');
 const database = '/www/wwwroot/miningqwqlogin/prisma/dev.db';
-if (!originalLogin || !originalUpstream || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
+if (!originalMusic || !originalLogin || !originalUpstream || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
 const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
 let accountMigrations = [];
 const musicEnvFile = musicBase + '/shared/.env.production';
 const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
-const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
+const releaseMusicEnv = setEnvValues(normalizeLegacyUnblockSources(originalMusicEnv), {
+  MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1'
+});
+// Trust identity only behind this verified, overwriting proxy and loopback listeners.
+const nginxProxy = fs.readFileSync('/www/server/panel/vhost/nginx/proxy/www.echo.miningqwq.cn/80de4b618cfe935c8dc495a21848582d_www.echo.miningqwq.cn.conf', 'utf8');
+if (!/proxy_set_header\s+X-Real-IP\s+\$remote_addr\s*;/i.test(nginxProxy)
+  || !/proxy_pass\s+http:\/\/127\.0\.0\.1:3001\s*;/.test(nginxProxy)) throw Error('Trusted proxy topology is not verified');
 // Restore only the two switches introduced by the reverted quality release.
 // Verified against protected echo-20261101152723-076be33a/upstream-before.json:
 // both switches were unset. No process credentials or backup dependency enter Git.
@@ -69,6 +76,7 @@ function stage() {
     let env = fs.readFileSync(from, 'utf8');
     if (name === '.env' && !/^DATABASE_URL=/m.test(env)) throw Error('Account database configuration missing');
     env = env.replace(/^DATABASE_URL=.*$/m, 'DATABASE_URL="file:' + database + '"');
+    env = setEnvValues(env, { AUTH_TRUST_PROXY_HEADERS: 'true' });
     fs.writeFileSync(loginRelease + '/' + name, env, { mode: 0o600 });
   }
   if (fs.existsSync(loginRelease + '/public/uploads')) throw Error('Package must not contain live uploads');
@@ -120,15 +128,35 @@ function pointMusic(target) {
 }
 function configureLogin(cwd, rollback = false) {
   const env = { ...(originalLogin.env || {}), NODE_ENV: 'production', PORT: 3002 };
-  if (!rollback) env.DATABASE_URL = 'file:' + database;
-  const config = { apps: [{ name: 'miningqwqlogin', script: originalLogin.pm_exec_path, args: originalLogin.args, cwd, interpreter: node, exec_mode: 'fork', instances: 1, env }] };
+  if (!rollback) { env.DATABASE_URL = 'file:' + database; env.AUTH_TRUST_PROXY_HEADERS = 'true'; }
+  const config = { apps: [{ name: 'miningqwqlogin', script: rollback ? originalLogin.pm_exec_path : cwd + '/node_modules/next/dist/bin/next',
+    args: rollback ? originalLogin.args : ['start', '--hostname', '127.0.0.1', '--port', '3002'], cwd, interpreter: node, exec_mode: 'fork', instances: 1, env }] };
   const file = work + (rollback ? '/login-rollback.json' : '/login-release.json');
   fs.writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
   const current = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
   if (current.some(p => p.name === 'miningqwqlogin')) execFileSync(pm2, ['delete', 'miningqwqlogin'], { stdio: 'inherit' });
   execFileSync(pm2, ['start', file, '--only', 'miningqwqlogin'], { stdio: 'inherit' });
 }
+function configureMusic(cwd, rollback = false) {
+  const env = { ...(originalMusic.env || {}), NODE_ENV: 'production', PORT: 3001 };
+  if (!rollback) Object.assign(env, { MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1' });
+  const config = { apps: [{ name: 'miningqwqmusic', script: rollback ? originalMusic.pm_exec_path : musicBase + '/current/node_modules/next/dist/bin/next',
+    args: rollback ? originalMusic.args : ['start', '--hostname', '127.0.0.1', '--port', '3001'], cwd, interpreter: node, exec_mode: 'fork', instances: 1, env }] };
+  const file = work + (rollback ? '/music-rollback.json' : '/music-release.json');
+  fs.writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
+  const current = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
+  if (current.some(p => p.name === 'miningqwqmusic')) execFileSync(pm2, ['delete', 'miningqwqmusic'], { stdio: 'inherit' });
+  execFileSync(pm2, ['start', file, '--only', 'miningqwqmusic'], { stdio: 'inherit' });
+}
+function verifyLoopbackListeners() {
+  const sockets = execFileSync('ss', ['-ltn'], { encoding: 'utf8' }).split('\n');
+  for (const port of [3001, 3002]) {
+    const listeners = sockets.filter(line => new RegExp(':' + port + '\\s').test(line));
+    if (!listeners.length || listeners.some(line => !line.includes('127.0.0.1:' + port + ' '))) throw Error('Public trusted-proxy listener detected: ' + port);
+  }
+}
 function liveAccountQa(origin) {
+  execFileSync(node, [path.join(packageDir, 'ops/verify-login-protection.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-account-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 150000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-listen-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-membership-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
@@ -143,6 +171,7 @@ let failed = false;
   fs.mkdirSync(backup, { recursive: true, mode: 0o700 });
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
+  fs.writeFileSync(backup + '/music-before.json', JSON.stringify(originalMusic), { mode: 0o600 });
   fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalUpstream), { mode: 0o600 });
   fs.copyFileSync(packageDir + '/ops/music-egress.cjs', work + '/music-egress.cjs');
   execFileSync(node, ['--check', work + '/music-egress.cjs']);
@@ -161,7 +190,9 @@ let failed = false;
   upstreamChanged = true;
   configureEgress();
   await ready(3000);
-  console.log('MUSIC_EGRESS_INSTALLED', '1000ms', 'maxConcurrent=2');
+  const policy = await fetchLocal('http://127.0.0.1:3000/');
+  if (policy.headers.get('x-echo-egress-policy') !== 'netease-api-v2') throw Error('Actual NetEase egress guard is not installed');
+  console.log('MUSIC_EGRESS_INSTALLED', 'netease-api-v2', 'burst=3', 'refill=1000ms', 'maxConcurrent=2');
   startCandidate('candidate-login', loginRelease, 3102);
   startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
   await ready(3102, true);
@@ -175,15 +206,16 @@ let failed = false;
       fs.writeFileSync(work + '/music-env-before', originalMusicEnv, { mode: 0o600 });
       musicEnvChanged = true;
       fs.writeFileSync(musicEnvFile, releaseMusicEnv, { mode: 0o600 });
-      console.log('LEGACY_UNBLOCK_SOURCES_CORRECTED');
+      console.log('MUSIC_RUNTIME_CONFIGURATION_UPDATED');
     }
     loginChanged = true;
     configureLogin(loginRelease);
     await ready(3002, true);
     pointMusic(musicRelease);
     musicChanged = true;
-    execFileSync(pm2, ['restart', 'miningqwqmusic', '--update-env'], { stdio: 'inherit' });
+    configureMusic(musicBase + '/current');
     await ready(3001);
+    verifyLoopbackListeners();
     liveAccountQa('https://echo.miningqwq.cn');
     const receipt = await (await fetchLocal('https://echo.miningqwq.cn/__deployment.json?check=' + manifest.id)).json();
     if (receipt.id !== manifest.id || receipt.musicCommit !== manifest.musicCommit || receipt.loginCommit !== manifest.loginCommit) throw Error('Public release receipt mismatch');
@@ -196,7 +228,7 @@ let failed = false;
     console.error('Deployment failed; restoring both original services');
     const recoveryErrors = [];
     try { if (musicEnvChanged) fs.writeFileSync(musicEnvFile, originalMusicEnv, { mode: 0o600 }); } catch (e) { recoveryErrors.push(e.message); }
-    try { if (musicChanged) { pointMusic(previousMusic); execFileSync(pm2, ['restart', 'miningqwqmusic', '--update-env'], { stdio: 'inherit' }); } } catch (e) { recoveryErrors.push(e.message); }
+    try { if (musicChanged) { pointMusic(previousMusic); configureMusic(originalMusic.pm_cwd, true); } } catch (e) { recoveryErrors.push(e.message); }
     try { if (loginChanged) configureLogin(originalLogin.pm_cwd, true); } catch (e) { recoveryErrors.push(e.message); }
     try { execFileSync(pm2, ['save'], { stdio: 'inherit' }); } catch (e) { recoveryErrors.push(e.message); }
     if (recoveryErrors.length) console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryErrors.join('; '));

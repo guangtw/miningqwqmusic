@@ -218,8 +218,9 @@ export function getMusicRequestCoordinator(baseUrl: string, apiKey = "") {
   const key = JSON.stringify([baseUrl.replace(/\/$/, ""), apiKey]);
   let coordinator = coordinators.get(key);
   if (!coordinator) {
-    coordinator = new MusicRequestCoordinator({ maxConcurrent: setting("MUSIC_SOURCE_MAX_CONCURRENT", 2, 1, 2),
-      minIntervalMs: setting("MUSIC_SOURCE_MIN_INTERVAL_MS", 1000, 1000, 5000), maxQueue: setting("MUSIC_SOURCE_MAX_QUEUE", 64, 1, 128),
+    const managed = process.env.MUSIC_SOURCE_EGRESS_MANAGED === "1";
+    coordinator = new MusicRequestCoordinator({ maxConcurrent: setting("MUSIC_SOURCE_MAX_CONCURRENT", managed ? 8 : 2, 1, managed ? 8 : 2),
+      minIntervalMs: managed ? 0 : setting("MUSIC_SOURCE_MIN_INTERVAL_MS", 1000, 1000, 5000), maxQueue: setting("MUSIC_SOURCE_MAX_QUEUE", 64, 1, 128),
       queueTimeoutMs: setting("MUSIC_SOURCE_QUEUE_TIMEOUT_MS", 30000, 1000, 60000) });
     coordinators.set(key, coordinator);
     if (process.env.NODE_ENV === "production") {

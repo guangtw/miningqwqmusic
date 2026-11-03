@@ -211,3 +211,8 @@ export async function getSportScene(bpm: number): Promise<SceneData> {
     return createMockMusicAdapter().getSportScene(bpm);
   }
 }
+
+/** Comments must never silently fall back to fabricated mock data. */
+export async function getTrackComments(trackId: string, query: import("@/src/types/music").TrackCommentQuery) {
+  return breaker.execute(() => getAdapter().getTrackComments(trackId, query));
+}

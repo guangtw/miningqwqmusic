@@ -47,3 +47,8 @@
 - 鉴权：推荐 BFF 在服务端请求头注入 `x-api-key`（若暂未启用，可留空并后续补上）。
 - 前端绝不持有上游鉴权信息。
 - 建议上游开启 HTTPS 与限流策略，并保留 traceId 透传能力。
+# 只读歌曲评论补充（2026-11-03）
+
+前端接口为 `GET /api/music/track/{id}/comments?sort=hot|time&limit=20&cursor=...`，不开放评论写操作。后端固定调用 `/comment/new`，`type=0`，hot/time分别映射sortType2/3；对外游标绑定歌曲、排序和每页大小，时间分页透传上游返回的时间cursor。
+
+成功要求上游code200、comments数组、totalCount、hasMore及匹配的sortType（若返回）。被回复引用随评论返回，不额外请求楼中楼。正文保持纯文本，丢弃上游Cookie、IP和未定义富文本字段。返回失败或异常格式时不以空评论、mock数据替代，沿用共享请求预算、120秒读取缓存和冷却机制。完整DTO与Claude接入约定见 [后端交接](backend-social-playlist-handoff.md)。

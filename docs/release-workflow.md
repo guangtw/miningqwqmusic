@@ -15,7 +15,7 @@ npm run deploy:echo -- --push
 3. 生成完整源代码包、逐文件 SHA-256 清单以及传输包 SHA-256，通过 SCP 上传。
 4. 服务端取得发布锁，后台独立执行。SSH 中断不会停止已经启动的发布/回滚任务。复用线上配置、数据库和头像；依赖锁文件一致才复用 Linux 依赖，否则重新安装。两个服务按顺序构建，限制构建内存。
 5. 使用仅监听回环地址的 3101/3102 候选服务，验证真实注册、登录、Cookie 续期、只读播放权限检查、旧 Cookie 不覆盖新 Cookie、收藏增删及退出。另用两个隔离账号验证一起听的实时 SSE、进度/暂停、防过期报告、房主转交和队列清空。测试账号按随机邮箱和 ID 精确清理。
-6. 保存旧配置，仅切换账户与音乐服务。正式 HTTPS 上重复验证；任何切换后失败都会尝试恢复原音乐链接和原账户进程配置。保留发布日志及旧版本，不修改数据库结构。
+6. 保存旧配置，仅切换账户与音乐服务。正式 HTTPS 上重复验证；任何切换后失败都会尝试恢复原音乐链接和原账户进程配置。保留发布日志及旧版本。数据库结构仅允许下述精确校验的增量迁移，应用回滚保留其兼容新增表和用户新数据。
 7. 检查公开的 `/__deployment.json` 是否与本次两个提交完全一致。只有出现 `PRODUCTION_VERIFIED` 才表示上线通过；随后推送确切提交（不强推），校验 GitHub 分支，并上传包含前后端源码的完整 GitHub Release 包。
 
 `--prepare-only` 仅导出和校验发布包，不测试、不上传、不部署、不推送。`--reuse-local-deps` 用于已验证的本机依赖：仅当当前锁文件与提交中的锁文件一致时，链接现有依赖到隔离测试目录；默认仍为 `npm ci`。视觉对比需要独立的上游参考服务，本脚本不把缺失的参考对比当作已通过。
@@ -41,7 +41,9 @@ ssh aliyun-ai 'sudo -n true && echo READY'
 
 本机临时目录内的 `receipt.json` 记录发布 ID、源码提交与包校验值。服务器任务位于 `/home/aiops/releases/<发布ID>/`，其中 `job.log` 为发布输出，`result.json` 为最终状态。不要在发布结果未知时重复启动第二次发布。
 
-受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；本次一人一码会员迁移仅在旧 schema、新 schema、迁移 SQL 三个 SHA-256 完全匹配专用计划时执行，备份、验收与回滚边界见 [会员协议](membership-invitations.md)。
+受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；只允许一人一码会员迁移和私信增量迁移组成的已知链，每步旧 schema、新 schema、迁移 SQL 三个 SHA-256 必须完全匹配专用计划。迁移前对原库做包含WAL的在线备份；私信迁移检查原有数据摘要、外键及新增表完整性。应用回滚保留新增表及新消息，不自动用旧备份覆盖现有数据库。详见 [会员协议](membership-invitations.md) 和 [后端交接](backend-social-playlist-handoff.md)。
+
+候选及正式验收还会运行 `verify-social-playlist-session.cjs`：以两个临时 `@example.test` 账号验证陌生人限额、幂等、回复解锁、好友关系、SSE及日志补拉、已读、歌单原子排序和首曲封面，再检查真实只读评论及写入405。测试用户按精确ID与邮箱删除，消息和事件级联清理；这不是本机开发阶段的自动上线入口。
 
 GitHub 推送或 Release 上传失败不会撤销已经通过验收的生产版本。此时根据明确的 `PRODUCTION_VERIFIED` 记录补推相同提交或发布包，不重复部署。
 

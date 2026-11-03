@@ -87,6 +87,8 @@ export type LibraryChangesResult = {
 };
 
 export type LibraryRevisionResult = {
+  records?: Record<string, ImportedPlaylist>;
+  removedRecordIds?: string[];
   revision: number;
   updatedAt: string;
 };

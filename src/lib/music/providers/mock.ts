@@ -1,3 +1,4 @@
+import { AppError } from "@/src/lib/errors";
 import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
 import { parseLyric } from "@/src/lib/lyrics";
 import type {
@@ -195,6 +196,10 @@ export class MockMusicAdapter implements MusicSourceAdapter {
       resolvedVia: "primary",
       ttlSeconds: 60
     };
+  }
+
+  async getTrackComments(): Promise<import("@/src/types/music").TrackCommentPage> {
+    throw new AppError("Comments are unavailable in mock mode", { code: 2009, status: 503 });
   }
 
   async getTrackLyric(trackId: string): Promise<TrackLyric> {

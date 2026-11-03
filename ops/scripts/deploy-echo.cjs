@@ -5,6 +5,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync, spawn } = require('child_process');
 const { normalizeLegacyUnblockSources } = require('./music-source-config.cjs');
+const { selectAccountMigrations } = require('./account-migrations.cjs');
 if (process.getuid?.() !== 0) throw Error('Deployment requires the authorized sudo account');
 const packageDir = path.resolve(process.argv[2] || '');
 if (!packageDir.startsWith('/home/aiops/releases/')) throw Error('Unexpected package directory');
@@ -32,7 +33,7 @@ if (!originalLogin || !originalUpstream || !fs.existsSync(database)) throw Error
 const work = musicBase + '/shared/deploy-backups/' + manifest.id;
 fs.mkdirSync(work, { recursive: true, mode: 0o700 });
 process.umask(0o077);
-let membershipMigration = false;
+let accountMigrations = [];
 const musicEnvFile = musicBase + '/shared/.env.production';
 const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
 const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
@@ -49,16 +50,7 @@ function stage() {
   if (fs.existsSync(musicRelease) || fs.existsSync(loginRelease)) throw Error('Release already exists; use a new release id');
   const oldSchema = fs.readFileSync(originalLogin.pm_cwd + '/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
   const newSchema = fs.readFileSync(packageDir + '/login/prisma/schema.prisma', 'utf8').replace(/\r\n/g, '\n');
-  if (oldSchema !== newSchema) {
-    const migrationDir = packageDir + '/login/prisma/migrations/20261101130000_single_use_memberships';
-    const plan = JSON.parse(fs.readFileSync(migrationDir + '/plan.json', 'utf8'));
-    const textHash = text => crypto.createHash('sha256').update(text.replace(/\r\n/g, '\n')).digest('hex');
-    if (plan.previousSchemaSha256 !== textHash(oldSchema) || plan.targetSchemaSha256 !== textHash(newSchema) ||
-        plan.migrationSha256 !== textHash(fs.readFileSync(migrationDir + '/migration.sql', 'utf8'))) {
-      throw Error('Database schema changed without an exact approved migration plan');
-    }
-    membershipMigration = true;
-  }
+  accountMigrations = selectAccountMigrations(packageDir + '/login', oldSchema, newSchema);
   fs.cpSync(packageDir + '/music', musicRelease, { recursive: true });
   fs.cpSync(packageDir + '/login', loginRelease, { recursive: true });
   fs.writeFileSync(musicRelease + '/.env.production', releaseMusicEnv, { mode: 0o600 });
@@ -131,6 +123,7 @@ function liveAccountQa(origin) {
   execFileSync(node, [path.join(packageDir, 'ops/verify-account-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 150000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-listen-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-membership-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
+  execFileSync(node, [path.join(packageDir, 'ops/verify-social-playlist-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 120000 });
 }
 let failed = false;
 (async () => {
@@ -142,12 +135,15 @@ let failed = false;
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
   fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalUpstream), { mode: 0o600 });
-  if (membershipMigration) {
-    // Online SQLite backup includes WAL contents. Never copy/replace a live database file.
-    execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-memberships.db']);
-    execFileSync(node, ['scripts/migrate-single-use-memberships.mjs', '--apply'], {
-      cwd: loginRelease, env: { ...process.env, DATABASE_URL: 'file:' + database }, stdio: 'inherit'
-    });
+  if (accountMigrations.length) {
+    // Online backup includes WAL; application rollback keeps additive tables and new messages.
+    execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-account-migrations.db']);
+    for (const migration of accountMigrations) {
+      execFileSync(node, [migration.script, '--apply'], {
+        cwd: loginRelease, env: { ...process.env, DATABASE_URL: 'file:' + database }, stdio: 'inherit'
+      });
+      console.log('ACCOUNT_MIGRATION_VERIFIED', migration.name);
+    }
   }
   if (JSON.stringify(qualityFlags(originalUpstream)) !== JSON.stringify(targetUpstreamFlags)) {
     upstreamChanged = true;

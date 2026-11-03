@@ -93,6 +93,19 @@ describe("account proxy route", () => {
     expect(payload.retryable).toBe(true);
   });
 
+  it("preserves account event resumption and message rate-limit hints", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      code: 5805, retryable: true, retryAfterSeconds: 12
+    }), { status: 429, headers: { "retry-after": "12", "content-type": "application/json" } }));
+    const response = await GET(new NextRequest("http://localhost/api/account/events/stream", {
+      headers: { authorization: "Bearer token", "last-event-id": "42" }
+    }), createContext(["events", "stream"]));
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("last-event-id")).toBe("42");
+    expect(response.headers.get("retry-after")).toBe("12");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("keeps the SSE abort signal alive after headers and cancels upstream on reader cancellation", async () => {
     process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
     const cancel = vi.fn();

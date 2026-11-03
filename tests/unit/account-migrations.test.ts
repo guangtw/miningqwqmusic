@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import crypto from "node:crypto";
+const { selectAccountMigrations } = require("../../ops/scripts/account-migrations.cjs");
+const hash = (text: string) => crypto.createHash("sha256").update(text.replace(/\r\n/g, "\n")).digest("hex");
+
+describe("account deployment migration chain", () => {
+  it("selects exact approved migration chains and refuses drift or altered SQL", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo-migration-plan-"));
+    try {
+      fs.mkdirSync(path.join(root, "scripts"));
+      const names = ["20261101130000_single_use_memberships", "20261103120000_direct_messages"];
+      const scripts = ["migrate-single-use-memberships.mjs", "migrate-direct-messages.mjs"];
+      for (let i = 0; i < names.length; i++) {
+        const dir = path.join(root, "prisma/migrations", names[i]); fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "migration.sql"), "SELECT 1;");
+        fs.writeFileSync(path.join(root, "scripts", scripts[i]), "// fixture");
+        fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify({ previousSchemaSha256: hash(`schema-${i}`), targetSchemaSha256: hash(`schema-${i + 1}`), migrationSha256: hash("SELECT 1;") }));
+      }
+      expect(selectAccountMigrations(root, "schema-0", "schema-2").map((x: { name: string }) => x.name)).toEqual(names);
+      expect(selectAccountMigrations(root, "schema-1", "schema-2")).toHaveLength(1);
+      expect(selectAccountMigrations(root, "schema-2", "schema-2")).toEqual([]);
+      expect(() => selectAccountMigrations(root, "unknown", "schema-2")).toThrow("exact approved");
+      expect(() => selectAccountMigrations(root, "schema-0", "changed-target")).toThrow("exact approved");
+      fs.appendFileSync(path.join(root, "prisma/migrations", names[1], "migration.sql"), "SELECT 2;");
+      expect(() => selectAccountMigrations(root, "schema-1", "schema-2")).toThrow("checksum");
+    } finally { fs.rmSync(root, { recursive: true }); }
+  });
+});

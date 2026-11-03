@@ -1,6 +1,7 @@
 import { AppError, isUpstreamBackpressure } from "@/src/lib/errors";
 import { fetchWithRetry } from "@/src/lib/http";
 import { getMusicRequestCoordinator, MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
+import { decodeCommentCursor, normalizeTrackComments } from "@/src/lib/music/comments";
 import { parseLyric } from "@/src/lib/lyrics";
 import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
 import type {
@@ -945,6 +946,13 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
+  }
+
+  async getTrackComments(trackId: string, query: import("@/src/types/music").TrackCommentQuery): Promise<import("@/src/types/music").TrackCommentPage> {
+    const page = decodeCommentCursor(trackId, query);
+    const raw = await this.request<unknown>("/comment/new", { id: trackId, type: 0, sortType: query.sort === "hot" ? 2 : 3,
+      pageNo: page.pageNo, pageSize: query.limit, ...(page.cursor ? { cursor: page.cursor } : {}) });
+    return normalizeTrackComments(trackId, query, page.pageNo, raw);
   }
 
   async getTrackLyric(trackId: string): Promise<TrackLyric> {

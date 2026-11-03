@@ -9,7 +9,8 @@ const FORWARDED_REQUEST_HEADERS = [
   "cookie",
   "user-agent",
   "accept",
-  "accept-language"
+  "accept-language",
+  "last-event-id"
 ] as const;
 
 const RESPONSE_HEADERS_PASSTHROUGH = [
@@ -17,7 +18,8 @@ const RESPONSE_HEADERS_PASSTHROUGH = [
   "cache-control",
   "etag",
   "last-modified",
-  "x-accel-buffering"
+  "x-accel-buffering",
+  "retry-after"
 ] as const;
 
 function buildTargetUrl(request: NextRequest, pathSegments: string[]): URL {

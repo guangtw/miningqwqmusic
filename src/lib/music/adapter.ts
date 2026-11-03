@@ -30,6 +30,7 @@ export type ArtistSearchInput = {
 };
 
 export interface MusicSourceAdapter {
+  getTrackComments(trackId: string, query: import("@/src/types/music").TrackCommentQuery): Promise<import("@/src/types/music").TrackCommentPage>;
   searchTracks(input: TrackSearchInput): Promise<PagedResult<Track>>;
   searchArtists(input: ArtistSearchInput): Promise<PagedResult<ArtistSearchItem>>;
   searchPlaylists(input: TrackSearchInput): Promise<PagedResult<Playlist>>;

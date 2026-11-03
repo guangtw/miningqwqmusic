@@ -238,3 +238,15 @@ export type ApiFailure = {
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
 export type PlaybackMode = "sequence" | "loop-one" | "shuffle";
+
+/** Public read-only comments; all content is plain text, never HTML. */
+export type TrackCommentQuery = { sort: "hot" | "time"; limit: number; cursor?: string };
+export type TrackCommentAuthor = { id: string | null; nickname: string; avatarUrl?: string };
+export type TrackComment = {
+  id: string; author: TrackCommentAuthor; content: string; time: number; likedCount: number;
+  replies: { id: string | null; author: TrackCommentAuthor; content: string | null }[];
+};
+export type TrackCommentPage = {
+  trackId: string; sort: "hot" | "time"; items: TrackComment[]; total: number;
+  hasMore: boolean; nextCursor: string | null;
+};

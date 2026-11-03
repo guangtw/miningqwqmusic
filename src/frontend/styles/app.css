@@ -5404,3 +5404,745 @@ html {
     padding: 0;
   }
 }
+
+/* ============ 私信 ============ */
+/* 会话列表：好友页最上面 */
+.conv {
+  color: inherit;
+}
+.conv-avatar {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+}
+.conv-badge {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px var(--bg);
+  animation: conv-badge-in 0.5s var(--ease-spring) both;
+}
+.conv:hover .conv-badge {
+  box-shadow: 0 0 0 2px var(--surface);
+}
+@keyframes conv-badge-in {
+  from {
+    transform: scale(0.3);
+  }
+}
+.person-text small.conv-preview {
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.conv.unread .conv-preview {
+  color: var(--ink);
+}
+.conv-time {
+  align-self: flex-start;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.conv.unread .conv-time {
+  color: var(--accent);
+}
+.convs-more {
+  margin-top: 10px;
+}
+.person-dm {
+  color: var(--ink-3);
+}
+.person-dm:hover {
+  color: var(--ink);
+}
+
+/* 聊天页：一栏，左对齐，和好友页同宽 */
+.page.chat-page {
+  padding-bottom: 0;
+}
+.chat-head,
+.chat-log,
+.chat-compose,
+.chat-error {
+  max-width: 720px;
+}
+.chat-head {
+  position: sticky;
+  top: -36px;
+  z-index: 3;
+  margin-top: -36px;
+  padding: 36px 0 22px;
+  background: linear-gradient(var(--bg) 78%, color-mix(in srgb, var(--bg) 0%, transparent));
+}
+.chat-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  margin-left: -5px;
+  font-size: 13px;
+  color: var(--ink-2);
+  transition: color 0.2s, transform 0.3s var(--ease-spring);
+}
+.chat-back:hover {
+  color: var(--ink);
+  transform: translateX(-2px);
+}
+.chat-who {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+.chat-who-text {
+  min-width: 0;
+}
+.chat-avatar-skel {
+  background: var(--surface-2);
+}
+.chat-name {
+  font-size: clamp(26px, 3vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chat-rel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.text-btn.chat-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.chat-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 42vh;
+}
+.chat-older {
+  height: 44px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.chat-start {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 18px 0 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.chat-start.is-empty {
+  gap: 10px;
+  padding: 9vh 0 4vh;
+}
+.chat-start.is-empty p {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.chat-start small {
+  max-width: 26em;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.chat-stamp {
+  margin: 22px 0 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  margin-top: 3px;
+}
+.msg.first {
+  margin-top: 12px;
+}
+.msg.mine {
+  align-items: flex-end;
+}
+.bubble {
+  max-width: min(78%, 520px);
+  padding: 9px 15px 10px;
+  border-radius: 21px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 1px rgba(17, 17, 17, 0.04);
+  transform-origin: left bottom;
+  transition: opacity 0.35s var(--ease-out), background 0.3s, color 0.3s, box-shadow 0.3s;
+}
+.mine .bubble {
+  background: var(--ink);
+  color: var(--on-ink);
+  transform-origin: right bottom;
+}
+/* 一组里挨着的气泡：靠自己这侧的角收小，组里最后一个留个尖角 */
+.theirs:not(.first) .bubble {
+  border-top-left-radius: 7px;
+}
+.theirs:not(.last) .bubble,
+.theirs.last .bubble {
+  border-bottom-left-radius: 7px;
+}
+.theirs.last .bubble {
+  border-bottom-left-radius: 4px;
+}
+.mine:not(.first) .bubble {
+  border-top-right-radius: 7px;
+}
+.mine:not(.last) .bubble {
+  border-bottom-right-radius: 7px;
+}
+.mine.last .bubble {
+  border-bottom-right-radius: 4px;
+}
+.msg.pending.sending .bubble {
+  opacity: 0.55;
+}
+.msg.pending.failed .bubble {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.receipt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 6px 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  animation: receipt-in 0.45s var(--ease-spring) both;
+}
+.receipt.read {
+  color: var(--accent);
+}
+.receipt.failed {
+  color: #d64545;
+}
+.receipt .text-btn {
+  font-size: 11px;
+}
+@keyframes receipt-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+}
+/* 发送中：一张小唱片在转 */
+.sending-disc {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--bg) 0 18%, var(--ink-3) 20% 30%, transparent 32%), conic-gradient(var(--ink-3) 0 25%, transparent 25% 50%, var(--ink-3) 50% 75%, transparent 75%);
+  box-shadow: inset 0 0 0 1px var(--ink-3);
+  animation: member-spin 0.9s linear infinite;
+}
+.chat-fresh {
+  position: sticky;
+  bottom: calc(var(--deck-h) + var(--deck-gap) * 2 + 92px);
+  z-index: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  margin-top: 10px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: var(--shadow-2);
+  animation: receipt-in 0.45s var(--ease-spring) both;
+}
+.chat-error {
+  padding: 8vh 0;
+}
+
+/* 输入框：贴在播放台上面，往上渐隐盖住滚上来的消息 */
+.chat-compose {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-top: 14px;
+  padding: 22px 0 calc(var(--deck-h) + var(--deck-gap) * 2);
+  background: linear-gradient(color-mix(in srgb, var(--bg) 0%, transparent), var(--bg) 22px);
+}
+.chat-quota {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px 18px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  transition: color 0.3s;
+}
+.chat-quota.spent {
+  color: var(--ink-3);
+}
+.quota-pips {
+  display: inline-flex;
+  gap: 5px;
+}
+.quota-pips i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  transform: scale(0.8);
+  transition: background 0.35s, box-shadow 0.35s, transform 0.5s var(--ease-spring);
+}
+.quota-pips i.on {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+  transform: none;
+}
+.chat-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 20px;
+  border-radius: 26px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: border-color 0.2s, opacity 0.3s;
+}
+.chat-box:focus-within {
+  border-color: var(--accent);
+}
+.chat-box.locked {
+  opacity: 0.6;
+}
+.chat-box textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 132px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  resize: none;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.chat-box textarea:focus {
+  outline: none;
+}
+.chat-box textarea::placeholder {
+  color: var(--ink-3);
+}
+.chat-count {
+  align-self: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.chat-send {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  color: var(--ink-3);
+  transform: scale(0.84);
+  transition: transform 0.5s var(--ease-spring), background 0.25s, color 0.25s;
+}
+.chat-send.ready {
+  background: var(--accent);
+  color: #fff;
+  transform: none;
+}
+.chat-send.ready:hover svg {
+  transform: translateY(-2px);
+}
+.chat-send svg {
+  transition: transform 0.35s var(--ease-spring);
+}
+.chat-send.ready:active {
+  transform: scale(0.88);
+}
+
+@media (max-width: 860px) {
+  .chat-head {
+    top: -18px;
+    margin-top: -18px;
+    padding: 18px 0 16px;
+  }
+  .chat-who {
+    gap: 12px;
+  }
+  .bubble {
+    max-width: 82%;
+  }
+}
+@media (max-width: 480px) {
+  .person .btn-label {
+    display: none;
+  }
+  .person .btn.sm {
+    width: 34px;
+    padding: 0;
+  }
+}
+
+/* ============ 歌曲评论（正在播放面板，和歌词、唱片内页共用一块地方） ============ */
+.comments {
+  flex: 1;
+  min-height: 0;
+  margin-top: 22px;
+  padding-bottom: 14vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -webkit-mask: linear-gradient(#000 calc(100% - 64px), transparent);
+  mask: linear-gradient(#000 calc(100% - 64px), transparent);
+}
+.comments::-webkit-scrollbar {
+  display: none;
+}
+.cmt-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.cmt-head .seg {
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.cmt-total {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.cmt-list {
+  display: grid;
+}
+.cmt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.cmt-avatar {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+.cmt-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.cmt-meta b {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.cmt-meta .mono {
+  flex: none;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.cmt-text {
+  margin-top: 5px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmt-quote {
+  display: block;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cmt-quote b {
+  margin-right: 4px;
+  font-weight: 600;
+}
+.cmt-like {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: start;
+  margin-top: 1px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.cmt-like svg {
+  color: var(--accent);
+}
+.cmt-skel {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 12px;
+  padding: 16px 0;
+}
+.cmt-skel > .skeleton {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+.cmt-state {
+  padding: 28px 0;
+  font-size: 15px;
+  color: var(--ink-3);
+}
+.cmt-state .text-btn {
+  margin-left: 10px;
+}
+.cmt-end {
+  padding: 22px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.cmt-sentinel {
+  height: 1px;
+}
+@media (max-width: 860px) {
+  .np-focus .comments {
+    margin-top: 0;
+    padding: 4px 0 18vh;
+    animation: np-lyrics-in 0.5s var(--ease-out) both;
+  }
+  .cmt-text {
+    font-size: 15px;
+  }
+}
+/* 歌名下面那排小按钮：四个放得下就不换行，手机上去掉前缀字（「加到歌单」→「歌单」），再窄就横着滑 */
+.np-chip {
+  flex: none;
+  white-space: nowrap;
+}
+@media (max-width: 860px) {
+  .np-actions {
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin-inline: calc(var(--gutter) * -1);
+    padding-inline: var(--gutter);
+  }
+  .np-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .chip-long {
+    display: none;
+  }
+}
+
+/* ============ 整理歌单顺序 ============ */
+.arrange-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 860px;
+  padding: 14px 0 12px;
+  background: linear-gradient(var(--bg) 78%, color-mix(in srgb, var(--bg) 0%, transparent));
+}
+.arrange-bar > span {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.arrange {
+  display: grid;
+  max-width: 860px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.arrange-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px 44px minmax(0, 1fr) auto 44px;
+  align-items: center;
+  gap: 12px;
+  height: 62px;
+  padding: 0 2px 0 8px;
+  border-radius: 14px;
+  background: var(--bg);
+  transition: transform 0.34s var(--ease-spring), scale 0.3s var(--ease-spring), box-shadow 0.3s, background 0.3s;
+}
+.arrange-row + .arrange-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 90px;
+  right: 8px;
+  border-top: 1px solid var(--line);
+  transition: opacity 0.2s;
+}
+.arrange.dragging .arrange-row::before,
+.arrange-row.lifted + .arrange-row::before {
+  opacity: 0;
+}
+.arrange .arrange-row.lifted {
+  z-index: 2;
+  scale: 1.025;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  /* 跟着手指走，不要过渡 */
+  transition: scale 0.3s var(--ease-spring), box-shadow 0.3s, background 0.3s;
+}
+.arrange.settling .arrange-row {
+  transition: none;
+}
+.arrange-row.landing {
+  z-index: 2;
+}
+.arrange-no {
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: right;
+}
+.lifted .arrange-no {
+  color: var(--accent);
+}
+.arrange-cover {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.arrange-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.arrange-text b,
+.arrange-text small {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.arrange-text b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.arrange-text small {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.arrange-dur {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.arrange-grip {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--ink-3);
+  cursor: grab;
+  touch-action: none;
+  transition: color 0.2s, background 0.2s;
+}
+.arrange-grip svg {
+  width: 20px;
+  height: 20px;
+}
+.arrange-grip:hover {
+  color: var(--ink);
+  background: var(--surface);
+}
+.lifted .arrange-grip {
+  cursor: grabbing;
+  color: var(--accent);
+}
+.arrange.dragging {
+  cursor: grabbing;
+  user-select: none;
+  -webkit-user-select: none;
+}
+@media (max-width: 860px) {
+  .arrange-bar {
+    flex-wrap: wrap;
+  }
+  .arrange-bar > span {
+    flex-basis: 100%;
+    order: -1;
+  }
+  .arrange-row {
+    grid-template-columns: 22px 40px minmax(0, 1fr) 44px;
+    gap: 10px;
+  }
+  .arrange-cover {
+    width: 40px;
+    height: 40px;
+  }
+  .arrange-dur {
+    display: none;
+  }
+  .arrange-row + .arrange-row::before {
+    left: 80px;
+  }
+}
+@media (max-width: 860px) {
+  .arrange-bar > .btn:first-of-type {
+    margin-left: auto;
+  }
+}

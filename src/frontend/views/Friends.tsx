@@ -1,14 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FriendRelationStatus, FriendSearchResult, FriendSummary } from '@/src/types/account';
+import type { DirectConversationDto } from '@/src/types/social';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { Empty, Loading } from '../components/States';
 import { authStore, displayName } from '../lib/account';
 import { answerFriendRequest, maskEmail, refreshSocial, removeFriend, searchUsers, sendFriendRequest, socialStore } from '../lib/friends';
 import { inviteFriend, listenStore } from '../lib/listen';
+import { conversationList, loadMoreConversations, messagesStore, refreshConversations } from '../lib/messages';
+import { href } from '../lib/router';
+import { motionEnabled } from '../lib/settings';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
+import { peerName } from './Chat';
 
 const sinceText = (iso: string) => {
   const d = new Date(iso);
@@ -111,6 +116,11 @@ function FindPeople() {
                 <small className="mono">{maskEmail(r.user.email)}</small>
               </span>
               {action(r)}
+              {(changed[r.user.id] ?? r.relationStatus) !== 'self' && (
+                <a className="icon-btn person-dm" href={href.chat(r.user.id)} aria-label={`给 ${displayName(r.user)} 发私信`} title="发私信">
+                  <Icon name="chat" size={18} />
+                </a>
+              )}
             </div>
           ))}
         </div>
@@ -161,6 +171,93 @@ function Requests() {
   );
 }
 
+/** 会话列表里的时间：今天 14:32 / 昨天 / 11/3 / 2025/11/3 */
+function listTime(iso: string, now = new Date()) {
+  const d = new Date(iso);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(now) - day(d)) / 86_400_000);
+  if (diff === 0) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (diff === 1) return '昨天';
+  return d.getFullYear() === now.getFullYear() ? `${d.getMonth() + 1}/${d.getDate()}` : `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/**
+ * 私信会话：新消息把那一行顶到最上面时，各行从原来的位置滑到新位置（FLIP），
+ * 新冒出来的一行从顶上落进来
+ */
+function Conversations() {
+  const me = useStore(authStore, (s) => s.user?.id);
+  const state = useStore(messagesStore, (s) => s);
+  const list = useMemo(() => conversationList(state), [state]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const rects = useRef(new Map<string, number>());
+  const order = list.map((c) => c.id).join();
+
+  useEffect(() => {
+    void refreshConversations().catch(() => undefined);
+  }, []);
+
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const prev = rects.current;
+    const next = new Map<string, number>();
+    const animate = motionEnabled() && prev.size > 0;
+    box.querySelectorAll<HTMLElement>('[data-conv]').forEach((el) => {
+      const key = el.dataset.conv!;
+      const top = el.offsetTop;
+      next.set(key, top);
+      if (!animate) return;
+      const was = prev.get(key);
+      if (was == null) el.animate([{ opacity: 0, transform: 'translateY(-14px) scale(0.97)' }, { opacity: 1, transform: 'none' }], { duration: 520, easing: 'cubic-bezier(0.34, 1.4, 0.64, 1)' });
+      else if (was !== top) el.animate([{ transform: `translateY(${was - top}px)` }, { transform: 'none' }], { duration: 560, easing: 'cubic-bezier(0.34, 1.25, 0.64, 1)' });
+    });
+    rects.current = next;
+  }, [order]);
+
+  if (!state.listLoaded || !list.length) return null;
+  const unread = list.reduce((n, c) => n + c.unreadCount, 0);
+  return (
+    <section className="section s-section">
+      <div className="section-head s-head">
+        <h2>私信</h2>
+        {unread > 0 && <span className="mono s-count accent">{unread} 条未读</span>}
+      </div>
+      <div className="people convs" ref={boxRef}>
+        {list.map((c) => (
+          <ConversationRow key={c.id} c={c} me={me} />
+        ))}
+      </div>
+      {state.nextCursor && (
+        <button className="text-btn convs-more" onClick={() => void loadMoreConversations().catch((e) => toast((e as Error).message))}>
+          更早的会话
+        </button>
+      )}
+    </section>
+  );
+}
+
+function ConversationRow({ c, me }: { c: DirectConversationDto; me?: string }) {
+  const last = c.lastMessage!;
+  const mine = last.senderUserId === me;
+  return (
+    <a className={`person conv ${c.unreadCount ? 'unread' : ''}`} href={href.chat(c.peer.id)} data-conv={c.id}>
+      <span className="conv-avatar">
+        <Avatar user={c.peer} size={44} />
+        {c.unreadCount > 0 && <span className="conv-badge mono">{c.unreadCount > 99 ? '99+' : c.unreadCount}</span>}
+      </span>
+      <span className="person-text">
+        <b>{peerName(c.peer)}</b>
+        <small className="conv-preview">
+          {mine && <span className="faint">你：</span>}
+          {last.text}
+        </small>
+      </span>
+      <span className="conv-time mono">{listTime(last.createdAt)}</span>
+    </a>
+  );
+}
+
 function FriendRow({ f }: { f: FriendSummary }) {
   const inRoom = useStore(listenStore, (s) => s.room?.members.some((m) => m.user.id === f.user.id) ?? false);
   const [armed, setArmed] = useState(false);
@@ -178,6 +275,9 @@ function FriendRow({ f }: { f: FriendSummary }) {
         <b>{name}</b>
         <small>{sinceText(f.since)}</small>
       </span>
+      <a className="btn sm" href={href.chat(f.user.id)}>
+        <Icon name="chat" size={16} /> <span className="btn-label">私信</span>
+      </a>
       {inRoom ? (
         <span className="faint small">在房间里</span>
       ) : (
@@ -190,7 +290,7 @@ function FriendRow({ f }: { f: FriendSummary }) {
             }, `邀请发给 ${name} 了。`)
           }
         >
-          <Icon name="people" size={16} /> 一起听
+          <Icon name="people" size={16} /> <span className="btn-label">一起听</span>
         </button>
       )}
       <button
@@ -242,8 +342,9 @@ export function FriendsView() {
       <header className="page-head reveal">
         <div className="kicker">好友</div>
         <h1 className="page-title">一起听歌的人</h1>
-        <p className="muted acct-sub">加了好友就能互相邀请进房间，一边放一边听。</p>
+        <p className="muted acct-sub">加了好友就能互相邀请进房间，一边放一边听；想说点什么，就发私信。</p>
       </header>
+      <Conversations />
       <FindPeople />
       <Requests />
       <section className="section s-section">

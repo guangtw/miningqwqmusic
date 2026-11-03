@@ -275,7 +275,7 @@ interface LibraryState {
   /** 歌单（自建 + 链接导入），分卷已拼好；云端格式见 playlists.ts */
   importedPlaylists: Record<string, ImportedPlaylist>;
   /** 本机改了还没同步上去的歌单 */
-  pendingPlaylists: Record<string, 'upsert' | 'delete'>;
+  pendingPlaylists: Record<string, 'upsert' | 'delete' | 'reorder'>;
   /** 每张歌单在云端占了哪些记录（分卷 id） */
   cloudParts: Record<string, string[]>;
   /** 云端每条记录的内容签名，没变的分卷保存时跳过 */

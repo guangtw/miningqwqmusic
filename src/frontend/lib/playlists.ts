@@ -1,5 +1,7 @@
+import type { LibrarySnapshot } from '@/src/types/account';
+import type { PlaylistRecordsResult } from '@/src/types/social';
 import { coverOf, music, type ImportedPlaylist, type LibraryRevisionResult, type Playlist, type Track } from '../api';
-import { path } from '../api/http';
+import { ApiError, path } from '../api/http';
 import { api } from '../config/site';
 import { toplistCover } from './covers';
 import { authed, authStore, libraryStore } from './account';
@@ -12,6 +14,9 @@ import { toast } from './toast';
 //
 // 账户服务每个请求最多 api.cloudFieldLimit 个 JSON 字段（默认 400），一首歌大约 10 个，
 // 所以自建歌单在云端按「分卷」存：第 1 卷用歌单 id，第 k 卷用 <id>~k，拉下来时再拼回去。
+//
+// 排序走账户服务的原子接口（一次提交整张歌单的曲目顺序，服务端在一个事务里重新分卷、只推进一次版本）；
+// 加歌、删歌、改名还是按卷写。两种写法不同时进行：本机还有没传上去的曲目改动时，排序跟着那次整张上传一起走。
 
 export type PlaylistKind = 'mine' | 'linked';
 
@@ -25,9 +30,15 @@ export const neteaseUrl = (id: string) => `https://music.163.com/playlist?id=${e
 const signedIn = () => authStore.get().status === 'authenticated';
 const userId = () => authStore.get().user?.id;
 
-/** 歌单封面：自己设的 > 第一首歌的封面；没封面的链接歌单是官方榜单，用生成的榜单封面 */
+/** 自建歌单的封面永远是当前第一首的封面（和账户服务的规则一致）：没有就空着，不往后找 */
+const autoCover = (pl: ImportedPlaylist) => (pl.tracks[0] ? coverOf(pl.tracks[0]) : undefined);
+
+/**
+ * 歌单封面。自建歌单按本地曲目现算，加歌、删歌、拖动排序时立刻跟着变，不等云端；
+ * 链接歌单用原歌单的封面，没有封面的是官方榜单，用生成的榜单封面
+ */
 export const playlistCover = (pl: ImportedPlaylist) =>
-  pl.coverUrl ?? (pl.tracks[0] ? coverOf(pl.tracks[0]) : kindOf(pl) === 'linked' ? toplistCover(pl.id, pl.name).url : undefined);
+  kindOf(pl) === 'mine' ? autoCover(pl) : (pl.coverUrl ?? (pl.tracks[0] ? coverOf(pl.tracks[0]) : toplistCover(pl.id, pl.name).url));
 
 /** 存进歌单的曲目：只留展示需要的字段 */
 const cloudTrack = (t: Track): Track => {
@@ -62,7 +73,8 @@ export function toRecords(pl: ImportedPlaylist): ImportedPlaylist[] {
     id: partId(pl.id, k),
     name: pl.name,
     ...(k === 1 && pl.description ? { description: pl.description } : {}),
-    ...(k === 1 && pl.coverUrl ? { coverUrl: pl.coverUrl } : {}),
+    // 和服务端归一化后的一样，签名才对得上，没改的分卷下次保存能跳过
+    ...(k === 1 && autoCover(pl) ? { coverUrl: autoCover(pl) } : {}),
     tracks: [],
     sourceUrl: k === 1 ? `${LOCAL}${pl.id}` : `${LOCAL}${pl.id}?part=${k}`,
     importedAt: pl.importedAt,
@@ -120,7 +132,9 @@ function serial<T>(id: string, run: () => Promise<T>): Promise<T> {
 
 const sigOf = (rec: ImportedPlaylist) => JSON.stringify(rec);
 
-function setPending(id: string, op: 'upsert' | 'delete' | null) {
+type PendingOp = 'upsert' | 'delete' | 'reorder';
+
+function setPending(id: string, op: PendingOp | null) {
   const pendingPlaylists = { ...libraryStore.get().pendingPlaylists };
   if (op) pendingPlaylists[id] = op;
   else delete pendingPlaylists[id];
@@ -177,13 +191,112 @@ async function pushDelete(id: string) {
   });
 }
 
+/** 本机记得的云端版本（分卷签名就是当时的记录原文），用来判断别处有没有改过这张歌单 */
+function knownCloud(id: string): ImportedPlaylist | undefined {
+  const { cloudParts, cloudSigs } = libraryStore.get();
+  try {
+    const records = Object.fromEntries((cloudParts[id] ?? []).filter((rid) => cloudSigs[rid]).map((rid) => [rid, JSON.parse(cloudSigs[rid]) as ImportedPlaylist]));
+    return fromRecords(records).playlists[id];
+  } catch {
+    return undefined;
+  }
+}
+
+const orderKey = (pl: ImportedPlaylist | undefined) => (pl ? pl.tracks.map((t) => t.id).join('\n') : '');
+const sameSet = (a: ImportedPlaylist, b: ImportedPlaylist) => [...a.tracks.map((t) => t.id)].sort().join() === [...b.tracks.map((t) => t.id)].sort().join();
+
+/** 云端这张歌单的记录 → 本机：曲目、分卷、签名；本机在请求期间又改过顺序的话，曲目先留本机的 */
+function adoptRecords(id: string, records: Record<string, ImportedPlaylist>, removed: string[], revision: number, keepLocalIf?: string) {
+  const { playlists, parts } = fromRecords(records);
+  libraryStore.set((s) => {
+    const cloudSigs = { ...s.cloudSigs };
+    for (const rid of removed) delete cloudSigs[rid];
+    for (const [rid, rec] of Object.entries(records)) cloudSigs[rid] = sigOf({ ...rec, id: rid });
+    const local = s.importedPlaylists[id];
+    const keep = keepLocalIf != null && orderKey(local) !== keepLocalIf;
+    const importedPlaylists = { ...s.importedPlaylists };
+    if (!keep && playlists[id]) importedPlaylists[id] = playlists[id];
+    return { revision, cloudParts: { ...s.cloudParts, [id]: parts[id] ?? [] }, cloudSigs, importedPlaylists };
+  });
+}
+
+/** 拉一次快照，只把这张歌单换成云端的（别的歌单、收藏照旧，留给 pullLibrary） */
+async function cloudCopy(id: string) {
+  const snap = await authed<LibrarySnapshot>(api.paths.librarySnapshot);
+  const records = Object.fromEntries(
+    Object.entries(snap.importedPlaylists ?? {}).filter(([rid, rec]) => rid === id || rec.sourceUrl.startsWith(`${LOCAL}${id}?part=`)),
+  );
+  return { snap, records, playlist: fromRecords(records).playlists[id] };
+}
+
+/**
+ * 原子排序：把本机的曲目顺序整张交给账户服务。
+ * - 版本冲突（播放记录、收藏也会推进资料库版本）：拉快照核对。云端这张歌单还是排序前的样子，就用新版本号重交一次；
+ *   别处改过它，就换成云端的版本并提示，不拿旧顺序去覆盖
+ * - 网络断了：先看快照里是不是已经排好了，免得把成功的排序当失败
+ */
+async function pushReorder(id: string) {
+  const owner = userId();
+  const before = knownCloud(id);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const pl = libraryStore.get().importedPlaylists[id];
+    if (!isMine(pl)) return;
+    const sent = orderKey(pl);
+    try {
+      const r = await authed<PlaylistRecordsResult>(path(api.paths.libraryPlaylistOrder, { id }), {
+        method: 'PUT',
+        body: { expectedRevision: libraryStore.get().revision, trackIds: pl.tracks.map((t) => t.id) },
+      });
+      if (userId() !== owner) return;
+      adoptRecords(id, r.records, r.removedRecordIds, r.revision, sent);
+      return;
+    } catch (e) {
+      if (userId() !== owner) return;
+      const err = e instanceof ApiError ? e : null;
+      const conflict = err?.status === 409 && err.code === 5301;
+      const offline = err?.code === 5000 && err.status === 0;
+      const stale = err && [5901, 5902, 5903].includes(err.code);
+      if (!conflict && !offline && !stale) throw e;
+      const { snap, records, playlist } = await cloudCopy(id);
+      if (userId() !== owner) return;
+      const removed = (libraryStore.get().cloudParts[id] ?? []).filter((rid) => !(rid in records));
+      if (playlist && orderKey(playlist) === sent) {
+        // 其实已经排好了（上一次请求成功了只是没收到回复，或者顺序本来就一样）
+        adoptRecords(id, records, removed, snap.revision, sent);
+        return;
+      }
+      if (offline) throw e;
+      if (conflict && attempt === 0 && playlist && before && orderKey(playlist) === orderKey(before) && sameSet(playlist, pl)) {
+        // 只是版本号落后，这张歌单没被别处动过：用新版本号重交
+        libraryStore.set({ revision: snap.revision });
+        continue;
+      }
+      if (!playlist) {
+        libraryStore.set((s) => {
+          const importedPlaylists = { ...s.importedPlaylists };
+          delete importedPlaylists[id];
+          return { importedPlaylists, revision: snap.revision };
+        });
+        toast('这张歌单已经在别的设备上删掉了。');
+        return;
+      }
+      adoptRecords(id, records, removed, snap.revision);
+      toast('这张歌单在别处改过了，已换成最新的版本，再排一次吧。');
+      return;
+    }
+  }
+}
+
 /** 把一张歌单的本地状态写到云端；失败了留着「待同步」标记，下次拉取时补 */
-function sync(id: string, op: 'upsert' | 'delete', quiet = false) {
+function sync(id: string, op: PendingOp, quiet = false) {
   setPending(id, op);
   if (!signedIn()) return Promise.resolve();
   return serial(id, async () => {
     try {
-      if (op === 'upsert') await pushUpsert(id);
+      // 排队期间又有了曲目改动：整张上传会带上新顺序，不再单独排序
+      const run = op === 'reorder' && libraryStore.get().pendingPlaylists[id] === 'upsert' ? 'upsert' : op;
+      if (run === 'upsert') await pushUpsert(id);
+      else if (run === 'reorder') await pushReorder(id);
       else await pushDelete(id);
       if (libraryStore.get().pendingPlaylists[id] === op) setPending(id, null);
     } catch (e) {
@@ -199,8 +312,26 @@ export async function mergeCloudPlaylists(records: Record<string, ImportedPlayli
   const next: Record<string, ImportedPlaylist> = { ...cloud };
   const pending = { ...local.pendingPlaylists };
   for (const [id, op] of Object.entries(local.pendingPlaylists)) {
+    const mine = local.importedPlaylists[id];
     if (op === 'delete') delete next[id];
-    else if (local.importedPlaylists[id]) next[id] = local.importedPlaylists[id];
+    else if (op === 'reorder' && mine) {
+      if (!cloud[id]) {
+        // 云端没有：刚登录就是本机独有的，整张传上去；不然是别处删掉了
+        if (merge) {
+          next[id] = mine;
+          pending[id] = 'upsert';
+        } else delete pending[id];
+        continue;
+      }
+      // 离线时排过序：曲目以云端为准，按本机的顺序排，云端新加的接在后面
+      const at = new Map(mine.tracks.map((t, i) => [t.id, i]));
+      const tracks = [
+        ...cloud[id].tracks.filter((t) => at.has(t.id)).sort((a, b) => at.get(a.id)! - at.get(b.id)!),
+        ...cloud[id].tracks.filter((t) => !at.has(t.id)),
+      ];
+      next[id] = { ...cloud[id], tracks };
+      if (orderKey(next[id]) === orderKey(cloud[id])) delete pending[id];
+    } else if (mine) next[id] = mine;
   }
   // 刚登录：本机独有的歌单补传上去
   if (merge) {
@@ -272,7 +403,17 @@ export function movePlaylistTrack(id: string, from: number, to: number) {
   const tracks = [...pl.tracks];
   const [t] = tracks.splice(from, 1);
   tracks.splice(to, 0, t);
-  void save({ ...pl, tracks, updatedAt: Date.now() });
+  return reorderPlaylist(id, tracks);
+}
+
+/** 换成新的曲目顺序（同一批歌，只是次序不同）：先在本机换好、封面跟着变，再交给云端 */
+export function reorderPlaylist(id: string, tracks: Track[]) {
+  const pl = libraryStore.get().importedPlaylists[id];
+  if (!isMine(pl) || orderKey({ ...pl, tracks }) === orderKey(pl)) return;
+  libraryStore.set((s) => ({ importedPlaylists: { ...s.importedPlaylists, [id]: { ...pl, tracks, updatedAt: Date.now() } } }));
+  const pending = libraryStore.get().pendingPlaylists[id];
+  // 曲目改动还没传上去：排序跟着整张上传一起走
+  return sync(id, pending === 'upsert' ? 'upsert' : 'reorder');
 }
 
 export function deletePlaylist(id: string) {

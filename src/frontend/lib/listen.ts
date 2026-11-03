@@ -195,24 +195,26 @@ let version = 0;
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 let progress: ReturnType<typeof setInterval> | undefined;
 
-type StreamEvent = { event: string; data: unknown };
+type StreamEvent = { event: string; data: unknown; id?: string };
 
-/** 把 SSE 文本拆成事件：空行分隔，每块里有 event: 和 data: */
+/** 把 SSE 文本拆成事件：空行分隔，每块里有 event:、data:，可能还有 id: */
 export function parseSse(buffer: string): { events: StreamEvent[]; rest: string } {
   const blocks = buffer.split(/\r?\n\r?\n/);
   const rest = blocks.pop() ?? '';
   const events: StreamEvent[] = [];
   for (const block of blocks) {
     let event = 'message';
+    let id: string | undefined;
     const data: string[] = [];
     for (const line of block.split(/\r?\n/)) {
       if (line.startsWith(':')) continue;
       if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('id:')) id = line.slice(3).trim();
       else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
     }
     if (!data.length) continue;
     try {
-      events.push({ event, data: JSON.parse(data.join('\n')) });
+      events.push({ event, data: JSON.parse(data.join('\n')), ...(id ? { id } : {}) });
     } catch {
       // 拆坏的一块直接丢掉
     }

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { nav, site } from '../config/site';
 import { authStore, displayName } from '../lib/account';
 import { socialStore } from '../lib/friends';
+import { messagesStore, unreadTotal } from '../lib/messages';
 import { shortDate } from '../lib/format';
 import { href, useRoute } from '../lib/router';
 import { useStore } from '../lib/store';
@@ -32,14 +33,14 @@ function useLoginHint(show: boolean) {
   return [on, () => setOn(false)] as const;
 }
 
-const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'account' };
+const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'account', chat: 'account' };
 
 export function Sidebar() {
   const route = useRoute();
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
-  // 有人加你好友或邀请你一起听：头像上亮个小点
-  const waiting = useStore(socialStore, (s) => s.requests.incoming.length + s.invites.length);
+  // 有人加你好友、邀请你一起听、给你发私信：头像上亮个小点
+  const waiting = useStore(socialStore, (s) => s.requests.incoming.length + s.invites.length) + useStore(messagesStore, unreadTotal);
   const member = useStore(authStore, (s) => !!s.playbackAuthorization?.enabled);
   const [hint, hideHint] = useLoginHint(status === 'guest');
   // 自建歌单归在唱片架下

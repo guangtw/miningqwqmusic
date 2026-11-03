@@ -3,7 +3,7 @@ import { coverOf, hasId } from '../api';
 import { libraryStore, toggleFavorite } from '../lib/account';
 import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { downloadTrack } from '../lib/download';
-import { formatTime } from '../lib/format';
+import { formatCount, formatTime } from '../lib/format';
 import { useInsight } from '../lib/insight';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
@@ -13,6 +13,7 @@ import { href, navigate } from '../lib/router';
 import { useStore } from '../lib/store';
 import { audioTime, currentTrack, playerStore, seek, swapDirection, toggle } from '../player/player';
 import { openTrackMenu, uiStore } from '../player/ui';
+import { Comments } from './Comments';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
@@ -56,8 +57,10 @@ export function NowPlaying() {
     return () => clearTimeout(t);
   }, [glows]);
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
-  // 歌词 / 唱片内页二选一；百科只在面板打开时去问
-  const [view, setView] = useState<'lyrics' | 'notes'>('lyrics');
+  // 歌词 / 唱片内页 / 评论三选一；百科只在面板打开时去问，评论只在切到评论时去拉
+  const [view, setView] = useState<'lyrics' | 'notes' | 'comments'>('lyrics');
+  const [commentTotal, setCommentTotal] = useState<number | null>(null);
+  useEffect(() => setCommentTotal(null), [track?.id]);
   const insight = useInsight(track?.id, open);
   const chorus = insight.data?.chorusStartMs;
   const fromChorus = () => {
@@ -84,11 +87,13 @@ export function NowPlaying() {
   }, [returning]);
   const leaveFocus = () => {
     setFocus(false);
+    setView((v) => (v === 'comments' ? 'lyrics' : v));
     setReturning(true);
   };
-  const enterFocus = () => {
+  // 全屏：手机上点唱机、歌词进全屏歌词；点「评论」进全屏评论
+  const enterFocus = (next: 'lyrics' | 'comments' = 'lyrics') => {
     if (focus) return;
-    setView('lyrics');
+    setView(next);
     setFocus(true);
     focusLayer.current = pushLayer(leaveFocus);
   };
@@ -285,10 +290,18 @@ export function NowPlaying() {
               </p>
               <div className="np-actions">
                 <button className="np-chip" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
-                  <Icon name="listAdd" size={16} /> 加到歌单
+                  <Icon name="listAdd" size={16} /> <span className="chip-long">加到</span>歌单
                 </button>
                 <button className={`np-chip ${view === 'notes' ? 'on' : ''}`} aria-pressed={view === 'notes'} onClick={() => setView(view === 'notes' ? 'lyrics' : 'notes')}>
-                  <Icon name="notes" size={16} /> 唱片内页
+                  <Icon name="notes" size={16} /> <span className="chip-long">唱片</span>内页
+                </button>
+                <button
+                  className={`np-chip ${view === 'comments' ? 'on' : ''}`}
+                  aria-pressed={view === 'comments'}
+                  onClick={() => (narrow ? enterFocus('comments') : setView(view === 'comments' ? 'lyrics' : 'comments'))}
+                >
+                  <Icon name="comment" size={16} /> 评论
+                  {commentTotal != null && commentTotal > 0 && <span className="mono">{formatCount(commentTotal).replace(' ', '')}</span>}
                 </button>
                 <button ref={moreRef} className={`np-chip np-more ${more ? 'on' : ''}`} onClick={() => setMore(!more)} aria-haspopup="menu" aria-expanded={more} aria-label="更多">
                   <Icon name="more" size={16} />
@@ -330,7 +343,9 @@ export function NowPlaying() {
               </div>
             </div>
 
-            {view === 'notes' ? (
+            {view === 'comments' ? (
+              <Comments trackId={track.id} onTotal={setCommentTotal} />
+            ) : view === 'notes' ? (
               <LinerNotes track={track} insight={insight.data} loading={insight.loading} onChorus={fromChorus} />
             ) : lines.length ? (
               <div

@@ -81,4 +81,5 @@ export const href = {
   account: () => '#/account',
   accountSettings: () => '#/account?tab=settings',
   friends: () => '#/friends',
+  chat: (userId: string) => `#/chat/${encodeURIComponent(userId)}`,
 };

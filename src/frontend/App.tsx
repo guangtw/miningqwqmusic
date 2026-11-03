@@ -12,6 +12,7 @@ import { Toast } from './components/Toast';
 import { RECORD_LAND_MS } from './components/Turntable';
 import { TrackMenu } from './components/TrackMenu';
 import { restoreSession, watchSessionRecovery } from './lib/account';
+import { watchAccountEvents } from './lib/events';
 import { watchSocial } from './lib/friends';
 import { watchListen } from './lib/listen';
 import { applyGlobalTint, DEFAULT_TINT, tintOf, type Tint } from './lib/palette';
@@ -26,6 +27,7 @@ import { Home } from './views/Home';
 import { AccountView } from './views/AccountView';
 import { AdminView } from './views/Admin';
 import { Library } from './views/Library';
+import { ChatView } from './views/Chat';
 import { FriendsView } from './views/Friends';
 import { MyPlaylistView } from './views/MyPlaylist';
 import { RadioView } from './views/Radio';
@@ -63,6 +65,8 @@ function View({ route }: { route: Route }) {
       return <AccountView />;
     case 'friends':
       return <FriendsView />;
+    case 'chat':
+      return <ChatView key={id} peerId={id} />;
     default:
       return (
         <div className="page">
@@ -146,7 +150,8 @@ export function App() {
     void restoreSession();
     watchSocial();
     const stopListen = watchListen();
-    return () => { stopListen?.(); stop(); };
+    const stopEvents = watchAccountEvents();
+    return () => { stopEvents?.(); stopListen?.(); stop(); };
   }, []);
 
   useEffect(() => {

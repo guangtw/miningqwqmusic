@@ -43,9 +43,9 @@ ssh aliyun-ai 'sudo -n true && echo READY'
 
 本机临时目录内的 `receipt.json` 记录发布 ID、源码提交与包校验值。服务器任务位于 `/home/aiops/releases/<发布ID>/`，其中 `job.log` 为发布输出，`result.json` 为最终状态。不要在发布结果未知时重复启动第二次发布。
 
-受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；只允许一人一码会员迁移和私信增量迁移组成的已知链，每步旧 schema、新 schema、迁移 SQL 三个 SHA-256 必须完全匹配专用计划。迁移前对原库做包含WAL的在线备份；私信迁移检查原有数据摘要、外键及新增表完整性。应用回滚保留新增表及新消息，不自动用旧备份覆盖现有数据库。详见 [会员协议](membership-invitations.md) 和 [后端交接](backend-social-playlist-handoff.md)。
+受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；只允许一人一码会员、原私信、音乐卡片元数据迁移组成的已知链，每步旧 schema、新 schema、迁移 SQL 三个 SHA-256 必须完全匹配专用计划。历史迁移保留目标schema快照以校验逐步执行，不拿最终schema替代中间目标。迁移前对原库做包含WAL的在线备份；私信迁移检查原有数据摘要、外键及新增表完整性。应用回滚保留新增表及新消息，不自动用旧备份覆盖现有数据库。详见 [会员协议](membership-invitations.md)、[基础后端交接](backend-social-playlist-handoff.md) 和 [卡片/邀请交接](backend-rich-messages-handoff.md)。
 
-候选及正式验收还会运行 `verify-social-playlist-session.cjs`：以两个临时 `@example.test` 账号验证陌生人限额、幂等、回复解锁、好友关系、SSE及日志补拉、已读、歌单原子排序和首曲封面，再检查真实只读评论及写入405。测试用户按精确ID与邮箱删除，消息和事件级联清理；这不是本机开发阶段的自动上线入口。
+候选及正式验收还会运行 `verify-social-playlist-session.cjs`：以两个临时 `@example.test` 账号验证陌生人限额、幂等、回复解锁、好友关系、SSE及日志补拉、已读、歌单原子排序和首曲封面、音乐卡片/自建歌单快照、自动邀请消息及接受状态，再检查真实只读评论及写入405。测试用户按精确ID与邮箱删除，消息和事件级联清理；这不是本机开发阶段的自动上线入口。
 
 GitHub 推送或 Release 上传失败不会撤销已经通过验收的生产版本。此时根据明确的 `PRODUCTION_VERIFIED` 记录补推相同提交或发布包，不重复部署。
 

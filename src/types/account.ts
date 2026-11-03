@@ -163,6 +163,8 @@ export type FriendRequestsResult = {
 };
 
 export type ListenRoomInviteSummary = {
+  messageId?: string;
+  conversationId?: string;
   id: string;
   roomId: string;
   inviteCode: string;

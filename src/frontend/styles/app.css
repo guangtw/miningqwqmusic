@@ -5172,9 +5172,16 @@ html {
   .nowplaying:not(.np-focus) .lyric-line small {
     display: none;
   }
+  /* 「正在找歌词…」「纯音乐」和两行歌词占一样大的地方：唱机按剩下的高度定尺寸，
+     这块一变高矮，换歌时唱机就跟着忽大忽小 */
   .nowplaying:not(.np-focus) .lyrics-empty {
-    margin-top: 16px;
+    flex: none;
+    height: 76px;
+    margin-top: 14px;
+    padding-top: 4px;
     font-size: 16px;
+    line-height: 1.32;
+    overflow: hidden;
   }
   .nowplaying:not(.np-focus) .notes {
     margin-top: 16px;

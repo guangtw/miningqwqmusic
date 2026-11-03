@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { coverOf } from './api';
+import { DmNotice } from './components/DmNotice';
 import { ListenDrawer, ListenInviteCard } from './components/ListenDrawer';
 import { LoginDialog } from './components/LoginDialog';
 import { NowPlaying } from './components/NowPlaying';
@@ -180,6 +181,7 @@ export function App() {
       <QueueDrawer />
       <ListenDrawer />
       <ListenInviteCard />
+      <DmNotice />
       <LoginDialog />
       <PlaylistDialog />
       <ImportDialog />

@@ -83,6 +83,34 @@ describe('direct messages', () => {
     expect(m.messagesStore.get().conversations[PEER].peerLastReadSequence).toBe(3);
   });
 
+  it('pops one notice per peer for fresh incoming messages, but not for replays, own messages or the open chat', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.includes('/messages?') || url.endsWith('/messages') ? ok({ items: [msg(1), msg(2)], hasMore: false, nextBefore: 1, nextAfter: 2 }) : ok(conversation()),
+      ),
+    );
+    await signIn();
+    const m = await import('@/src/frontend/lib/messages');
+    await m.openThread(PEER);
+    const now = () => new Date().toISOString();
+    location.hash = '#/library';
+
+    m.onMessageCreated(msg(1, PEER, { createdAt: now() })); // 已读过的旧序号
+    m.onMessageCreated(msg(3, PEER, { createdAt: new Date(Date.now() - 600_000).toISOString() })); // 补拉回来的旧消息
+    m.onMessageCreated(msg(4, ME, { createdAt: now() })); // 自己在别处发的
+    expect(m.noticeStore.get().notice).toBeNull();
+
+    m.onMessageCreated(msg(5, PEER, { createdAt: now(), text: '在吗' }));
+    m.onMessageCreated(msg(6, PEER, { createdAt: now(), text: '周末一起听' }));
+    expect(m.noticeStore.get().notice).toMatchObject({ peerId: PEER, text: '周末一起听', count: 2 });
+
+    m.dismissNotice();
+    location.hash = `#/chat/${PEER}`;
+    m.onMessageCreated(msg(7, PEER, { createdAt: now() }));
+    expect(m.noticeStore.get().notice).toBeNull();
+  });
+
   it('reuses the clientMessageId on retry and drops the optimistic bubble when the server message arrives', async () => {
     const sent: { clientMessageId: string; text: string }[] = [];
     let online = false;

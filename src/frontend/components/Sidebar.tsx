@@ -33,14 +33,15 @@ function useLoginHint(show: boolean) {
   return [on, () => setOn(false)] as const;
 }
 
-const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'account', chat: 'account' };
+const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'inbox', chat: 'inbox' };
 
 export function Sidebar() {
   const route = useRoute();
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
-  // 有人加你好友、邀请你一起听、给你发私信：头像上亮个小点
-  const waiting = useStore(socialStore, (s) => s.requests.incoming.length + s.invites.length) + useStore(messagesStore, unreadTotal);
+  // 有人加你好友、邀请你一起听：头像上亮个小点。私信有自己的按钮和数字
+  const waiting = useStore(socialStore, (s) => s.requests.incoming.length + s.invites.length);
+  const unread = useStore(messagesStore, unreadTotal);
   const member = useStore(authStore, (s) => !!s.playbackAuthorization?.enabled);
   const [hint, hideHint] = useLoginHint(status === 'guest');
   // 自建歌单归在唱片架下
@@ -86,6 +87,22 @@ export function Sidebar() {
       </div>
 
       <div className="side-foot">
+        {status === 'authenticated' && user && (
+          <a
+            href={href.friends()}
+            className={`inbox ${section === 'inbox' ? 'on' : ''}`}
+            aria-current={section === 'inbox' ? 'page' : undefined}
+            aria-label={unread > 0 ? `私信，${unread} 条未读` : '私信'}
+          >
+            <Icon name="chat" />
+            <span className="inbox-label">私信</span>
+            {unread > 0 && (
+              <span className="inbox-count mono" key={unread}>
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </a>
+        )}
         {status === 'authenticated' && user ? (
           <a
             href={href.account()}
@@ -95,11 +112,11 @@ export function Sidebar() {
           >
             <span className="who-avatar">
               <Avatar user={user} size={38} />
-              {waiting > 0 && <span className="who-dot" aria-label={`${waiting} 条新消息`} />}
+              {waiting > 0 && <span className="who-dot" aria-label={`${waiting} 条好友动态`} />}
             </span>
             <span className="who-text">
               <span className="who-name">{displayName(user)}</span>
-              <span className="who-sub">{waiting > 0 ? `${waiting} 条新消息` : member ? '会员 · 个人中心' : '个人中心'}</span>
+              <span className="who-sub">{waiting > 0 ? `${waiting} 条好友动态` : member ? '会员 · 个人中心' : '个人中心'}</span>
             </span>
           </a>
         ) : status === 'guest' || status === 'unavailable' ? (

@@ -6153,3 +6153,253 @@ html {
     margin-left: auto;
   }
 }
+
+/* ============ 私信入口：侧栏一行（手机上是头像旁的圆按钮）+ 新私信卡片 ============ */
+.inbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 9px 12px 9px 20px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-2);
+  transition: color 0.25s, background 0.25s, box-shadow 0.25s;
+}
+.inbox svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  transition: transform 0.4s var(--ease-spring);
+}
+.inbox:hover {
+  color: var(--ink);
+}
+.inbox:hover svg {
+  transform: rotate(-8deg) scale(1.08);
+}
+.inbox.on {
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+.inbox.on::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 3px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.inbox-count {
+  margin-left: auto;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  /* 数字一变就整个换一个元素，弹一下 */
+  animation: inbox-bump 0.55s var(--ease-spring) both;
+}
+@keyframes inbox-bump {
+  0% {
+    transform: scale(0.35);
+  }
+  45% {
+    transform: scale(1.18);
+  }
+}
+@media (max-width: 860px) {
+  .side-foot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .inbox {
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    color: var(--ink);
+  }
+  .inbox svg {
+    width: 21px;
+    height: 21px;
+  }
+  .inbox-label {
+    display: none;
+  }
+  .inbox.on {
+    background: none;
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+  .inbox.on::before {
+    display: none;
+  }
+  .inbox-count {
+    position: absolute;
+    top: -1px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    font-size: 10px;
+    box-shadow: 0 0 0 2px var(--bg);
+  }
+}
+
+/* 新私信卡片：和一起听的邀请卡在同一个角落，两张都在时私信叠在上面 */
+.dm-notice {
+  position: fixed;
+  right: var(--deck-gap);
+  bottom: calc(var(--deck-h) + var(--deck-gap) * 2);
+  z-index: 47;
+  display: flex;
+  align-items: center;
+  width: min(360px, calc(100% - var(--deck-gap) * 2));
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 60%),
+    var(--surface);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  box-shadow: var(--shadow-2);
+  transform-origin: 100% 100%;
+  animation: dm-notice-in 0.55s var(--ease-spring) both;
+}
+.invite-card + .dm-notice {
+  bottom: calc(var(--deck-h) + var(--deck-gap) * 2 + 82px);
+}
+.dm-notice[data-state='closing'] {
+  animation: dm-notice-out 0.26s var(--ease-soft) both;
+}
+@keyframes dm-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.92) rotate(1.5deg);
+  }
+}
+@keyframes dm-notice-out {
+  to {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+.dm-notice-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 4px 13px 14px;
+  border-radius: 20px 0 0 20px;
+}
+.dm-notice-link:active {
+  transform: scale(0.985);
+}
+.dm-notice-face {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  animation: dm-notice-face 0.7s var(--ease-spring) 0.08s both;
+}
+@keyframes dm-notice-face {
+  from {
+    transform: scale(0.6) rotate(-14deg);
+  }
+}
+.dm-notice-count {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px var(--surface);
+  animation: inbox-bump 0.55s var(--ease-spring) both;
+}
+.dm-notice-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  line-height: 1.4;
+}
+.dm-notice-text b {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dm-notice-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  color: var(--ink-2);
+  animation: dm-notice-line 0.4s var(--ease-out) both;
+}
+@keyframes dm-notice-line {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.dm-notice-x {
+  flex: none;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: 8px 8px 0 0;
+  border-radius: 50%;
+  color: var(--ink-3);
+  transition: color 0.2s, background 0.2s;
+}
+.dm-notice-x:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+/* 窄手机：顶栏多了私信按钮，导航收紧一点，五项还能一眼看全 */
+@media (max-width: 420px) {
+  .side {
+    gap: 8px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .nav {
+    gap: 0;
+  }
+  .nav a {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .side-foot {
+    gap: 4px;
+  }
+  .inbox {
+    width: 32px;
+    height: 32px;
+  }
+}

@@ -9,6 +9,7 @@ import { authStore, changePassword, displayName, logout, logoutAll } from '../li
 import { navigate, href, useRoute } from '../lib/router';
 import { avatarProblem, passwordProblem, removeAvatar, updateNickname, uploadAvatar } from '../lib/profile';
 import { socialStore } from '../lib/friends';
+import { messagesStore, unreadTotal } from '../lib/messages';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
@@ -266,18 +267,20 @@ function SessionsField() {
 function FriendsField() {
   const friends = useStore(socialStore, (s) => s.friends.length);
   const incoming = useStore(socialStore, (s) => s.requests.incoming.length);
+  const unread = useStore(messagesStore, unreadTotal);
   return (
     <div>
       <div className="field-inline">
         <a className="btn sm" href={href.friends()}>
-          <Icon name="people" size={16} /> 管理好友
+          <Icon name="people" size={16} /> 打开
         </a>
         <span className="muted small">
           {friends} 位好友
+          {unread > 0 && <span className="accent"> · {unread} 条私信未读</span>}
           {incoming > 0 && <span className="accent"> · {incoming} 条请求待处理</span>}
         </span>
       </div>
-      <p className="help">加了好友就能互相邀请进房间一起听。房间在播放栏右边的「一起听」里开。</p>
+      <p className="help">加了好友就能互相邀请进房间一起听，也能发私信。房间在播放栏右边的「一起听」里开。</p>
     </div>
   );
 }
@@ -345,7 +348,7 @@ export function AccountView() {
     ['头像', <AvatarField key="a" />],
     ['昵称', <NicknameField key="n" />],
     ['会员卡', <MemberCard key="m" />],
-    ['好友', <FriendsField key="f" />],
+    ['好友和私信', <FriendsField key="f" />],
     ['密码', <PasswordField key="p" />],
     ['登录设备', <SessionsField key="s" />],
   ];

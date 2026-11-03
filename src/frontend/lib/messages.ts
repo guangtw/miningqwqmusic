@@ -56,6 +56,35 @@ export function resetMessages() {
   timers.clear();
   reading.clear();
   messagesStore.set(empty());
+  noticeStore.set({ notice: null });
+}
+
+/** 右下角的新私信卡片：只留最近一个人；同一个人连着发，条数往上加 */
+export interface MessageNotice {
+  peerId: string;
+  text: string;
+  count: number;
+  key: number;
+}
+export const noticeStore = createStore<{ notice: MessageNotice | null }>({ notice: null });
+
+export function dismissNotice() {
+  noticeStore.set({ notice: null });
+}
+
+/** 补拉回来的旧消息不弹；正在看这个人的聊天、或者在好友页看着会话列表，也不弹 */
+function notify(peer: string, msg: DirectMessageDto) {
+  if (document.visibilityState !== 'visible' || Date.now() - Date.parse(msg.createdAt) > 120_000) return;
+  const hash = location.hash;
+  if (hash.startsWith('#/friends') || hash === `#/chat/${encodeURIComponent(peer)}`) return;
+  noticeStore.set((s) => ({
+    notice: {
+      peerId: peer,
+      text: msg.text,
+      count: s.notice?.peerId === peer ? s.notice.count + 1 : 1,
+      key: (s.notice?.key ?? 0) + 1,
+    },
+  }));
 }
 
 /** 发请求前记下当前账号，回来时账号变了就不认 */
@@ -309,6 +338,7 @@ export function onMessageCreated(msg: DirectMessageDto) {
   const peer = peerOf(msg.conversationId) ?? (mine ? null : msg.senderUserId);
   // 自己在别的设备上给新的人发了第一条：不知道是谁，刷新列表
   if (!peer) return listSoon();
+  if (!mine && !messagesStore.get().conversations[peer]) notify(peer, msg);
   const { threads, conversations } = messagesStore.get();
   const t = threads[peer];
   if (t?.loaded) {
@@ -325,6 +355,7 @@ export function onMessageCreated(msg: DirectMessageDto) {
       [peer]: { ...c, id: msg.conversationId, lastMessage: msg, unreadCount: c.unreadCount + (!mine && msg.sequence > c.lastReadSequence ? 1 : 0) },
     },
   }));
+  if (!mine && msg.sequence > c.lastReadSequence) notify(peer, msg);
   summarySoon(peer);
 }
 

@@ -4909,9 +4909,43 @@ html {
   text-align: left;
   color: var(--ink);
 }
-.np-mini svg {
+/* 全屏歌词左上角的返回：圆底的左箭头一眼就是「回去」，后面跟着歌名提醒回到哪 */
+.np-mini-back {
   grid-row: span 2;
-  color: var(--accent);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  transition: transform 0.35s var(--ease-spring), background 0.2s;
+}
+.np-mini-back svg {
+  margin-left: -2px;
+  animation: np-back-nudge 0.9s var(--ease-out) 0.45s both;
+}
+.np-mini:active .np-mini-back {
+  transform: scale(0.9) translateX(-2px);
+}
+@media (hover: hover) {
+  .np-mini:hover .np-mini-back {
+    transform: translateX(-2px);
+  }
+}
+@keyframes np-back-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  35% {
+    transform: translateX(-4px);
+  }
+  65% {
+    transform: translateX(1px);
+  }
 }
 .np-mini-name {
   font-size: 15px;
@@ -5112,9 +5146,6 @@ html {
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 16px;
     padding-bottom: calc(var(--np-bar) + var(--deck-gap) * 2);
-  }
-  .np-deck-col {
-    cursor: pointer;
   }
   .deck {
     width: min(80vw, 40vh);

@@ -21,7 +21,7 @@ import { GET as getDiscoverAssist } from "@/app/api/music/discover/search-assist
 
 describe("discover routes", () => {
   it("returns discover home payload", async () => {
-    const response = await getDiscoverHome();
+    const response = await getDiscoverHome(new Request("http://localhost/api/music/discover/home"));
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload.code).toBe(0);

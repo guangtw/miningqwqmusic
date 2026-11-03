@@ -6,6 +6,6 @@ async function handleGET() {
   return runApiRoute(() => getToplist());
 }
 
-export function GET(request?: Request) {
-  return runMusicRequest(request ?? new Request("http://local/api/music/toplist"), () => handleGET());
+export function GET(request: Request) {
+  return runMusicRequest(request, () => handleGET());
 }

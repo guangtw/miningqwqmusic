@@ -6,6 +6,6 @@ async function handleGET() {
   return runApiRoute(() => getDiscoverData());
 }
 
-export function GET(request?: Request) {
-  return runMusicRequest(request ?? new Request("http://local/api/music/discover/home"), () => handleGET());
+export function GET(request: Request) {
+  return runMusicRequest(request, () => handleGET());
 }

@@ -11,6 +11,6 @@ async function handleGET() {
   });
 }
 
-export function GET(request?: Request) {
-  return runMusicRequest(request ?? new Request("http://local/api/music/discover/hot"), () => handleGET());
+export function GET(request: Request) {
+  return runMusicRequest(request, () => handleGET());
 }

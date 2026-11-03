@@ -71,6 +71,7 @@ export async function request<T>(urlPath: string, init: RequestInitEx = {}): Pro
   try {
     payload = await res.json();
   } catch {
+    init.signal?.throwIfAborted();
     throw new ApiError(`请求失败（HTTP ${res.status}）`, 5000, res.status);
   }
 

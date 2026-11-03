@@ -65,22 +65,23 @@ export const music = {
   searchAssist: (q = '', signal?: AbortSignal) => request<SearchAssist>(p.searchAssist, { query: { q }, signal }),
 
   // BFF 的分页从 1 开始
-  searchTracks: (q: string, page = 1) =>
-    request<PagedResult<Track>>(p.searchTracks, { query: { q, page, pageSize: api.pageSize } }),
-  searchArtists: (q: string, page = 1, pageSize: number = api.pageSize) =>
-    request<PagedResult<ArtistSearchItem>>(p.searchArtists, { query: { q, page, pageSize } }),
-  async searchPlaylists(q: string, page = 1, pageSize: number = api.pageSize) {
-    const r = await request<PagedResult<Playlist>>(p.searchPlaylists, { query: { q, page, pageSize } });
+  searchTracks: (q: string, page = 1, signal?: AbortSignal) =>
+    request<PagedResult<Track>>(p.searchTracks, { query: { q, page, pageSize: api.pageSize }, signal }),
+  searchArtists: (q: string, page = 1, pageSize: number = api.pageSize, signal?: AbortSignal) =>
+    request<PagedResult<ArtistSearchItem>>(p.searchArtists, { query: { q, page, pageSize }, signal }),
+  async searchPlaylists(q: string, page = 1, pageSize: number = api.pageSize, signal?: AbortSignal) {
+    const r = await request<PagedResult<Playlist>>(p.searchPlaylists, { query: { q, page, pageSize }, signal });
+    signal?.throwIfAborted();
     return { ...r, items: await Promise.all(r.items.map(withToplistCover)) };
   },
 
   track: (id: string) => request<Track>(path(p.track, { id })),
-  playUrl: (id: string, level: PlayQualityLevel, token?: string | null) =>
-    authed<PlaySource>(path(p.playUrl, { id }), { query: { level }, token }),
-  lyric: (id: string) => request<TrackLyric>(path(p.lyric, { id })),
+  playUrl: (id: string, level: PlayQualityLevel, token?: string | null, signal?: AbortSignal) =>
+    authed<PlaySource>(path(p.playUrl, { id }), { query: { level }, token, signal }),
+  lyric: (id: string, signal?: AbortSignal) => request<TrackLyric>(path(p.lyric, { id }), { signal }),
   qualityOptions: (id: string, token?: string | null) =>
     authed<TrackQualityAvailability>(path(p.qualityOptions, { id }), { token }),
-  insight: (id: string) => request<SongInsight>(path(p.insight, { id })),
+  insight: (id: string, signal?: AbortSignal) => request<SongInsight>(path(p.insight, { id }), { signal }),
   downloadUrl: (id: string, level: PlayQualityLevel) => request<DownloadSource>(path(p.downloadUrl, { id }), { query: { level } }),
   sati: (tag?: string) => request<SceneData>(p.sceneSati, { query: { tag } }),
   sport: (bpm: number) => request<SceneData>(p.sceneSport, { query: { bpm } }),
@@ -100,5 +101,5 @@ export const music = {
     return covers.replaceToplist ? { ...pl, coverUrl: cover(id, pl.name) } : pl;
   },
   album: (id: string) => request<AlbumDetail>(path(p.album, { id })),
-  artist: (id: string) => request<ArtistDetail>(path(p.artist, { id })),
+  artist: (id: string, signal?: AbortSignal) => request<ArtistDetail>(path(p.artist, { id }), { signal }),
 };

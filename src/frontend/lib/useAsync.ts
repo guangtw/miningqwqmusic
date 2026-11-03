@@ -18,7 +18,7 @@ function fresh<T>(key?: string): T | undefined {
 }
 
 /** cacheKey 不传就不缓存；传了的话，同一个 key 在几分钟内再次进入直接用上次的结果 */
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], cacheKey?: string): AsyncState<T> {
+export function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: unknown[], cacheKey?: string): AsyncState<T> {
   const [state, setState] = useState<{ key?: string; data?: T; error?: Error; loading: boolean }>(() => {
     const data = fresh<T>(cacheKey);
     return data === undefined ? { key: cacheKey, loading: true } : { key: cacheKey, data, loading: false };
@@ -33,15 +33,17 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], cacheKey?: st
       return;
     }
     setState({ key: cacheKey, loading: true });
-    fn().then(
+    const controller = new AbortController();
+    Promise.resolve().then(() => { controller.signal.throwIfAborted(); return fn(controller.signal); }).then(
       (data) => {
-        if (cacheKey) cache.set(cacheKey, { data, at: Date.now() });
+        if (cacheKey && alive) cache.set(cacheKey, { data, at: Date.now() });
         if (alive) setState({ key: cacheKey, data, loading: false });
       },
       (error: Error) => alive && setState({ key: cacheKey, error, loading: false }),
     );
     return () => {
       alive = false;
+      controller.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, cacheKey, tick]);

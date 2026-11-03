@@ -143,6 +143,7 @@ it('clearing a queue invalidates an in-flight play URL response', async () => {
   account.authStore.set({ status: 'guest' });
   const player = await import('@/src/frontend/player/player');
   player.playList([track]);
+  await vi.waitFor(() => expect(resolveSource).toBeTypeOf('function'));
   player.clearQueue();
   resolveSource(success({ trackId: '101', url: '/stale-audio', ttlSeconds: 60 }));
   await vi.waitFor(() => expect(player.playerStore.get().queue).toEqual([]));

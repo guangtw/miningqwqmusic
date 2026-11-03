@@ -1,3 +1,4 @@
+import { runMusicRequest } from "@/src/lib/music/request-context";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { resolvePlaybackAuthorizationState } from "@/src/lib/music-playback-auth";
@@ -9,7 +10,7 @@ type Context = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(request: Request, context: Context) {
+async function handleGET(request: Request, context: Context) {
   const traceId = createTraceId();
   try {
     const { id } = await context.params;
@@ -33,9 +34,14 @@ export async function GET(request: Request, context: Context) {
       message: appError.message,
       traceId,
       status: appError.status,
-      retryable: appError.retryable
+      retryable: appError.retryable,
+      retryAfterSeconds: appError.retryAfterSeconds
     });
     response.headers.set("Cache-Control", "no-store");
     return response;
   }
+}
+
+export function GET(request: Request, context: Context) {
+  return runMusicRequest(request, () => handleGET(request, context));
 }

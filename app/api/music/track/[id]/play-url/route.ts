@@ -1,6 +1,7 @@
+import { runMusicRequest } from "@/src/lib/music/request-context";
 import { failure, success } from "@/src/lib/api-response";
-import { isUpstreamBackpressure, toAppError } from "@/src/lib/errors";
-import { getPlaySource, getTrackQualityAvailability } from "@/src/lib/music/service";
+import { toAppError } from "@/src/lib/errors";
+import { getPlaySource, peekTrackQualityAvailability } from "@/src/lib/music/service";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
 import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 import { createTraceId } from "@/src/lib/trace";
@@ -10,7 +11,7 @@ type Context = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(request: Request, context: Context) {
+async function handleGET(request: Request, context: Context) {
   const traceId = createTraceId();
   try {
     const { id } = await context.params;
@@ -31,12 +32,9 @@ export async function GET(request: Request, context: Context) {
           : "force_off";
     let effectiveLevel: PlayQualityLevel | undefined = requestedLevel;
     if (requestedLevel) {
-      try {
-        const availability = await getTrackQualityAvailability(id);
+      const availability = peekTrackQualityAvailability(id);
+      if (availability) {
         effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
-      } catch (error) {
-        if (isUpstreamBackpressure(error)) throw error;
-        effectiveLevel = requestedLevel;
       }
     }
     const data = await getPlaySource(id, {
@@ -66,4 +64,8 @@ export async function GET(request: Request, context: Context) {
     response.headers.set("Cache-Control", "no-store");
     return response;
   }
+}
+
+export function GET(request: Request, context: Context) {
+  return runMusicRequest(request, () => handleGET(request, context));
 }

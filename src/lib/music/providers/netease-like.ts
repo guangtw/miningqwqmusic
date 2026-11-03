@@ -1,6 +1,7 @@
 import { AppError, isUpstreamBackpressure } from "@/src/lib/errors";
 import { fetchWithRetry } from "@/src/lib/http";
 import { getMusicRequestCoordinator, MusicRequestCoordinator } from "@/src/lib/music/request-coordinator";
+import { requestContext, spendRequestBudget } from "@/src/lib/music/request-context";
 import { decodeCommentCursor, normalizeTrackComments } from "@/src/lib/music/comments";
 import { parseLyric } from "@/src/lib/lyrics";
 import type { ArtistSearchInput, MusicSourceAdapter, TrackSearchInput } from "@/src/lib/music/adapter";
@@ -364,29 +365,39 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     });
     const volatile = [this.config.pathPlayUrl, this.config.pathPlayUrlUnblock, this.config.pathSongDownloadUrl,
       this.config.pathCheckMusic, this.config.pathSatiResourceList, this.config.pathRadioSportGet].includes(path);
-    const ttlMs = volatile ? 0 : path === this.config.pathSearch || path === this.config.pathSearchSuggestPc ? 15000 : 120000;
+    const ttlMs = volatile ? 0 : path === "/comment/new" ? 20000
+      : [this.config.pathSearch, this.config.pathSearchSuggestPc].includes(path) ? 45000
+      : [this.config.pathTrackDetail, this.config.pathSongMusicDetail, this.config.pathLyric, this.config.pathLyricNew].includes(path) ? 6 * 3600000
+      : path === this.config.pathPlaylist ? 120000 : 600000;
+    const scope = path === this.config.pathPlayUrlUnblock || query.unblock === true ? `unblock:${query.source ?? "default"}` : path;
     return this.requests.share(`json:${url}`, () => fetchWithRetry<T>(
       url.toString(),
       {
         method: "GET",
+        signal: requestContext()?.signal,
         headers: {
           "Content-Type": "application/json",
+          "x-echo-priority": String(requestContext()?.priority ?? 1),
+          "x-echo-owner": requestContext()?.owner ?? "anonymous",
           ...(this.config.apiKey ? { "x-api-key": this.config.apiKey } : {})
         }
       },
       {
         timeoutMs: this.config.timeoutMs,
-        retries: this.config.retries,
-        execute: task => this.requests.run(task),
-        onBackpressure: ms => this.requests.coolDown(ms)
+        retries: Math.min(1, this.config.retries),
+        beforeAttempt: spendRequestBudget,
+        execute: task => this.requests.run(task, scope),
+        onBackpressure: ms => this.requests.rateLimit(ms),
+        onUnavailable: ms => this.requests.coolDown(ms, scope)
       }
-    ), ttlMs);
+    ), ttlMs, 0, volatile || path === "/comment/new" ? 0 : Math.min(ttlMs * 3, 86400000));
   }
 
   private async requestSafe<T>(path: string, query: Record<string, string | number | boolean>): Promise<T | null> {
     try {
       return await this.request<T>(path, query);
     } catch (error) {
+      if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
       if (isUpstreamBackpressure(error)) throw error;
       return null;
     }
@@ -532,7 +543,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       return {
         id: trackId,
         level,
-        unblock: true
+        unblock: true,
+        source: this.config.unblockSources?.[0] || this.config.unblockSource || DEFAULT_UNBLOCK_SOURCES[0]
       };
     }
     if (unblockMode === "force_off") {
@@ -584,20 +596,25 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private async probeAudioUrl(url: string): Promise<AudioUrlProbe | null> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const response = await fetch(url, {
+      const response = await this.requests.run(() => {
+        timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
+        return fetch(url, {
         method: "HEAD",
         redirect: "follow",
-        signal: controller.signal
-      });
+        signal: requestContext()?.signal ? AbortSignal.any([controller.signal, requestContext()!.signal!]) : controller.signal
+        });
+      }, "audio-probe");
+      await response.body?.cancel();
       if (!response.ok) return null;
       return {
         ok: true,
         contentLength: asNumber(response.headers.get("content-length")),
         contentType: asString(response.headers.get("content-type"))
       };
-    } catch {
+    } catch (error) {
+      if (requestContext()?.signal?.aborted) throw error;
       return null;
     } finally {
       clearTimeout(timer);
@@ -767,6 +784,14 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   async getTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
+    return this.requests.share(`quality:${trackId}`, () => this.resolveTrackQualityAvailability(trackId), 3600000, 0, 21600000);
+  }
+
+  peekTrackQualityAvailability(trackId: string): TrackQualityAvailability | undefined {
+    return this.requests.peek(`quality:${trackId}`);
+  }
+
+  private async resolveTrackQualityAvailability(trackId: string): Promise<TrackQualityAvailability> {
     const [detailRaw, qualityRaw] = await Promise.all([
       this.request<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId }),
       this.request<{ data?: NeteaseSongQualityDetail }>(this.config.pathSongMusicDetail, { id: trackId })
@@ -820,6 +845,16 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   private async resolvePlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const level = this.resolvePlayLevel(options);
     const unblockMode = this.resolvePlayUnblockMode(options);
+    let sourceError: unknown;
+    const candidateRequest = async (path: string, query: Record<string, string | number | boolean>) => {
+      try { return await this.request<AnyRecord>(path, query); }
+      catch (error) {
+        if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError") ||
+          (error instanceof AppError && [2002, 2008, 2011].includes(error.code)) || unblockMode === "force_off") throw error;
+        sourceError = error;
+        return null;
+      }
+    };
     let trackDurationMsPromise: Promise<number | undefined> | null = null;
     const ensureTrackDurationMs = () => {
       trackDurationMsPromise ??= this.getTrackDurationMs(trackId);
@@ -832,7 +867,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       const validation = await this.validateCandidateUrl(trackId, label, await ensureTrackDurationMs(), candidate.data);
       return validation === "mismatch";
     };
-    const raw = await this.request<AnyRecord>(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode));
+    const raw = await candidateRequest(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode)) ?? {};
     const data = this.extractPlayData(raw);
     const primaryRestricted = this.isRestrictedPlaySource(raw, data);
     const unblockPath = this.config.pathPlayUrlUnblock;
@@ -854,7 +889,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     if (this.shouldRetryPrimaryWithForcedUnblock(unblockMode, raw, data)) {
-      const forcedPrimaryRaw = await this.requestSafe<AnyRecord>(
+      const forcedPrimaryRaw = await candidateRequest(
         this.config.pathPlayUrl,
         this.buildPrimaryPlayQuery(trackId, level, "force_on")
       );
@@ -897,11 +932,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       : this.config.unblockSource
         ? [this.config.unblockSource]
         : [];
-    const sourceCandidates = ["", ...fallbackSources];
+    // Never call the plugin's implicit "try every source" path before explicit sources.
+    const sourceCandidates = fallbackSources.slice(0, 2);
 
     for (const source of sourceCandidates) {
       try {
-        const unblockRaw = await this.requestSafe<AnyRecord>(unblockPath, {
+        const unblockRaw = await candidateRequest(unblockPath, {
           id: trackId,
           level,
           ...(source ? { source } : {})
@@ -935,7 +971,9 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           }
         }
       } catch (error) {
-        if (isUpstreamBackpressure(error)) throw error;
+        if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+        if (error instanceof AppError && [2002, 2008, 2011].includes(error.code)) throw error;
+        sourceError = error;
         // 当前解灰 source 不可用时自动尝试下一个 source。
         this.debugUnblockTrace(trackId, source ? "match-source-error" : "match-no-source-error", { source });
       }
@@ -945,6 +983,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
     }
 
+    if (sourceError) throw sourceError;
     throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
   }
 

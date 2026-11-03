@@ -8,7 +8,7 @@ afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 describe("music upstream admission", () => {
   it("merges ten cold same-key requests and expires metadata without retaining URLs", async () => {
-    const gate = new MusicRequestCoordinator();
+    const gate = new MusicRequestCoordinator({ minIntervalMs: 500 });
     const task = vi.fn(async () => ({ songs: [1] }));
     const requests = Array.from({ length: 10 }, () => gate.share("detail:1", task, 120000));
     await expect(Promise.all(requests)).resolves.toHaveLength(10);
@@ -23,7 +23,7 @@ describe("music upstream admission", () => {
   });
 
   it("bounds concurrency to two and spaces all ten different requests", async () => {
-    const gate = new MusicRequestCoordinator();
+    const gate = new MusicRequestCoordinator({ minIntervalMs: 500 });
     let active = 0, peak = 0;
     const starts: number[] = [];
     const requests = Array.from({ length: 10 }, () => gate.run(async () => {
@@ -56,7 +56,7 @@ describe("music upstream admission", () => {
     const gate = new MusicRequestCoordinator({ maxConcurrent: 1 });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status: 429, headers: { "Retry-After": "120" } }));
     const results = Promise.allSettled(Array.from({ length: 10 }, (_, i) => gate.share(`song:${i}`, () => fetchWithRetry("https://stub.test", {}, {
-      timeoutMs: 8000, retries: 2, execute: task => gate.run(task), onBackpressure: ms => gate.coolDown(ms)
+      timeoutMs: 8000, retries: 2, execute: task => gate.run(task), onBackpressure: ms => gate.rateLimit(ms)
     }))));
     await vi.advanceTimersByTimeAsync(0);
     expect((await results).every(result => result.status === "rejected")).toBe(true);
@@ -76,7 +76,7 @@ describe("music upstream admission", () => {
   });
 
   it("caches missing songs briefly while releasing rejected in-flight entries", async () => {
-    const gate = new MusicRequestCoordinator();
+    const gate = new MusicRequestCoordinator({ minIntervalMs: 500 });
     const task = vi.fn(async () => { throw new AppError("missing", { code: 3002, status: 404 }); });
     await expect(gate.share("song", task, 0, 5000)).rejects.toMatchObject({ code: 3002 });
     await expect(gate.share("song", task, 0, 5000)).rejects.toMatchObject({ code: 3002 });
@@ -96,17 +96,17 @@ describe("music upstream admission", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not reissue a timed-out parse that may still be running in ncm-api", async () => {
+  it("does not immediately retry a timeout or disable unrelated metadata", async () => {
     const gate = new MusicRequestCoordinator({ minIntervalMs: 0 });
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => new Promise((_resolve, reject) => {
       init!.signal!.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")), { once: true });
     }));
     const request = expect(fetchWithRetry("https://stub.test", {}, {
-      timeoutMs: 100, retries: 2, execute: task => gate.run(task), onBackpressure: ms => gate.coolDown(ms)
-    })).rejects.toMatchObject({ code: 2004, retryAfterSeconds: 30 });
+      timeoutMs: 100, retries: 2, execute: task => gate.run(task), onBackpressure: ms => gate.rateLimit(ms)
+    })).rejects.toMatchObject({ code: 2004 });
     await vi.advanceTimersByTimeAsync(101);
     await request;
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    await expect(gate.run(async () => 1)).rejects.toMatchObject({ code: 2002 });
+    await expect(gate.run(async () => 1, "metadata")).resolves.toBe(1);
   });
 });

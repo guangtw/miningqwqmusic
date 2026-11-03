@@ -54,6 +54,28 @@ it('limits missing-song skips to three attempts with a delay', async () => {
   expect(player.playerStore.get()).toMatchObject({ loading: false, playing: false });
 });
 
+it('allows a manual switch after a local timeout instead of declaring global recovery', async () => {
+  vi.useFakeTimers();
+  const { ApiError } = await import('@/src/frontend/api');
+  f.source.mockRejectedValueOnce(new ApiError('slow', 2004, 504)).mockResolvedValue(source);
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }]); await vi.advanceTimersByTimeAsync(0);
+  player.next(); await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+  expect(player.playerStore.get()).toMatchObject({ index: 1, playing: true });
+});
+
+it('aborts obsolete playback loads and coalesces same-tick switches', async () => {
+  f.source.mockResolvedValue(source);
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }, { ...track, id: 'three' }]);
+  player.next(); player.next();
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(1));
+  expect(f.source.mock.calls[0][0]).toBe('three');
+  const signal = f.source.mock.calls[0][3] as AbortSignal;
+  player.clearQueue(); expect(signal.aborted).toBe(true);
+});
+
 it('honors pause while waiting to skip a missing song', async () => {
   vi.useFakeTimers();
   const { ApiError } = await import('@/src/frontend/api');
@@ -73,6 +95,7 @@ it('uses the latest remote seek/pause while one address request is still loading
   const player = await import('@/src/frontend/player/player');
   player.applyRemote({ queue: [track], index: 0, positionMs: 1000, playing: true });
   player.applyRemote({ queue: [track], index: 0, positionMs: 12000, playing: false });
+  await Promise.resolve();
   expect(f.source).toHaveBeenCalledTimes(1);
   resolve(source);
   await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));

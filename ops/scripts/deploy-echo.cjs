@@ -43,8 +43,17 @@ const releaseMusicEnv = normalizeLegacyUnblockSources(originalMusicEnv);
 const targetUpstreamFlags = { ENABLE_FLAC: '', FOLLOW_SOURCE_ORDER: '' };
 const qualityFlags = env => ({ ENABLE_FLAC: env.ENABLE_FLAC ?? '', FOLLOW_SOURCE_ORDER: env.FOLLOW_SOURCE_ORDER ?? '' });
 let upstreamChanged = false;
-function configureUpstreamQuality(flags) {
-  execFileSync(pm2, ['restart', 'ncm-api', '--update-env'], { env: { ...process.env, ...flags }, stdio: 'inherit' });
+const originalEgressEnv = Object.fromEntries(['NODE_OPTIONS', 'ECHO_MUSIC_EGRESS_ENABLED', 'ECHO_MUSIC_EGRESS_STATE_FILE', 'ECHO_MUSIC_EGRESS_INTERVAL_MS'].map(key => [key, originalUpstream[key] ?? '']));
+function configureEgress(rollback = false) {
+  const preload = work + '/music-egress.cjs';
+  const env = rollback ? { ...originalEgressEnv, ...qualityFlags(originalUpstream) } : {
+    ...targetUpstreamFlags,
+    // Replace only our preceding preload; preserve unrelated Node options.
+    NODE_OPTIONS: (originalEgressEnv.NODE_OPTIONS.replace(/(?:^|\s)--require=\S*\/music-egress\.cjs(?=\s|$)/g, '').trim() + ' --require=' + preload).trim(),
+    ECHO_MUSIC_EGRESS_ENABLED: '1', ECHO_MUSIC_EGRESS_INTERVAL_MS: '1000',
+    ECHO_MUSIC_EGRESS_STATE_FILE: musicBase + '/shared/music-egress-state.json'
+  };
+  execFileSync(pm2, ['restart', 'ncm-api', '--update-env'], { env: { ...process.env, ...env }, stdio: 'inherit' });
 }
 function stage() {
   if (fs.existsSync(musicRelease) || fs.existsSync(loginRelease)) throw Error('Release already exists; use a new release id');
@@ -135,6 +144,10 @@ let failed = false;
   fs.writeFileSync(backup + '/previous-music-release', previousMusic, { mode: 0o600 });
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
   fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalUpstream), { mode: 0o600 });
+  fs.copyFileSync(packageDir + '/ops/music-egress.cjs', work + '/music-egress.cjs');
+  execFileSync(node, ['--check', work + '/music-egress.cjs']);
+  // Real sockets, fake DNS to loopback only. Never load-test the music provider.
+  execFileSync(node, [packageDir + '/ops/verify-music-egress.cjs'], { stdio: 'inherit', timeout: 15000 });
   if (accountMigrations.length) {
     // Online backup includes WAL; application rollback keeps additive tables and new messages.
     execFileSync('/usr/bin/sqlite3', [database, '.backup ' + backup + '/before-account-migrations.db']);
@@ -145,12 +158,10 @@ let failed = false;
       console.log('ACCOUNT_MIGRATION_VERIFIED', migration.name);
     }
   }
-  if (JSON.stringify(qualityFlags(originalUpstream)) !== JSON.stringify(targetUpstreamFlags)) {
-    upstreamChanged = true;
-    configureUpstreamQuality(targetUpstreamFlags);
-    await ready(3000);
-    console.log('PRE_COMPLAINT_UPSTREAM_FLAGS_RESTORED');
-  }
+  upstreamChanged = true;
+  configureEgress();
+  await ready(3000);
+  console.log('MUSIC_EGRESS_INSTALLED', '1000ms', 'maxConcurrent=2');
   startCandidate('candidate-login', loginRelease, 3102);
   startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
   await ready(3102, true);
@@ -196,7 +207,7 @@ let failed = false;
   console.error(e.message);
   if (upstreamChanged) {
     try {
-      configureUpstreamQuality(qualityFlags(originalUpstream));
+      configureEgress(true);
       execFileSync(pm2, ['save'], { stdio: 'inherit' });
     } catch (recoveryError) { console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryError.message); }
   }

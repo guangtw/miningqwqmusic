@@ -1,10 +1,11 @@
+import { runMusicRequest } from "@/src/lib/music/request-context";
 import { boundedInteger } from "@/src/lib/api-pagination";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { searchPlaylists } from "@/src/lib/music/service";
 import { createTraceId } from "@/src/lib/trace";
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   const traceId = createTraceId();
   try {
     const { searchParams } = new URL(request.url);
@@ -35,7 +36,12 @@ export async function GET(request: Request) {
       message: appError.message,
       traceId,
       status: appError.status,
-      retryable: appError.retryable
+      retryable: appError.retryable,
+      retryAfterSeconds: appError.retryAfterSeconds
     });
   }
+}
+
+export function GET(request: Request) {
+  return runMusicRequest(request, () => handleGET(request));
 }

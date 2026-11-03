@@ -32,14 +32,14 @@ interface Overview {
 const emptyPage = <T,>(): PagedResult<T> => ({ items: [], page: 1, pageSize: 0, total: 0 });
 
 /** 三类一起搜；某一类挂了不影响其他两类，全挂了才算失败 */
-async function searchAll(q: string): Promise<Overview> {
-  const artistsP = music.searchArtists(q, 1, OVERVIEW.cards);
+async function searchAll(q: string, signal?: AbortSignal): Promise<Overview> {
+  const artistsP = music.searchArtists(q, 1, OVERVIEW.cards, signal);
   // 艺人结果一到就去翻头号艺人的热门歌，和单曲、歌单的搜索并行
-  const signatureP = artistsP.then((r) => findSignature(q, r.items)).catch(() => undefined);
+  const signatureP = artistsP.then((r) => findSignature(q, r.items, signal)).catch(() => undefined);
   const [tracks, artists, playlists] = await Promise.allSettled([
-    music.searchTracks(q, 1),
+    music.searchTracks(q, 1, signal),
     artistsP,
-    music.searchPlaylists(q, 1, OVERVIEW.cards),
+    music.searchPlaylists(q, 1, OVERVIEW.cards, signal),
   ]);
   if (tracks.status === 'rejected' && artists.status === 'rejected' && playlists.status === 'rejected') throw tracks.reason;
   return {
@@ -51,12 +51,13 @@ async function searchAll(q: string): Promise<Overview> {
 }
 
 /** 搜的是歌名（或「歌手 歌名」）时，从头号艺人的热门歌里找这首 */
-async function findSignature(q: string, artists: ArtistSearchItem[]) {
+async function findSignature(q: string, artists: ArtistSearchItem[], signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const lead = artists[0];
   if (!lead || bigArtist(q, artists)) return undefined;
   const n = norm(q);
   const rest = n.replace(norm(lead.name), '');
-  const d = await music.artist(lead.id);
+  const d = await music.artist(lead.id, signal);
   return d.topTracks.find((t) => norm(t.name) === n || (!!rest && norm(t.name) === rest));
 }
 
@@ -315,12 +316,12 @@ export function SearchView({ q, type }: { q: string; type: string }) {
     };
   }, [text, q]);
 
-  const result = useAsync(async () => {
+  const result = useAsync(async (signal) => {
     if (!q) return null;
-    if (tab === 'all') return { tab, ...(await searchAll(q)) } as const;
-    if (tab === 'artist') return { tab, ...(await music.searchArtists(q, page)) } as const;
-    if (tab === 'playlist') return { tab, ...(await music.searchPlaylists(q, page)) } as const;
-    return { tab: 'track', ...(await music.searchTracks(q, page)) } as const;
+    if (tab === 'all') return { tab, ...(await searchAll(q, signal)) } as const;
+    if (tab === 'artist') return { tab, ...(await music.searchArtists(q, page, api.pageSize, signal)) } as const;
+    if (tab === 'playlist') return { tab, ...(await music.searchPlaylists(q, page, api.pageSize, signal)) } as const;
+    return { tab: 'track', ...(await music.searchTracks(q, page, signal)) } as const;
   }, [q, tab, page]);
 
   useLayoutEffect(() => {

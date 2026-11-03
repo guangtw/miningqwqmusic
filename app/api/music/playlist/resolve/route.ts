@@ -1,3 +1,4 @@
+import { runMusicRequest } from "@/src/lib/music/request-context";
 import { AppError } from "@/src/lib/errors";
 import { runApiRoute } from "@/src/lib/api-route";
 import { extractFirstHttpUrl, extractPlaylistId } from "@/src/lib/playlist-import";
@@ -54,7 +55,7 @@ async function resolvePlaylistIdByRedirect(urlText: string): Promise<{ playlistI
   throw new AppError("未识别到歌单 ID，请检查链接格式。", { code: 1001, status: 400, retryable: false });
 }
 
-export async function GET(request: Request) {
+async function handleGET(request: Request) {
   return runApiRoute(async () => {
     const { searchParams } = new URL(request.url);
     const input = (searchParams.get("input") ?? "").trim();
@@ -74,4 +75,8 @@ export async function GET(request: Request) {
 
     return resolvePlaylistIdByRedirect(firstUrl);
   });
+}
+
+export function GET(request: Request) {
+  return runMusicRequest(request, () => handleGET(request));
 }

@@ -42,7 +42,7 @@ describe("upstream retry policy", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it.each([429, 503])("does not retry HTTP %s and preserves the requested cooldown", async status => {
+  it.each([429])("does not retry HTTP %s and preserves the requested cooldown", async status => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status, headers: { "Retry-After": "120" } }));
     const onBackpressure = vi.fn();
     await expect(fetchWithRetry("https://stub.test", {}, { ...options, onBackpressure })).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 120 });
@@ -51,8 +51,8 @@ describe("upstream retry policy", () => {
   });
 
   it("recognizes business-level rate limits inside HTTP 200", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 503, message: "busy" }));
-    await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 60 });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 429, message: "busy" }));
+    await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 30 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -61,5 +61,17 @@ describe("upstream retry policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(now);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("busy", { status: 429, headers: { "Retry-After": new Date(now + 180000).toUTCString() } }));
     await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 180 });
+  });
+
+  it("honors short Retry-After without inflating it to a minute", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("limited", { status: 429, headers: { "retry-after": "4" } }));
+    await expect(fetchWithRetry("https://stub.test", {}, options)).rejects.toMatchObject({ code: 2002, retryAfterSeconds: 4 });
+  });
+
+  it("isolates an ordinary 503 from confirmed global rate limiting", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("unavailable", { status: 503 }));
+    const onBackpressure = vi.fn();
+    await expect(fetchWithRetry("https://stub.test", {}, { ...options, onBackpressure })).rejects.toMatchObject({ code: 2010 });
+    expect(onBackpressure).not.toHaveBeenCalled(); expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

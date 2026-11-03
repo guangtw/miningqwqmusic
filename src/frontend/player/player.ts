@@ -126,6 +126,8 @@ const history: number[] = [];
 let canAutoAdvance = () => true;
 let intendedPlaying = false;
 let retryNotBefore = 0;
+let loadController: AbortController | undefined;
+let lastLimitToast = 0;
 let remoteTarget: { positionMs: number; playing: boolean; receivedAt: number } | null = null;
 export const isPlaybackIntended = () => get().loading ? intendedPlaying : audible();
 export function setAutoAdvanceGuard(guard: () => boolean) { canAutoAdvance = guard; }
@@ -246,13 +248,19 @@ async function resolveAndPlay(
     loaded = null;
     audio.pause();
     set({ loading: false, playing: false });
-    toast('音乐服务正在恢复，稍后再试。');
+    if (Date.now() - lastLimitToast > 3000) {
+      lastLimitToast = Date.now();
+      toast(`音乐上游限制了请求频率，请在 ${Math.ceil((retryNotBefore - Date.now()) / 1000)} 秒后重试。`);
+    }
     return;
   }
   if (!opts.remote) remoteTarget = null;
   intendedPlaying = opts.autoplay !== false;
   const fresh = opts.resumeAt == null;
   const token = ++loadToken;
+  loadController?.abort();
+  loadController = new AbortController();
+  const signal = loadController.signal;
   // 上一首先淡出，和取地址同时进行；淡完再换源
   pausing = false;
   if (!audio.paused) set({ playing: false });
@@ -262,12 +270,16 @@ async function resolveAndPlay(
     recentPushed = false;
     set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false });
     updateMediaSession(track);
-    loadLyric(track.id, token);
   }
   set({ loading: true });
 
   try {
-    const src = await music.playUrl(track.id, getSettings().quality, authStore.get().token);
+    // Coalesce same-tick changes before starting either request.
+    await Promise.resolve();
+    if (token !== loadToken || signal.aborted) return;
+    const source = music.playUrl(track.id, getSettings().quality, authStore.get().token, signal);
+    if (fresh) loadLyric(track.id, token, signal);
+    const src = await source;
     if (token !== loadToken) return;
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
     await silenced;
@@ -303,8 +315,9 @@ async function resolveAndPlay(
     set({ loading: false });
   } catch (e) {
     if (token !== loadToken) return;
-    if (e instanceof ApiError && (e.status === 0 || e.status === 429 || e.status >= 500)) {
-      retryNotBefore = Date.now() + Math.max(3, e.retryAfterSeconds ?? (e.code === 2002 ? 60 : 5)) * 1000;
+    if (signal.aborted || (e as Error).name === 'AbortError') return;
+    if (e instanceof ApiError && (e.code === 2002 || e.status === 429)) {
+      retryNotBefore = Date.now() + Math.max(1, e.retryAfterSeconds ?? 30) * 1000;
     }
     const skipped = (opts.skipped ?? 0) + 1;
     const songUnavailable = e instanceof ApiError && [3001, 3002].includes(e.code);
@@ -324,9 +337,9 @@ async function resolveAndPlay(
   }
 }
 
-function loadLyric(id: string, token: number) {
+function loadLyric(id: string, token: number, signal?: AbortSignal) {
   music
-    .lyric(id)
+    .lyric(id, signal)
     .then((lyric) => token === loadToken && set({ lyric }))
     .catch(() => token === loadToken && set({ lyric: { trackId: id, lines: [] } }));
 }
@@ -527,6 +540,7 @@ export function cycleMode() {
 
 function unload() {
   loadToken += 1;
+  loadController?.abort();
   fadeId += 1;
   pausing = false;
   audio.pause();

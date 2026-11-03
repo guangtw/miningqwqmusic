@@ -1,3 +1,4 @@
+import { runMusicRequest } from "@/src/lib/music/request-context";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { getPlaylist } from "@/src/lib/music/service";
@@ -7,7 +8,7 @@ type Context = {
   params: Promise<{ id: string }>;
 };
 
-export async function GET(_: Request, context: Context) {
+async function handleGET(_: Request, context: Context) {
   const traceId = createTraceId();
   try {
     const { id } = await context.params;
@@ -20,7 +21,12 @@ export async function GET(_: Request, context: Context) {
       message: appError.message,
       traceId,
       status: appError.status,
-      retryable: appError.retryable
+      retryable: appError.retryable,
+      retryAfterSeconds: appError.retryAfterSeconds
     });
   }
+}
+
+export function GET(_: Request, context: Context) {
+  return runMusicRequest(_, () => handleGET(_, context));
 }

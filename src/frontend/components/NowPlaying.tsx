@@ -57,11 +57,12 @@ export function NowPlaying() {
     return () => clearTimeout(t);
   }, [glows]);
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
-  // 歌词 / 唱片内页 / 评论三选一；百科只在面板打开时去问，评论只在切到评论时去拉
+  // 歌词 / 唱片内页 / 评论三选一；百科在内页或菜单实际需要时再查询。
   const [view, setView] = useState<'lyrics' | 'notes' | 'comments'>('lyrics');
   const [commentTotal, setCommentTotal] = useState<number | null>(null);
+  const [more, setMore] = useState(false);
   useEffect(() => setCommentTotal(null), [track?.id]);
-  const insight = useInsight(track?.id, open);
+  const insight = useInsight(track?.id, open && (view === 'notes' || more));
   const chorus = insight.data?.chorusStartMs;
   const fromChorus = () => {
     if (chorus == null) return;
@@ -69,7 +70,6 @@ export function NowPlaying() {
     if (!playing) toggle();
     setView('lyrics');
   };
-  const [more, setMore] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const closeMore = useCallback(() => setMore(false), []);
 

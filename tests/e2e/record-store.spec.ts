@@ -286,6 +286,28 @@ test('daily epigraph starts the selected song at its lyric timestamp', async ({ 
   expect(state.errors).toEqual([]);
 });
 
+test('a single playback timeout allows an immediate manual switch and lyrics do not prefetch insight', async ({ page }) => {
+  const state = await backend(page);
+  let attempts = 0;
+  await page.route('**/api/music/track/*/play-url*', async route => {
+    if (++attempts === 1) return route.fulfill({ status: 504, json: { code: 2004, message: 'slow', retryable: true, traceId: 'timeout' } });
+    return route.fulfill({ json: { code: 0, data: { trackId: '102', url: '/test-audio.wav', preview: false, ttlSeconds: 60 }, traceId: 'healthy' } });
+  });
+  await page.goto('/#/search?q=晨光&tab=track');
+  await page.getByRole('tab', { name: '单曲', exact: true }).click();
+  await expect(page.locator('.track .t')).toHaveCount(2);
+  await page.locator('.track .t').first().click();
+  await expect.poll(() => attempts).toBe(1);
+  await expect(page.locator('.toast')).toContainText('响应太慢');
+  await page.locator('.track .t').nth(1).click();
+  await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+  expect(attempts).toBe(2);
+  await page.locator('.player .np-text').click();
+  await expect(page.getByText('第一句歌词', { exact: true })).toBeVisible();
+  expect(state.calls.filter(call => call.path.endsWith('/insight'))).toHaveLength(0);
+  expect(state.errors).toEqual([]);
+});
+
 test('search categories, login, cloud sync and logout use the BFF contract', async ({ page }) => {
   const state = await backend(page);
   await page.goto('/#/search?q=晨光');

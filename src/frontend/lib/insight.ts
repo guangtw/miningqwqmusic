@@ -4,18 +4,19 @@ import { music, type SongInsight } from '../api';
 // 歌曲百科（创作人、曲风、副歌位置、原唱版本），按歌缓存，同一首不重复问。
 
 const MAX = 60;
-const cache = new Map<string, Promise<SongInsight>>();
+const cache = new Map<string, SongInsight>();
 
-export function insightOf(id: string) {
-  let p = cache.get(id);
-  if (!p) {
-    p = music.insight(id);
-    // 失败的不留，下次再问
-    p.catch(() => cache.delete(id));
-    cache.set(id, p);
+export function insightOf(id: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const hit = cache.get(id);
+  if (hit) return Promise.resolve(hit);
+  // In-flight merging happens in the BFF, where each subscriber can cancel safely.
+  return music.insight(id, signal).then(data => {
+    signal?.throwIfAborted();
+    cache.set(id, data);
     if (cache.size > MAX) cache.delete(cache.keys().next().value!);
-  }
-  return p;
+    return data;
+  });
 }
 
 export function useInsight(id: string | undefined, enabled = true) {
@@ -23,12 +24,14 @@ export function useInsight(id: string | undefined, enabled = true) {
   useEffect(() => {
     if (!id || !enabled) return;
     let alive = true;
-    insightOf(id).then(
+    const controller = new AbortController();
+    Promise.resolve().then(() => insightOf(id, controller.signal)).then(
       (data) => alive && setState({ id, data }),
       (error: Error) => alive && setState({ id, error }),
     );
     return () => {
       alive = false;
+      controller.abort();
     };
   }, [id, enabled]);
   // 换歌后、新结果到之前不显示上一首的

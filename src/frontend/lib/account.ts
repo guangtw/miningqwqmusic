@@ -124,9 +124,11 @@ export async function accessToken(force = false): Promise<string | null> {
 
 /** 带登录态的请求：401 时刷新一次 token 再重试 */
 export async function authed<T>(urlPath: string, init: RequestInitEx = {}): Promise<T> {
+  init.signal?.throwIfAborted();
   const generation = authGeneration;
   if (authStore.get().status === 'checking' || expiresSoon(authStore.get().token)) await refresh();
   const sentToken = authStore.get().token;
+  init.signal?.throwIfAborted();
   try {
     return await request<T>(urlPath, { ...init, token: sentToken });
   } catch (e) {

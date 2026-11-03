@@ -335,7 +335,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(source.ttlSeconds).toBe(1200);
   });
 
-  it("tries match without source first and then fallback sources", async () => {
+  it("tries only explicitly configured fallback sources with a bounded source count", async () => {
     const adapter = createAdapter({
       pathPlayUrlUnblock: "/song/url/match",
       unblockSources: ["kuwo", "kugou", "migu"],
@@ -361,8 +361,8 @@ describe("NeteaseLikeAdapter mapping", () => {
     const unblockSecondUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
     expect(forcedPrimaryUrl.pathname).toContain("/song/url/v1");
     expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(unblockFirstUrl.searchParams.get("source")).toBeNull();
-    expect(unblockSecondUrl.searchParams.get("source")).toBe("kuwo");
+    expect(unblockFirstUrl.searchParams.get("source")).toBe("kuwo");
+    expect(unblockSecondUrl.searchParams.get("source")).toBe("kugou");
   });
 
   it("attempts unblock when default source url is empty", async () => {
@@ -527,7 +527,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     const matchUrl = new URL(String(fetchMock.mock.calls[4]?.[0]));
     expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
     expect(matchUrl.pathname).toContain("/song/url/match");
-    expect(matchUrl.searchParams.get("source")).toBeNull();
+    expect(matchUrl.searchParams.get("source")).toBe("unm");
   });
 
   it("falls back to the original preview source when every unrestricted candidate probes as a short clip", async () => {
@@ -561,7 +561,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.preview).toBe(true);
     expect(result.restrictionReason).toBe("vip_preview");
     expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   it("keeps unrestricted candidates when the probe cannot confirm length", async () => {
@@ -670,7 +670,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.preview).toBe(true);
     expect(result.restrictionReason).toBe("vip_preview");
     expect(result.resolvedVia).toBe("primary");
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("prefers the least restricted candidate when all unblock attempts remain limited", async () => {
@@ -700,7 +700,7 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485");
     expect(result.url).toBe("https://cdn.test/restricted-no-preview.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("parses song url match when data is a url string", async () => {
@@ -724,7 +724,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
-  it("falls back to source loop when match without source fails", async () => {
+  it("continues to the second explicit source after the first source fails", async () => {
     const adapter = createAdapter({
       pathPlayUrlUnblock: "/song/url/match",
       unblockSources: ["kuwo", "kugou"],
@@ -736,7 +736,6 @@ describe("NeteaseLikeAdapter mapping", () => {
       }),
       jsonResponse({ code: 500, data: [] }, 500),
       jsonResponse({ code: 500, data: [] }, 500),
-      jsonResponse({ code: 500, data: [] }, 500),
       jsonResponse({
         data: [{ url: "https://cdn.test/full-from-kugou.mp3", time: 240000 }]
       })
@@ -744,15 +743,13 @@ describe("NeteaseLikeAdapter mapping", () => {
 
     const result = await adapter.getPlaySource("108485");
     expect(result.url).toBe("https://cdn.test/full-from-kugou.mp3");
-    expect(fetchMock).toHaveBeenCalledTimes(7);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
 
     const forcedPrimaryUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    const noSourceUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
-    const kuwoUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
-    const kugouUrl = new URL(String(fetchMock.mock.calls[4]?.[0]));
+    const kuwoUrl = new URL(String(fetchMock.mock.calls[2]?.[0]));
+    const kugouUrl = new URL(String(fetchMock.mock.calls[3]?.[0]));
     expect(forcedPrimaryUrl.pathname).toContain("/song/url/v1");
     expect(forcedPrimaryUrl.searchParams.get("unblock")).toBe("true");
-    expect(noSourceUrl.searchParams.get("source")).toBeNull();
     expect(kuwoUrl.searchParams.get("source")).toBe("kuwo");
     expect(kugouUrl.searchParams.get("source")).toBe("kugou");
   });

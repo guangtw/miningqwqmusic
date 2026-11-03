@@ -3,10 +3,12 @@ import type { DirectConversationDto, DirectMessageDto, MessagePeer } from '@/src
 import { ApiError } from '../api/http';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
+import { InviteTicket, MusicCard } from '../components/MusicCard';
 import { Empty, Loading } from '../components/States';
 import { authStore } from '../lib/account';
 import { refreshSocial, sendFriendRequest, socialStore } from '../lib/friends';
-import { discardOutgoing, loadOlder, markRead, MESSAGE_MAX, messagesStore, openThread, sendMessage, type Outgoing, type Thread } from '../lib/messages';
+import { inviteFriend, listenStore } from '../lib/listen';
+import { cardOf, discardOutgoing, loadOlder, markRead, MESSAGE_MAX, messagesStore, openThread, resend, sendMessage, type Outgoing, type Thread } from '../lib/messages';
 import { useMedia } from '../lib/motion';
 import { motionEnabled } from '../lib/settings';
 import { href } from '../lib/router';
@@ -149,6 +151,15 @@ function ChatHead({ peerId, conversation, friendSince }: { peerId: string; conve
   const peer = conversation?.peer;
   const isFriend = conversation?.sendPolicy.relationship === 'friend' || !!friendSince;
   const since = friendSince ? new Date(friendSince) : null;
+  const together = useStore(listenStore, (s) => s.room?.members.some((m) => m.user.id === peerId) ?? false);
+  const [inviting, setInviting] = useState(false);
+  // 邀请会自动变成聊天里的一张入场券，不用另外发文字
+  const invite = () => {
+    setInviting(true);
+    inviteFriend(peerId)
+      .catch((e) => toast((e as Error).message))
+      .finally(() => setInviting(false));
+  };
 
   return (
     <header className="chat-head">
@@ -190,6 +201,11 @@ function ChatHead({ peerId, conversation, friendSince }: { peerId: string; conve
           )}
         </div>
       </div>
+      {isFriend && (
+        <button className="btn sm chat-listen" onClick={invite} disabled={inviting || together} aria-label={together ? '你们在一起听' : '邀请一起听'}>
+          <Icon name="people" size={16} /> <span className="btn-label">{together ? '在一起听' : inviting ? '邀请中…' : '一起听'}</span>
+        </button>
+      )}
     </header>
   );
 }
@@ -306,12 +322,15 @@ function ChatLog({ peerId, thread, conversation, me }: { peerId: string; thread:
       el.dataset.shown = '1';
       if (!animate) continue;
       const mine = el.classList.contains('mine');
-      el.querySelector('.bubble')?.animate(
-        [
-          { opacity: 0, transform: `translate(${mine ? 10 : -10}px, 16px) scale(0.9)` },
-          { opacity: 1, transform: 'none' },
-        ],
-        { duration: 520, easing: 'cubic-bezier(0.34, 1.4, 0.64, 1)' },
+      // 附言和卡片一前一后弹进来
+      el.querySelectorAll('.bubble, .mcard, .ticket').forEach((part, k) =>
+        part.animate(
+          [
+            { opacity: 0, transform: `translate(${mine ? 10 : -10}px, 16px) scale(0.9)` },
+            { opacity: 1, transform: 'none' },
+          ],
+          { duration: 520, delay: k * 70, easing: 'cubic-bezier(0.34, 1.4, 0.64, 1)', fill: 'backwards' },
+        ),
       );
     }
     els.forEach((el) => (el.dataset.shown = '1'));
@@ -338,9 +357,19 @@ function ChatLog({ peerId, thread, conversation, me }: { peerId: string; thread:
             {r.text}
           </div>
         ) : r.kind === 'msg' ? (
-          <Bubble key={r.key} m={r.m} mine={r.mine} first={r.first} last={r.last} receipt={r.m.id === receipt ? (read ? 'read' : 'sent') : null} />
+          <Bubble
+            key={r.key}
+            m={r.m}
+            mine={r.mine}
+            me={me}
+            peerId={peerId}
+            peer={conversation.peer}
+            first={r.first}
+            last={r.last}
+            receipt={r.m.id === receipt ? (read ? 'read' : 'sent') : null}
+          />
         ) : (
-          <Pending key={r.key} peerId={peerId} o={r.o} first={r.first} last={r.last} />
+          <Pending key={r.key} peerId={peerId} o={r.o} first={r.first} last={r.last} peer={conversation.peer} />
         ),
       )}
       {fresh > 0 && (
@@ -363,25 +392,49 @@ function ChatStart({ peer, conversation, empty }: { peer: MessagePeer; conversat
   );
 }
 
+/** 卡片消息：附言是一个普通气泡，卡片跟在它下面；一起听邀请是一张入场券 */
+function CardBody({ c, peerId, messageId, me, peer }: { c: NonNullable<ReturnType<typeof cardOf>>; peerId: string; messageId?: string; me?: string; peer: MessagePeer }) {
+  if (c.kind === 'listen_invite') {
+    return messageId ? <InviteTicket inv={c.invitation} me={me} messageId={messageId} peerName={peerName(peer)} /> : null;
+  }
+  return (
+    <>
+      {c.caption && <p className="bubble">{c.caption}</p>}
+      <MusicCard c={c} peerId={peerId} messageId={messageId} />
+    </>
+  );
+}
+
 const Bubble = memo(function Bubble({
   m,
   mine,
+  me,
+  peerId,
+  peer,
   first,
   last,
   receipt,
 }: {
   m: DirectMessageDto;
   mine: boolean;
+  me?: string;
+  peerId: string;
+  peer: MessagePeer;
   first: boolean;
   last: boolean;
   receipt: 'read' | 'sent' | null;
 }) {
   const at = new Date(m.createdAt);
+  const card = cardOf(m);
   return (
-    <div className={`msg ${mine ? 'mine' : 'theirs'} ${first ? 'first' : ''} ${last ? 'last' : ''}`} data-id={m.id}>
-      <p className="bubble" title={`${pad(at.getHours())}:${pad(at.getMinutes())}`}>
-        {m.text}
-      </p>
+    <div className={`msg ${mine ? 'mine' : 'theirs'} ${first ? 'first' : ''} ${last ? 'last' : ''} ${card ? 'has-card' : ''}`} data-id={m.id}>
+      {card ? (
+        <CardBody c={card} peerId={peerId} messageId={m.id} me={me} peer={peer} />
+      ) : (
+        <p className="bubble" title={`${pad(at.getHours())}:${pad(at.getMinutes())}`}>
+          {m.text}
+        </p>
+      )}
       {receipt && (
         <span className={`receipt mono ${receipt}`} key={receipt}>
           {receipt === 'read' ? '已读' : '已发送'}
@@ -391,10 +444,10 @@ const Bubble = memo(function Bubble({
   );
 });
 
-function Pending({ peerId, o, first, last }: { peerId: string; o: Outgoing; first: boolean; last: boolean }) {
+function Pending({ peerId, o, first, last, peer }: { peerId: string; o: Outgoing; first: boolean; last: boolean; peer: MessagePeer }) {
   return (
-    <div className={`msg mine pending ${o.status} ${first ? 'first' : ''} ${last ? 'last' : ''}`}>
-      <p className="bubble">{o.text}</p>
+    <div className={`msg mine pending ${o.status} ${first ? 'first' : ''} ${last ? 'last' : ''} ${o.preview ? 'has-card' : ''}`}>
+      {o.preview ? <CardBody c={o.preview} peerId={peerId} peer={peer} /> : <p className="bubble">{o.text}</p>}
       {o.status === 'sending' ? (
         <span className="receipt mono">
           <span className="sending-disc" aria-hidden="true" />
@@ -404,7 +457,7 @@ function Pending({ peerId, o, first, last }: { peerId: string; o: Outgoing; firs
         <span className="receipt mono failed">
           {o.error ?? '没发出去'}
           {!o.retryAt && (
-            <button className="text-btn" onClick={() => void sendMessage(peerId, o.text, o.clientMessageId)}>
+            <button className="text-btn" onClick={() => void resend(peerId, o)}>
               重发
             </button>
           )}

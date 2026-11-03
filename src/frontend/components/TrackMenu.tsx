@@ -4,6 +4,7 @@ import { libraryStore } from '../lib/account';
 import { usePresence } from '../lib/motion';
 import { downloadTrack } from '../lib/download';
 import { addToPlaylist, isMine, playlistCover, removeFromPlaylist } from '../lib/playlists';
+import { openShare } from '../lib/share';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { addNext } from '../player/player';
@@ -103,6 +104,11 @@ export function TrackMenu() {
               }}
             >
               <Icon name="download" /> 下载
+            </button>
+          )}
+          {single && (
+            <button role="menuitem" className="t-menu-item" onClick={() => openShare({ kind: 'track', track: single })}>
+              <Icon name="share" /> 分享给好友
             </button>
           )}
           {from && (

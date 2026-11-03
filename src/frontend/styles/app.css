@@ -4909,9 +4909,43 @@ html {
   text-align: left;
   color: var(--ink);
 }
-.np-mini svg {
+/* 全屏歌词左上角的返回：圆底的左箭头一眼就是「回去」，后面跟着歌名提醒回到哪 */
+.np-mini-back {
   grid-row: span 2;
-  color: var(--accent);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  transition: transform 0.35s var(--ease-spring), background 0.2s;
+}
+.np-mini-back svg {
+  margin-left: -2px;
+  animation: np-back-nudge 0.9s var(--ease-out) 0.45s both;
+}
+.np-mini:active .np-mini-back {
+  transform: scale(0.9) translateX(-2px);
+}
+@media (hover: hover) {
+  .np-mini:hover .np-mini-back {
+    transform: translateX(-2px);
+  }
+}
+@keyframes np-back-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  35% {
+    transform: translateX(-4px);
+  }
+  65% {
+    transform: translateX(1px);
+  }
 }
 .np-mini-name {
   font-size: 15px;
@@ -5112,9 +5146,6 @@ html {
     grid-template-rows: minmax(0, 1fr) auto;
     gap: 16px;
     padding-bottom: calc(var(--np-bar) + var(--deck-gap) * 2);
-  }
-  .np-deck-col {
-    cursor: pointer;
   }
   .deck {
     width: min(80vw, 40vh);
@@ -6402,4 +6433,508 @@ html {
     width: 32px;
     height: 32px;
   }
+}
+
+/* ============ 私信里的音乐卡片：一张封套，后面藏着半张唱片 ============ */
+.msg.has-card .bubble + .mcard {
+  margin-top: 4px;
+}
+.mcard {
+  --tint: hsl(var(--tint-h) var(--tint-s) var(--tint-l) / var(--tint-a));
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: min(330px, 80vw);
+  padding: 11px 12px 11px 11px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 150% at 0% 0%, var(--tint), transparent 60%),
+    var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  text-align: left;
+  transition: transform 0.4s var(--ease-spring), border-color 0.25s, box-shadow 0.3s;
+}
+.msg.mine .mcard {
+  border-bottom-right-radius: 8px;
+}
+.msg.theirs .mcard {
+  border-bottom-left-radius: 8px;
+}
+.mcard:not(.still):hover {
+  transform: translateY(-2px);
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+.mcard:not(.still):active {
+  transform: scale(0.98);
+}
+.mcard-art {
+  position: relative;
+  width: 78px;
+  height: 64px;
+}
+.mcard-cover {
+  position: relative;
+  z-index: 1;
+  width: 64px !important;
+  height: 64px !important;
+  border-radius: 9px;
+  overflow: hidden;
+  box-shadow: 0 6px 14px -6px rgba(17, 17, 17, 0.45);
+}
+/* 唱片从封套右边露出一截；指上去再多滑出来一点转半圈，正在放的那首一直转 */
+.mcard-disc {
+  position: absolute;
+  top: 4px;
+  left: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--surface) 0 6%, hsl(var(--tint-h) var(--tint-s) 52%) 7% 26%, transparent 27%),
+    repeating-radial-gradient(circle, #1b1b1b 0 1.4px, #262626 1.6px 3px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.6s var(--ease-spring);
+}
+.mcard:not(.still):hover .mcard-disc,
+.mcard.playing .mcard-disc {
+  transform: translateX(6px) rotate(70deg);
+}
+.mcard.playing .mcard-disc {
+  animation: mcard-spin 3.2s linear infinite;
+}
+@keyframes mcard-spin {
+  from {
+    transform: translateX(6px) rotate(0deg);
+  }
+  to {
+    transform: translateX(6px) rotate(360deg);
+  }
+}
+.mcard-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+.mcard-text b {
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mcard-text small {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.mcard-meta {
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+.mcard-go {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: var(--ink-3);
+  transition: background 0.25s, color 0.25s, transform 0.4s var(--ease-spring);
+}
+.mcard-track .mcard-go {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.mcard-track .mcard-go svg {
+  margin-left: 2px;
+}
+.mcard-track.playing .mcard-go svg {
+  margin-left: 0;
+}
+.mcard:not(.still):hover .mcard-go {
+  transform: translateX(2px);
+  color: var(--ink);
+}
+.mcard-track:not(.still):hover .mcard-go,
+.mcard-track.playing .mcard-go {
+  transform: scale(1.08);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ============ 一起听邀请：一张入场券 ============ */
+.ticket {
+  --tint: hsl(var(--tint-h) var(--tint-s) var(--tint-l) / var(--tint-a));
+  position: relative;
+  width: min(330px, 80vw);
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 120% at 100% 0%, var(--tint), transparent 58%),
+    var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.ticket-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px 10px;
+}
+.ticket-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ticket-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+.ticket-text b {
+  font-size: 15px;
+  font-weight: 650;
+}
+.ticket-text small {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ticket-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 16px 14px;
+  min-width: 0;
+}
+.ticket-track > span:last-child {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+.ticket-track b {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ticket-track small {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 现在放的那首做成一张小唱片，等回应的时候一直转 */
+.ticket-disc {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 0 0 0 2px #1d1d1d, 0 3px 8px rgba(0, 0, 0, 0.25);
+}
+.ticket-disc .cover {
+  width: 34px !important;
+  height: 34px !important;
+}
+.ticket-disc::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.ticket-disc.spin {
+  animation: member-spin 4s linear infinite;
+}
+/* 撕线：虚线两头各一个半圆缺口 */
+.ticket-foot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 9px 16px 10px;
+  border-top: 1.5px dashed var(--line-strong);
+  animation: ticket-foot-in 0.45s var(--ease-spring) both;
+}
+.ticket-foot::before,
+.ticket-foot::after {
+  content: '';
+  position: absolute;
+  top: -10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.ticket-foot::before {
+  left: -10px;
+}
+.ticket-foot::after {
+  right: -10px;
+}
+@keyframes ticket-foot-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.ticket-foot .btn.sm {
+  height: 34px;
+  padding: 0 18px;
+}
+.ticket-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.ticket.accepted .ticket-status {
+  color: var(--accent);
+  font-weight: 600;
+}
+.ticket-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ticket-pulse 1.6s var(--ease-out) infinite;
+}
+@keyframes ticket-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+.ticket-until {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+/* 用掉了、过期了的券：褪色 */
+.ticket:is(.rejected, .canceled, .expired, .unavailable) :is(.ticket-main, .ticket-track) {
+  opacity: 0.5;
+  filter: grayscale(1);
+  transition: opacity 0.4s, filter 0.4s;
+}
+/* 接受了：盖一个入场章 */
+.ticket-stamp {
+  margin-left: auto;
+  flex: none;
+  padding: 3px 7px 3px 9px;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  transform: rotate(-10deg);
+  opacity: 0.88;
+  animation: ticket-stamp 0.55s var(--ease-spring) both;
+}
+@keyframes ticket-stamp {
+  from {
+    opacity: 0;
+    transform: scale(1.9) rotate(-28deg);
+  }
+}
+
+/* 聊天页头右边的「一起听」（.chat-head 本身是 sticky，可以当定位参照） */
+.chat-listen {
+  position: absolute;
+  right: 0;
+  bottom: 31px;
+  height: 36px;
+  padding: 0 14px;
+}
+@media (max-width: 480px) {
+  .chat-listen {
+    width: 36px;
+    padding: 0;
+  }
+  .chat-listen .btn-label {
+    display: none;
+  }
+  .chat-who {
+    padding-right: 44px;
+  }
+}
+
+/* ============ 分享给好友 ============ */
+.dialog.share-dialog {
+  width: min(440px, calc(100% - 32px));
+  max-height: calc(100svh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.share-dialog h2 {
+  margin-top: 8px;
+}
+.share-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 14px 0 2px;
+}
+.share-preview .bubble {
+  max-width: 82%;
+  background: var(--ink);
+  color: var(--on-ink);
+  border-bottom-right-radius: 7px;
+  animation: pop-in 0.35s var(--ease-spring) both;
+}
+.share-preview .mcard {
+  width: 100%;
+  border-bottom-right-radius: 8px;
+}
+.share-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.share-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.share-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  outline: none;
+}
+.share-people {
+  display: grid;
+  gap: 2px;
+  max-height: 232px;
+  margin: 0 -8px;
+  padding: 2px 8px;
+  overflow-y: auto;
+}
+.share-person {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 14px;
+  text-align: left;
+  color: var(--ink);
+  transition: background 0.2s;
+}
+.share-person:hover:not(:disabled) {
+  background: var(--bg);
+}
+.share-person.on {
+  background: var(--accent-soft);
+}
+.share-person:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.share-person-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.3;
+}
+.share-person-text b {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.share-person-text small {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.share-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  color: #fff;
+  transition: background 0.2s, border-color 0.2s, transform 0.35s var(--ease-spring);
+}
+.share-person.on .share-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  transform: scale(1.08);
+}
+.share-check svg {
+  animation: pop-in 0.3s var(--ease-spring) both;
+}
+.share-none {
+  padding: 10px 2px;
+}
+.share-caption {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  transition: border-color 0.2s;
+}
+.share-caption:focus {
+  outline: none;
+  border-color: var(--line-strong);
+}
+.share-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0;
+}
+.share-send {
+  width: 100%;
+  height: 46px;
+}
+/* 预览、还没送达的卡片：只是样子，不放箭头 */
+.mcard.still:not(.mcard-track) .mcard-go {
+  visibility: hidden;
 }

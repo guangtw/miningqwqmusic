@@ -7,7 +7,7 @@ import { Empty, Loading } from '../components/States';
 import { authStore, displayName } from '../lib/account';
 import { answerFriendRequest, maskEmail, refreshSocial, removeFriend, searchUsers, sendFriendRequest, socialStore } from '../lib/friends';
 import { inviteFriend, listenStore } from '../lib/listen';
-import { conversationList, loadMoreConversations, messagesStore, refreshConversations } from '../lib/messages';
+import { conversationList, loadMoreConversations, messagesStore, previewText, refreshConversations } from '../lib/messages';
 import { href } from '../lib/router';
 import { motionEnabled } from '../lib/settings';
 import { useStore } from '../lib/store';
@@ -250,7 +250,7 @@ function ConversationRow({ c, me }: { c: DirectConversationDto; me?: string }) {
         <b>{peerName(c.peer)}</b>
         <small className="conv-preview">
           {mine && <span className="faint">你：</span>}
-          {last.text}
+          {previewText(last, mine)}
         </small>
       </span>
       <span className="conv-time mono">{listTime(last.createdAt)}</span>

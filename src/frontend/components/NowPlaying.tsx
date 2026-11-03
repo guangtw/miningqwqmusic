@@ -8,6 +8,7 @@ import { useInsight } from '../lib/insight';
 import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
 import { motionEnabled } from '../lib/settings';
+import { openShare } from '../lib/share';
 import { tintVars, useTint } from '../lib/palette';
 import { href, navigate } from '../lib/router';
 import { useStore } from '../lib/store';
@@ -90,7 +91,7 @@ export function NowPlaying() {
     setView((v) => (v === 'comments' ? 'lyrics' : v));
     setReturning(true);
   };
-  // 全屏：手机上点唱机、歌词进全屏歌词；点「评论」进全屏评论
+  // 全屏：手机上只有点唱机下面那两行歌词才进全屏歌词；点「评论」进全屏评论
   const enterFocus = (next: 'lyrics' | 'comments' = 'lyrics') => {
     if (focus) return;
     setView(next);
@@ -226,8 +227,10 @@ export function NowPlaying() {
       ))}
       <header className="np-head">
         {focus && track ? (
-          <button className="np-mini" onClick={exitFocus} aria-label="回到唱机">
-            <Icon name="disc" size={18} />
+          <button className="np-mini" onClick={exitFocus} aria-label="返回唱机">
+            <span className="np-mini-back" aria-hidden="true">
+              <Icon name="left" size={20} />
+            </span>
             <span className="np-mini-name">{track.name}</span>
             <span className="np-mini-by">{track.artists.map((a) => a.name).join(' / ')}</span>
           </button>
@@ -243,13 +246,7 @@ export function NowPlaying() {
 
       {track && (
         <div className="np-body">
-          <div
-            className="np-deck-col"
-            onClick={(e) => {
-              // 手机上点唱机进全屏歌词；拖唱臂、点音质铭牌和它弹出的面板（挂在 body 上，React 事件照样冒泡上来）不算
-              if (narrow && !(e.target as Element).closest('.arm-head, .quality, .q-panel')) enterFocus();
-            }}
-          >
+          <div className="np-deck-col">
             <div className="np-deck-stack">
               <Turntable vtName={open ? 'np-disc' : undefined} open={open} active={open && !(narrow && focus)} />
               {/* 手机上音质不放播放台（会把播放队列挤出去），挪到唱机正下方 */}
@@ -339,6 +336,16 @@ export function NowPlaying() {
                   >
                     <Icon name="people" /> 一起听
                   </button>
+                  <button
+                    role="menuitem"
+                    className="t-menu-item"
+                    onClick={() => {
+                      closeMore();
+                      openShare({ kind: 'track', track });
+                    }}
+                  >
+                    <Icon name="share" /> 分享给好友
+                  </button>
                 </PopMenu>
               </div>
             </div>
@@ -363,7 +370,7 @@ export function NowPlaying() {
                 <LyricLines lines={lines} active={active} armed={armed} unsynced={unsynced} on={lineHandlers} />
               </div>
             ) : (
-              <p className="lyrics-empty" onClick={() => peek && enterFocus()}>
+              <p className="lyrics-empty">
                 {lyric ? '纯音乐，安静听。' : '正在找歌词…'}
               </p>
             )}

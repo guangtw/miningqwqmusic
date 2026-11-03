@@ -1,4 +1,5 @@
 import type { Track } from '../api';
+import type { ShareTarget } from '../lib/share';
 import { createStore } from '../lib/store';
 
 export type PlaylistDialog = { mode: 'create'; tracks?: Track[]; open?: boolean } | { mode: 'edit'; id: string };
@@ -17,7 +18,7 @@ export interface TrackMenu {
   anchor?: Element;
 }
 
-/** 浮层开关：正在播放页、队列抽屉、登录框、歌单对话框、导入框、曲目菜单、一起听 */
+/** 浮层开关：正在播放页、队列抽屉、登录框、歌单对话框、导入框、曲目菜单、一起听、分享 */
 export const uiStore = createStore({
   nowPlaying: false,
   queue: false,
@@ -27,6 +28,8 @@ export const uiStore = createStore({
   menu: null as TrackMenu | null,
   /** 一起听抽屉 */
   listen: false,
+  /** 分享给好友的对话框：要分享的东西 */
+  share: null as ShareTarget | null,
 });
 
 /** 从一个按钮（或右键位置）弹出曲目菜单 */

@@ -71,6 +71,21 @@ describe('membership application', () => {
     await signIn();
     const m = await import('@/src/frontend/lib/membership');
     await expect(m.applyMembership()).rejects.toThrow('会员名额已经满了');
+    await expect(m.grantAuthorization('another-user')).rejects.toThrow('会员名额已经满了');
+    await expect(m.redeemCode('unused-code')).rejects.toThrow('会员名额已经满了');
+  });
+  it('does not attribute a late response to a different signed-in account', async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(resolve => {finish = resolve;})));
+    await signIn();
+    const m = await import('@/src/frontend/lib/membership');
+    const a = await import('@/src/frontend/lib/account');
+    const pending = m.fetchApplication();
+    a.authStore.set({user: {id: 'another', email: 'another@example.test'} as never});
+    finish(ok(status()));
+    await pending;
+    expect(m.applyStore.get().status).toBeNull();
+    expect(m.applyStore.get().userId).toBeNull();
   });
 });
 

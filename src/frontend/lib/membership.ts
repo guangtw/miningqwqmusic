@@ -46,7 +46,7 @@ export async function refreshEntitlement() {
 
 export async function redeemCode(code: string) {
   const userId = authStore.get().user?.id;
-  const e = await authed<MusicUnblockEntitlement>(p.unblockRedeem, { method: 'POST', body: { inviteCode: code.trim() } });
+  const e = await member(() => authed<MusicUnblockEntitlement>(p.unblockRedeem, { method: 'POST', body: { inviteCode: code.trim() } }));
   if (authStore.get().user?.id === userId) applyEntitlement(e);
   return e;
 }
@@ -67,7 +67,7 @@ export const listAuthorizedUsers = (q: string, signal?: AbortSignal) =>
   authed<AuthorizedUser[]>(p.adminAuthUsers, { query: { q: q.trim() || undefined }, signal });
 
 async function adminSet(userId: string, enabled: boolean) {
-  const snap = await authed<PlaybackAuthorization>(enabled ? p.adminAuthGrant : p.adminAuthRevoke, { method: 'POST', body: { userId } });
+  const snap = await member(() => authed<PlaybackAuthorization>(enabled ? p.adminAuthGrant : p.adminAuthRevoke, { method: 'POST', body: { userId } }));
   // 给自己改的话，当前会话也跟着变
   if (authStore.get().user?.id === userId) authStore.set({ playbackAuthorization: snap });
   return snap;
@@ -105,17 +105,21 @@ async function member<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-export const fetchApplication = () => member(() => authed<MembershipStatusResponse>(p.membershipApplication)).then(keep);
-export const applyMembership = () => member(() => authed<MembershipStatusResponse>(p.membershipApplication, { method: 'POST' })).then(keep);
-export const withdrawApplication = () => member(() => authed<MembershipStatusResponse>(p.membershipApplication, { method: 'DELETE' })).then(keep);
+function memberState(run: () => Promise<MembershipStatusResponse>) {
+  const userId = authStore.get().user?.id;
+  return member(run).then(s => userId && authStore.get().user?.id === userId ? keep(s) : s);
+}
+export const fetchApplication = () => memberState(() => authed<MembershipStatusResponse>(p.membershipApplication));
+export const applyMembership = () => memberState(() => authed<MembershipStatusResponse>(p.membershipApplication, { method: 'POST' }));
+export const withdrawApplication = () => memberState(() => authed<MembershipStatusResponse>(p.membershipApplication, { method: 'DELETE' }));
 
 /** 重发同一张码（不延期、不加名额）。成功只代表进了发送队列，邮件状态看返回的 deliveryStatus */
-export const resendOffer = () => member(() => authed<MembershipStatusResponse>(p.membershipResend, { method: 'POST' })).then(keep);
+export const resendOffer = () => memberState(() => authed<MembershipStatusResponse>(p.membershipResend, { method: 'POST' }));
 
 /** 确认账号邮箱：验证码发到数据库里的账号邮箱，前端不能指定收件人 */
 export const requestMemberCode = () => member(() => authed<OtpChallengeResponse>(p.membershipEmailRequest, { method: 'POST' }));
 export const verifyMemberCode = (challengeId: string, code: string) =>
-  member(() => authed<MembershipStatusResponse>(p.membershipEmailVerify, { method: 'POST', body: { challengeId, code } })).then(keep);
+  memberState(() => authed<MembershipStatusResponse>(p.membershipEmailVerify, { method: 'POST', body: { challengeId, code } }));
 
 // ---------------- 会员申请（管理员） ----------------
 

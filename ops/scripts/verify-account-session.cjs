@@ -53,9 +53,13 @@ async function api(path, method='GET', body, authenticated=true) {
     const loginConfig = await api('/api/account/auth/email', 'GET', undefined, false);
     if (loginConfig.data.codeLength !== 6 || loginConfig.data.expiresInSeconds !== 600) throw Error('Email login contract failed');
     const invalidOtp = await fetch(origin + '/api/account/auth/email/verify', {method: 'POST',
-      headers: {'content-type':'application/json'}, body: JSON.stringify({challengeId:crypto.randomUUID(),code:'000000'}),
+      headers: {'content-type':'application/json',origin}, body: JSON.stringify({challengeId:crypto.randomUUID(),code:'000000'}),
       signal:AbortSignal.timeout(10000)});
     if (invalidOtp.status !== 400 || invalidOtp.headers.get('set-cookie')) throw Error('Invalid OTP created a session');
+    const crossSiteOtp = await fetch(origin + '/api/account/auth/email/verify', {method:'POST',
+      headers:{'content-type':'application/json',origin:'https://other.example.test'},
+      body:JSON.stringify({challengeId:crypto.randomUUID(),code:'000000'}),signal:AbortSignal.timeout(10000)});
+    if (crossSiteOtp.status !== 403 || (await crossSiteOtp.json()).code !== 5207) throw Error('Cross-site OTP request accepted');
     console.log('MEMBERSHIP_APPLICATION_AND_EMAIL_LOGIN_BOUNDARIES_VERIFIED');
     if(!registered.headers.get('set-cookie')?.includes('HttpOnly')) throw Error('Refresh cookie is not HttpOnly');
 

@@ -3,6 +3,7 @@ import { failure } from "@/src/lib/api-response";
 import { createTraceId } from "@/src/lib/trace";
 import { accountServiceUrl } from "@/src/lib/account-service";
 import { isIP } from "node:net";
+import {emailRequestOriginAllowed} from "@/src/lib/email-request-origin";
 
 const FORWARDED_REQUEST_HEADERS = [
   "authorization",
@@ -78,12 +79,7 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
 
   const method = request.method.toUpperCase();
   if (method === "POST" && pathSegments[0] === "auth" && pathSegments[1] === "email") {
-    const source = request.headers.get("origin") ?? request.headers.get("referer");
-    if (source) {
-      let allowed = false;
-      try { allowed = new URL(source).origin === request.nextUrl.origin; } catch { /* Reject malformed origins. */ }
-      if (!allowed) return failure({code: 5207, message: "Origin not allowed", traceId, status: 403});
-    }
+    if (!emailRequestOriginAllowed(request)) return failure({code: 5207, message: "Origin not allowed", traceId, status: 403});
   }
   const hasBody = method !== "GET" && method !== "HEAD";
   const controller = new AbortController();

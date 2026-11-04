@@ -39,7 +39,8 @@ let accountMigrations = [];
 const musicEnvFile = musicBase + '/shared/.env.production';
 const originalMusicEnv = fs.readFileSync(musicEnvFile, 'utf8');
 const releaseMusicEnv = setEnvValues(normalizeLegacyUnblockSources(originalMusicEnv), {
-  MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1'
+  MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1',
+  ACCOUNT_PUBLIC_ORIGIN: 'https://echo.miningqwq.cn'
 });
 // Trust identity only behind this verified, overwriting proxy and loopback listeners.
 const nginxProxy = fs.readFileSync('/www/server/panel/vhost/nginx/proxy/www.echo.miningqwq.cn/80de4b618cfe935c8dc495a21848582d_www.echo.miningqwq.cn.conf', 'utf8');
@@ -140,7 +141,8 @@ function configureLogin(cwd, rollback = false) {
 }
 function configureMusic(cwd, rollback = false) {
   const env = { ...(originalMusic.env || {}), NODE_ENV: 'production', PORT: 3001 };
-  if (!rollback) Object.assign(env, { MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1' });
+  if (!rollback) Object.assign(env, { MUSIC_SOURCE_EGRESS_MANAGED: '1', MUSIC_SOURCE_MAX_CONCURRENT: '8', ACCOUNT_TRUST_PROXY_HEADERS: '1',
+    ACCOUNT_PUBLIC_ORIGIN: 'https://echo.miningqwq.cn' });
   const config = { apps: [{ name: 'miningqwqmusic', script: rollback ? originalMusic.pm_exec_path : musicBase + '/current/node_modules/next/dist/bin/next',
     args: rollback ? originalMusic.args : ['start', '--hostname', '127.0.0.1', '--port', '3001'], cwd, interpreter: node, exec_mode: 'fork', instances: 1, env }] };
   const file = work + (rollback ? '/music-rollback.json' : '/music-release.json');
@@ -231,7 +233,8 @@ let failed = false;
   if (policy.headers.get('x-echo-egress-policy') !== 'netease-api-v2') throw Error('Actual NetEase egress guard is not installed');
   console.log('MUSIC_EGRESS_INSTALLED', 'netease-api-v2', 'burst=3', 'refill=1000ms', 'maxConcurrent=2');
   startCandidate('candidate-login', loginRelease, 3102);
-  startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102' });
+  startCandidate('candidate-music', musicRelease, 3101, { ACCOUNT_SERVICE_BASE_URL: 'http://127.0.0.1:3102',
+    ACCOUNT_PUBLIC_ORIGIN: 'http://127.0.0.1:3101' });
   await ready(3102, true);
   await ready(3101);
   liveAccountQa('http://127.0.0.1:3101');

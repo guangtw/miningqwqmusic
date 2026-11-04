@@ -28,6 +28,8 @@ npm run deploy:echo -- --push
 
 ## 会员申请与邮箱辅助登录发布
 
+音乐 BFF 使用可信部署配置 `ACCOUNT_PUBLIC_ORIGIN=https://echo.miningqwq.cn` 校验验证码请求来源，避免 Next 内部 localhost/HTTP 地址造成误拦；候选服务单独配置其回环地址。开发环境无此配置时，只兼容同一 HTTP 端口的 localhost/127.0.0.1/IPv6 回环别名。候选与正式验收都使用真实 Origin，并检查跨站来源被拒绝；不信任客户端的 Host 或转发头来放宽来源。
+
 账户迁移链新增 `20261104120000_membership_applications`，精确校验前后 schema 与 SQL，迁移前在线备份；原账号、会话、会员、历史码和头像继续复用。部署同时管理 `miningqwq-membership-worker` PM2 进程，正式切换后校验数据库心跳，回滚恢复原 Worker。新表默认关闭申请和发码，邮箱辅助登录复用原 Cookie 会话。前端联调/开放操作见 [交接文档](backend-membership-application-handoff.md)，后台与保留策略见 [调度设计](membership-admission-design.md)。发布回归不发送真实验证码邮件。
 
 ## 网络检查

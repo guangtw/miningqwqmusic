@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+import { useRef, useSyncExternalStore } from 'react';
 import { music } from '../api';
 import { api } from '../config/site';
 import { QualityPicker } from '../components/QualityPicker';
@@ -64,12 +64,14 @@ export function SettingsPanel() {
           </div>
         </div>
 
-        <div className="field reveal" style={{ '--i': 1 } as React.CSSProperties}>
+        <SourceField />
+
+        <div className="field reveal" style={{ '--i': 2 } as React.CSSProperties}>
           <span className="label">外观</span>
           <Seg value={s.theme} options={THEMES} onChange={(theme) => transition(() => updateSettings({ theme }), 'theme')} label="外观" />
         </div>
 
-        <div className="field reveal" style={{ '--i': 2 } as React.CSSProperties}>
+        <div className="field reveal" style={{ '--i': 3 } as React.CSSProperties}>
           <span className="label">动画</span>
           <div>
             <Seg value={s.motion} options={MOTIONS} onChange={(motion) => updateSettings({ motion })} label="动画" />
@@ -77,7 +79,7 @@ export function SettingsPanel() {
           </div>
         </div>
 
-        <div className="field reveal" style={{ '--i': 3 } as React.CSSProperties}>
+        <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
           <span className="label">后端</span>
           <div>
             <div className="field-inline">
@@ -109,5 +111,44 @@ export function SettingsPanel() {
         </dl>
       </section>
     </>
+  );
+}
+
+/**
+ * 优先完整音源：在原平台给出完整「极高」的歌上手动换到无损或更高音质时，播放器自动打开并记在这台设备上。
+ * 这里只给关掉的地方，不提供凭空打开；这一页上刚关掉的，可以再拨回去。
+ */
+function SourceField() {
+  const on = useSyncExternalStore(subscribeSettings, () => getSettings().preferUnblock);
+  const seen = useRef(on);
+  if (on) seen.current = true;
+  return (
+    <div className="field reveal" style={{ '--i': 1 } as React.CSSProperties}>
+      <span className="label">音源</span>
+      <div>
+        <div className="madmin-switch pref-switch">
+          <span>
+            <b>优先完整音源</b>
+            <small>{on ? '已开启：这台设备上的歌会先找其他音源的完整版。' : '未开启：先用原平台音源，放不了完整版才换。'}</small>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={on}
+            aria-label="优先完整音源"
+            className={`switch ${on ? 'on' : ''}`}
+            disabled={!seen.current}
+            onClick={() => updateSettings({ preferUnblock: !on })}
+          >
+            <i />
+          </button>
+        </div>
+        <p className="help">
+          {seen.current
+            ? '只影响之后放的歌，正在放的这首不打断。某首放得不对时，正在播放页歌名下面可以临时换回原平台音源。'
+            : '放原平台「极高」音质的歌时，把音质换成无损或更高，会自动打开。只记在这台设备上。'}
+        </p>
+      </div>
+    </div>
   );
 }

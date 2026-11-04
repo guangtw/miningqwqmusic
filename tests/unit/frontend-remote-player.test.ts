@@ -237,6 +237,23 @@ it('temporarily restores official audio, preserves seek/pause and renewals, then
   expect(f.source.mock.calls[3][4]).toBe('force_on');
 });
 
+it('walks the source recovery entry through switching, done and back to hidden', async () => {
+  f.source.mockImplementation(async (_id, _level, _token, _signal, mode) => ({ ...source, access: 'free',
+    resolvedVia: mode === 'force_off' ? 'primary' : 'unblock', level: 'exhigh' }));
+  const player = await import('@/src/frontend/player/player');
+  const { recoverSource, recoveryStore } = await import('@/src/frontend/lib/sourceRecovery');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.waitFor(() => expect(player.playerStore.get().canSwitchToStableSource).toBe(true));
+  expect(recoverSource()).toBe(true);
+  expect(recoveryStore.get()).toMatchObject({ trackId: 'one', settledAt: 0 });
+  expect(recoverSource()).toBe(false);
+  await vi.waitFor(() => expect(recoveryStore.get()).toMatchObject({ trackId: 'one', ok: true }));
+  expect(f.source.mock.calls[1][4]).toBe('force_off');
+  player.next();
+  expect(recoveryStore.get().trackId).toBeNull();
+  await vi.waitFor(() => expect(player.playerStore.get().canSwitchToStableSource).toBe(true));
+});
+
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValue(new Promise(r => { resolve = r; }));

@@ -21,6 +21,7 @@ import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
 import { PopMenu } from './PopMenu';
 import { QualityMenu } from './QualityMenu';
+import { SourceRecovery } from './SourceRecovery';
 import { Turntable } from './Turntable';
 
 /** 歌词提前一点点亮，唱到时刚好在中间 */
@@ -285,6 +286,7 @@ export function NowPlaying() {
                   </>
                 )}
               </p>
+              <SourceRecovery variant="line" />
               <div className="np-actions">
                 <button className="np-chip" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
                   <Icon name="listAdd" size={16} /> <span className="chip-long">加到</span>歌单

@@ -57,6 +57,7 @@ const paths = {
   link: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" />,
   check: <path d="M5 12.5l4.5 4.5L19 7" />,
+  undo: <path d="M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />,
   card: <path d="M3.5 6.5h17v11h-17zM3.5 10h17M7 14.5h4" />,
   grip: (
     <g fill="currentColor" stroke="none">

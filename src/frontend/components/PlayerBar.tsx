@@ -12,6 +12,7 @@ import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 import { QualityMenu } from './QualityMenu';
 import { SeekBar } from './SeekBar';
+import { SourceRecovery } from './SourceRecovery';
 import { Slider } from './Slider';
 import { Vinyl } from './Vinyl';
 
@@ -94,6 +95,7 @@ export function PlayerBar() {
             <div className="np-text" onClick={() => toggleNowPlaying()}>
               <div className="np-title">{track.name}</div>
               <div className="np-artist">{artistNames(track.artists)}</div>
+              <SourceRecovery variant="bar" />
             </div>
             <HeartButton className="hide-sm" liked={liked} onToggle={() => toggleFavorite(track)} />
           </div>

@@ -9,6 +9,7 @@ import { useStore } from '../lib/store';
 import { currentTrack, playerStore, setQuality } from '../player/player';
 import { QualityMark } from './QualityMark';
 import { QualityPicker } from './QualityPicker';
+import { SourceRecovery } from './SourceRecovery';
 
 const optionOf = (k: PlayQualityLevel) => qualities.find((q) => q.key === k) ?? qualities[0];
 const PANEL_W = 368;
@@ -134,6 +135,7 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
               available={forTrack?.availableLevels ?? null}
               fallback={forTrack?.fallbackMap ?? null}
             />
+            <SourceRecovery variant="panel" />
             <p className="q-foot">
               {downgraded
                 ? `你选的是「${optionOf(chosen).label}」，账号权限或音源不够，这首实际是「${shown.label}」。`

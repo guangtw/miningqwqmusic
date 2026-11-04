@@ -7630,3 +7630,169 @@ html {
     gap: 5px;
   }
 }
+
+/* ---- 放的歌不对？换回稳定音源 ----
+   不是按钮条，是挂在歌名附近的一行小字：平时淡淡的，需要的人一眼能认出来，不需要的人当它是一行注脚。
+   出现时整行从 0 高度展开一次；切换中图标转，切好了打钩、转成主题色，几秒后收起。 */
+.src-fix {
+  display: grid;
+  grid-template-rows: 1fr;
+  animation: src-unfold 0.46s var(--ease-out) both;
+}
+.src-fix[data-state='closing'] {
+  animation: src-fold 0.32s var(--ease-out) both;
+}
+.src-fix-btn {
+  min-height: 0;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  max-width: 100%;
+  text-align: left;
+  color: var(--ink-3);
+  transition: color 0.2s;
+}
+.src-fix-btn:disabled {
+  cursor: default;
+}
+.src-fix-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+  transition: background 0.25s, color 0.25s, transform 0.4s var(--ease-spring);
+}
+.src-fix-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+  animation: src-text-in 0.32s var(--ease-out) both;
+}
+.src-fix.is-offer .src-fix-btn:hover,
+.src-fix.is-offer .src-fix-btn:focus-visible {
+  color: var(--ink);
+}
+.src-fix.is-offer .src-fix-btn:hover .src-fix-icon {
+  transform: rotate(-28deg);
+}
+.src-fix.is-offer .src-fix-btn:active .src-fix-icon {
+  transform: scale(0.88) rotate(-28deg);
+}
+/* 第一次出现时图标往回拨一下，像唱针抬起又放回去 */
+.src-fix.is-offer .src-fix-icon svg {
+  animation: src-nudge 0.9s 0.35s var(--ease-spring) both;
+}
+.src-fix.is-switching .src-fix-icon svg {
+  animation: src-spin 0.9s linear infinite reverse;
+}
+.src-fix.is-switching .src-fix-text,
+.src-fix.is-done .src-fix-text {
+  text-decoration: none;
+}
+.src-fix.is-done .src-fix-btn {
+  color: var(--accent);
+}
+.src-fix.is-done .src-fix-icon {
+  color: #fff;
+  background: var(--accent);
+  animation: src-pop 0.45s var(--ease-spring) both;
+}
+
+/* 正在播放页：歌手那一行下面 */
+.src-line .src-fix-btn {
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+/* 播放台：歌手名下面一行更小的字 */
+.src-bar .src-fix-btn {
+  gap: 5px;
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+.src-bar .src-fix-icon {
+  width: 16px;
+  height: 16px;
+}
+/* 音质面板：选项和说明之间 */
+.src-panel .src-fix-btn {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 12px 9px 9px;
+  border-radius: 12px;
+  font-size: 12.5px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.src-panel.is-offer .src-fix-btn:hover {
+  background: var(--accent-soft);
+}
+
+@keyframes src-unfold {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes src-fold {
+  to {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes src-text-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+@keyframes src-nudge {
+  0% {
+    transform: rotate(0);
+  }
+  40% {
+    transform: rotate(-50deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+@keyframes src-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes src-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@media (max-width: 860px) {
+  .src-bar {
+    display: none;
+  }
+  .src-line .src-fix-btn {
+    margin-top: 8px;
+  }
+}
+.pref-switch {
+  max-width: 560px;
+  padding: 2px 0 0;
+  border-bottom: 0;
+}

@@ -31,6 +31,7 @@ vi.mock("@/src/lib/music/service", () => ({
 
 import { GET } from "@/app/api/music/track/[id]/play-url/route";
 import { AppError } from "@/src/lib/errors";
+import { PLAY_QUALITY_LEVELS } from "@/src/lib/play-quality";
 
 function context(trackId: string) {
   return {
@@ -44,6 +45,21 @@ describe("GET /api/music/track/:id/play-url", () => {
     vi.stubEnv("ACCOUNT_SERVICE_BASE_URL", "http://127.0.0.1:3002");
     mocks.peekTrackQualityAvailability.mockClear();
     mocks.getPlaySource.mockClear();
+  });
+
+  it.each(PLAY_QUALITY_LEVELS)("starts authorized %s playback in official-first auto mode", async level => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ code: 0, data: { playbackAuthorization: { enabled: true, version: 7 } } }));
+    const response = await GET(new Request(`http://localhost/api/music/track/1001/play-url?level=${level}`, { headers: { authorization: 'Bearer member' } }), context('1001'));
+    expect(response.status).toBe(200);
+    expect(mocks.getPlaySource).toHaveBeenCalledWith('1001', { level, unblockMode: 'auto' });
+    expect(mocks.peekTrackQualityAvailability).not.toHaveBeenCalled();
+    expect((await response.json()).data.requestedLevel).toBe(level);
+  });
+
+  it("returns requested and actual quality together even before any menu request", async () => {
+    mocks.getPlaySource.mockReturnValueOnce({ trackId: '1001', url: 'https://music.example/actual.mp3', preview: false, resolvedVia: 'primary', level: 'exhigh' } as never);
+    const response = await GET(new Request('http://localhost/api/music/track/1001/play-url?level=jymaster'), context('1001'));
+    expect((await response.json()).data).toMatchObject({ requestedLevel: 'jymaster', level: 'exhigh' });
   });
 
   it("uses the requested quality directly on a cold cache without probing metadata", async () => {
@@ -118,7 +134,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(mocks.peekTrackQualityAvailability).toHaveBeenCalledWith("1002");
+    expect(mocks.peekTrackQualityAvailability).not.toHaveBeenCalledWith("1002");
     expect(fetchMock).toHaveBeenNthCalledWith(1, "http://127.0.0.1:3002/api/account/auth/me", expect.objectContaining({
       method: "GET",
       headers: {
@@ -135,7 +151,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(payload.data.authorizationVersion).toBe(7);
   });
 
-  it("falls back to the best available level for the current track without overwriting the requested preference", async () => {
+  it("keeps the requested tier independent of whether the quality menu warmed metadata", async () => {
     mocks.peekTrackQualityAvailability.mockReturnValueOnce({
       trackId: "2001",
       availableLevels: ["standard", "higher", "exhigh", "lossless", "hires", "sky"],
@@ -155,9 +171,9 @@ describe("GET /api/music/track/:id/play-url", () => {
     const response = await GET(new Request("http://localhost:3000/api/music/track/2001/play-url?level=dolby"), context("2001"));
 
     expect(response.status).toBe(200);
-    expect(mocks.peekTrackQualityAvailability).toHaveBeenCalledWith("2001");
+    expect(mocks.peekTrackQualityAvailability).not.toHaveBeenCalledWith("2001");
     expect(mocks.getPlaySource).toHaveBeenCalledWith("2001", {
-      level: "sky",
+      level: "dolby",
       unblockMode: "force_off"
     });
   });
@@ -182,14 +198,14 @@ describe("GET /api/music/track/:id/play-url", () => {
     const response = await GET(new Request("http://localhost:3000/api/music/track/2002/play-url?level=dolby"), context("2002"));
 
     expect(response.status).toBe(200);
-    expect(mocks.peekTrackQualityAvailability).toHaveBeenCalledWith("2002");
+    expect(mocks.peekTrackQualityAvailability).not.toHaveBeenCalledWith("2002");
     expect(mocks.getPlaySource).toHaveBeenCalledWith("2002", {
       level: "dolby",
       unblockMode: "force_off"
     });
   });
 
-  it("defaults to force_on when entitlement is enabled and request omits unblock mode", async () => {
+  it("defaults to auto when entitlement is enabled and request omits unblock mode", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(
@@ -243,7 +259,7 @@ describe("GET /api/music/track/:id/play-url", () => {
     expect(response.status).toBe(200);
     expect(mocks.getPlaySource).toHaveBeenCalledWith("1004", {
       level: undefined,
-      unblockMode: "force_on"
+      unblockMode: "auto"
     });
     const payload = await response.json();
     expect(payload.data.authorizationScope).toBe("authorized");

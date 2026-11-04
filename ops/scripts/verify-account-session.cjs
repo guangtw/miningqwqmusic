@@ -98,9 +98,22 @@ async function api(path, method='GET', body, authenticated=true) {
       await membershipDb.playbackAuthorization.create({data:{userId:createdId,source:'manual',status:'active',membershipKind:'timed',
         memberNumber:1000000000+crypto.randomInt(100000000),expiresAt:new Date(Date.now()+300000)}});
       const started=Date.now();
-      const playback=await api('/api/music/track/'+encodeURIComponent(playbackTrackId)+'/play-url?level=exhigh&unblockMode=force_on');
+      const playback=await api('/api/music/track/'+encodeURIComponent(playbackTrackId)+'/play-url?level=exhigh');
       if(!playback.data.url||playback.data.authorizationScope!=='authorized') throw Error('Authorized playback address missing');
       console.log('REAL_AUTHORIZED_PLAYBACK_PASSED',JSON.stringify({elapsedMs:Date.now()-started,preview:playback.data.preview}));
+      const officialPath = '/api/music/track/1926623288/play-url?level=jymaster';
+      const cold = (await api(officialPath)).data;
+      if (!cold.url || cold.preview || cold.resolvedVia !== 'primary' || cold.level !== 'exhigh' || cold.requestedLevel !== 'jymaster') {
+        throw Error('Complete official audio or immediate downgraded quality missing');
+      }
+      await api('/api/music/track/1926623288/quality-options');
+      const warm = (await api(officialPath)).data;
+      if (warm.level !== cold.level || warm.requestedLevel !== cold.requestedLevel || warm.resolvedVia !== 'primary') {
+        throw Error('Opening the quality menu changed playback resolution');
+      }
+      const limited = (await api('/api/music/track/108485/play-url?level=exhigh')).data;
+      if (!limited.url || limited.preview || limited.resolvedVia !== 'unblock') throw Error('Incomplete official audio did not recover through matching');
+      console.log('OFFICIAL_FIRST_AND_IMMEDIATE_QUALITY_VERIFIED');
       await api('/api/music/search?q='+encodeURIComponent('播放验收')+'&page=1&pageSize=1');
       console.log('SEARCH_AFTER_PLAYBACK_PASSED');
     } finally { await membershipDb.$disconnect(); }

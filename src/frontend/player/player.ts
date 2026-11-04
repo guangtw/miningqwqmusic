@@ -6,6 +6,7 @@ import { getSettings, updateSettings } from '../lib/settings';
 import { readJSON, writeJSON } from '../lib/storage';
 import { createStore } from '../lib/store';
 import { toast } from '../lib/toast';
+import { getPlayQualityLabel } from '@/src/lib/play-quality';
 
 export type PlayMode = 'order' | 'loop' | 'one' | 'shuffle';
 
@@ -25,6 +26,8 @@ export interface PlayerState {
   preview: boolean;
   /** 后端实际给的音质（账号权限不够时会比设置的低）；还没取到地址时为 null */
   level: PlayQualityLevel | null;
+  /** 已收到本次音源的音质结果；null 音质此时表示来源未知。 */
+  qualityResolved: boolean;
 }
 
 const SAVE_KEY = 'cph.player.v2';
@@ -43,6 +46,7 @@ export const playerStore = createStore<PlayerState>({
   lyric: null,
   preview: false,
   level: null,
+  qualityResolved: false,
 });
 
 const audio = new Audio();
@@ -233,6 +237,7 @@ function expiryOf(src: { expiresAt?: string; ttlSeconds?: number }) {
 }
 
 const expiringSoon = () => !!loaded && Date.now() > loaded.expiresAt - api.playUrlRenewLeadSeconds * 1000;
+let lastQualityNotice = '';
 
 /** 取播放地址并装进 <audio>；resumeAt 用于续签后从原位置继续 */
 async function resolveAndPlay(
@@ -266,9 +271,10 @@ async function resolveAndPlay(
   if (!audio.paused) set({ playing: false });
   const silenced = fadeTo(0, FADE_OUT_MS).then(() => { if (token === loadToken) audio.pause(); });
   if (fresh) {
+    lastQualityNotice = '';
     renewedOnce = false;
     recentPushed = false;
-    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false });
+    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null, qualityResolved: false });
     updateMediaSession(track);
   }
   set({ loading: true });
@@ -277,7 +283,8 @@ async function resolveAndPlay(
     // Coalesce same-tick changes before starting either request.
     await Promise.resolve();
     if (token !== loadToken || signal.aborted) return;
-    const source = music.playUrl(track.id, getSettings().quality, authStore.get().token, signal);
+    const requestedQuality = getSettings().quality;
+    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, signal);
     if (fresh) loadLyric(track.id, token, signal);
     const src = await source;
     if (token !== loadToken) return;
@@ -303,9 +310,14 @@ async function resolveAndPlay(
       audio.currentTime = at / 1000;
       set({ position: at });
     }
-    set({ preview: src.preview, level: src.level ?? null });
+    set({ preview: src.preview, level: src.level ?? null, qualityResolved: true });
+    const qualityNotice = `${track.id}:${requestedQuality}:${src.level ?? 'unknown'}`;
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
+    else if (src.level && src.level !== requestedQuality && qualityNotice !== lastQualityNotice) {
+      toast(`本曲实际以「${getPlayQualityLabel(src.level)}」音质播放。`);
+    }
+    lastQualityNotice = qualityNotice;
     if (remoteTarget) alignRemote();
     if (intendedPlaying) await softPlay().catch(() => {
       if (token === loadToken) set({ playing: false });
@@ -547,6 +559,8 @@ function unload() {
   audio.removeAttribute('src');
   audio.load();
   loaded = null;
+  lastQualityNotice = '';
+  set({ level: null, qualityResolved: false });
 }
 
 export function removeAt(i: number) {

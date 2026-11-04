@@ -114,6 +114,36 @@ it('clears audio and invalidates a pending load when the room queue is cleared',
   expect(FakeAudio.last.src).toBe('');
 });
 
+it('publishes actual downgraded quality and a notice as soon as the address resolves', async () => {
+  const settings = await import('@/src/frontend/lib/settings');
+  settings.updateSettings({ quality: 'jymaster' });
+  f.source.mockResolvedValue({ ...source, level: 'exhigh', requestedLevel: 'jymaster' });
+  const player = await import('@/src/frontend/player/player');
+  const { toastStore } = await import('@/src/frontend/lib/toast');
+  player.playList([track]);
+  await vi.waitFor(() => expect(player.playerStore.get().qualityResolved).toBe(true));
+  expect(player.playerStore.get().level).toBe('exhigh');
+  expect(settings.getSettings().quality).toBe('jymaster');
+  expect(toastStore.get().message).toContain('极高');
+  player.clearQueue();
+  expect(player.playerStore.get()).toMatchObject({ level: null, qualityResolved: false });
+});
+
+it('clears stale quality on a track change and marks an unknown result explicitly', async () => {
+  f.source.mockResolvedValueOnce({ ...source, level: 'lossless' });
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.waitFor(() => expect(player.playerStore.get().level).toBe('lossless'));
+  let resolve!: (value: typeof source) => void;
+  f.source.mockReturnValueOnce(new Promise(r => { resolve = r; }));
+  player.next();
+  expect(player.playerStore.get()).toMatchObject({ level: null, qualityResolved: false });
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(2));
+  resolve(source);
+  await vi.waitFor(() => expect(player.playerStore.get().qualityResolved).toBe(true));
+  expect(player.playerStore.get().level).toBeNull();
+});
+
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValue(new Promise(r => { resolve = r; }));

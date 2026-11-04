@@ -143,6 +143,7 @@ type PlayData = {
   freeTrialInfo?: Record<string, unknown> | null;
   freeTrialPrivilege?: Record<string, unknown> | null;
   freeTimeTrialPrivilege?: Record<string, unknown> | null;
+  expectedDurationMs?: number;
 };
 
 type PlayCandidate = {
@@ -434,14 +435,21 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       return null;
     };
 
+    const result = asObject(payload.result);
     const topData = pickFromCandidate(payload.data);
-    if (topData) return topData;
-
-    const nestedResultData = pickFromCandidate(asObject(payload.result).data);
-    if (nestedResultData) return nestedResultData;
+    const nestedResultData = topData ? null : pickFromCandidate(result.data);
+    const entry = topData ?? nestedResultData;
+    if (entry) return {
+      ...entry,
+      level: toPlayQualityLevel(entry.level) ?? toPlayQualityLevel(asString(result.level)) ?? toPlayQualityLevel(asString(payload.level)),
+      br: asNumber(entry.br) ?? asNumber(result.br) ?? asNumber(payload.br),
+      time: asNumber(entry.time) ?? asNumber(result.time) ?? asNumber(payload.time),
+      type: asString(entry.type) ?? asString(result.type) ?? asString(payload.type)
+    };
 
     if (typeof payload.url === "string") {
       return {
+        ...payload,
         url: payload.url,
         br: asNumber(payload.br),
         time: asNumber(payload.time),
@@ -452,7 +460,15 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   private isVipPreview(data: PlayData): boolean {
-    return Boolean(data.time && data.time > 0 && data.time <= this.config.vipPreviewMaxMs);
+    if (Object.keys(asObject(data.freeTrialInfo)).length) return true;
+    const time = asNumber(data.time);
+    if (!time || time <= 0) return false;
+    const expected = data.expectedDurationMs;
+    if (expected && expected > 0) {
+      const tolerance = Math.max(2000, Math.min(5000, expected * 0.02));
+      return time + tolerance < expected;
+    }
+    return time <= this.config.vipPreviewMaxMs;
   }
 
   private hasPlayableUrl(data: PlayData | null | undefined): data is PlayData & { url: string } {
@@ -538,13 +554,6 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return options?.unblockMode ?? "auto";
   }
 
-  private shouldRetryPrimaryWithForcedUnblock(unblockMode: PlayUnblockMode, raw: unknown, data: PlayData | null): boolean {
-    if (unblockMode === "force_off" || unblockMode === "force_on") {
-      return false;
-    }
-    return this.shouldAttemptUnblock(raw, data);
-  }
-
   private buildPrimaryPlayQuery(trackId: string, level: string, unblockMode: PlayUnblockMode): Record<string, string | number | boolean> {
     if (unblockMode === "force_on") {
       return {
@@ -563,7 +572,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
     return {
       id: trackId,
-      level
+      level,
+      unblock: false
     };
   }
 
@@ -583,12 +593,17 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private toPlaySource(trackId: string, raw: unknown, data: PlayData, resolvedVia: "primary" | "unblock"): PlaySource {
     const preview = this.isVipPreview(data);
+    const format = asString(data.type)?.toLowerCase();
+    const bitrate = asNumber(data.br);
+    const bitrateLevel = bitrate && ["mp3", "aac", "m4a"].includes(format ?? "")
+      ? bitrate <= 128000 ? "standard" : bitrate <= 192000 ? "higher" : "exhigh"
+      : undefined;
     return {
       trackId,
       url: data.url ?? "",
       preview,
-      level: toPlayQualityLevel(data.level),
-      bitrate: data.br,
+      level: toPlayQualityLevel(data.level) ?? bitrateLevel,
+      bitrate,
       restrictionReason: this.getRestrictionReason(raw, data),
       resolvedVia,
       ttlSeconds: data.expi ? Math.max(10, Math.floor(data.expi)) : undefined,
@@ -597,8 +612,16 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   private async getTrackDurationMs(trackId: string): Promise<number | undefined> {
-    const raw = await this.requestSafe<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
-    return raw?.songs?.[0]?.dt ?? raw?.songs?.[0]?.duration;
+    try {
+      const raw = await this.requestSafe<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
+      const song = raw?.songs?.find(item => String(item.id) === trackId);
+      return asNumber(song?.dt) ?? asNumber(song?.duration);
+    } catch (error) {
+      if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError") ||
+          (error instanceof AppError && [2002, 2008, 2011].includes(error.code))) throw error;
+      // Missing auxiliary metadata must not disable an otherwise playable URL.
+      return undefined;
+    }
   }
 
   private async probeAudioUrl(url: string): Promise<AudioUrlProbe | null> {
@@ -867,6 +890,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       trackDurationMsPromise ??= this.getTrackDurationMs(trackId);
       return trackDurationMsPromise;
     };
+    const candidateData = async (payload: unknown): Promise<PlayData | null> => {
+      const extracted = this.extractPlayData(payload);
+      return this.hasPlayableUrl(extracted)
+        ? { ...extracted, expectedDurationMs: await ensureTrackDurationMs() }
+        : extracted;
+    };
     const shouldRejectCandidate = async (candidate: PlayCandidate, label: string) => {
       if (this.isRestrictedPlaySource(candidate.raw, candidate.data)) {
         return false;
@@ -875,10 +904,17 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       return validation === "mismatch";
     };
     const raw = await candidateRequest(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode)) ?? {};
-    const data = this.extractPlayData(raw);
+    const data = await candidateData(raw);
     const primaryRestricted = this.isRestrictedPlaySource(raw, data);
     const unblockPath = this.config.pathPlayUrlUnblock;
-    const shouldTryUnblock = unblockMode === "force_off" ? false : this.shouldAttemptUnblock(raw, data);
+    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
+      ? { raw, data, resolvedVia: unblockMode === "force_on" ? "unblock" : "primary" }
+      : null;
+    if (bestCandidate && (await shouldRejectCandidate(bestCandidate, "primary"))) {
+      bestCandidate = null;
+    }
+
+    const shouldTryUnblock = unblockMode !== "force_off" && (!bestCandidate || this.shouldAttemptUnblock(raw, data));
     this.debugUnblockTrace(trackId, "v1", {
       level,
       unblockMode,
@@ -887,45 +923,6 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       restricted: primaryRestricted,
       shouldTryUnblock
     });
-
-    let bestCandidate: PlayCandidate | null = this.hasPlayableUrl(data)
-      ? { raw, data, resolvedVia: "primary" }
-      : null;
-    if (bestCandidate && (await shouldRejectCandidate(bestCandidate, "primary"))) {
-      bestCandidate = null;
-    }
-
-    if (this.shouldRetryPrimaryWithForcedUnblock(unblockMode, raw, data)) {
-      const forcedPrimaryRaw = await candidateRequest(
-        this.config.pathPlayUrl,
-        this.buildPrimaryPlayQuery(trackId, level, "force_on")
-      );
-      if (forcedPrimaryRaw) {
-        const forcedPrimaryData = this.extractPlayData(forcedPrimaryRaw);
-        const forcedPrimaryRestricted = this.isRestrictedPlaySource(forcedPrimaryRaw, forcedPrimaryData);
-        this.debugUnblockTrace(trackId, "v1-force-on", {
-          level,
-          hasUrl: this.hasPlayableUrl(forcedPrimaryData),
-          preview: Boolean(forcedPrimaryData && this.isVipPreview(forcedPrimaryData)),
-          restricted: forcedPrimaryRestricted
-        });
-        if (this.hasPlayableUrl(forcedPrimaryData)) {
-          const forcedCandidate: PlayCandidate = {
-            raw: forcedPrimaryRaw,
-            data: forcedPrimaryData,
-            resolvedVia: "primary"
-          };
-          if (!(await shouldRejectCandidate(forcedCandidate, "v1-force-on"))) {
-            bestCandidate = this.pickBetterPlayCandidate(bestCandidate, forcedCandidate);
-            if (!forcedPrimaryRestricted) {
-              return this.toPlaySource(trackId, forcedPrimaryRaw, forcedPrimaryData, "primary");
-            }
-          }
-        }
-      } else {
-        this.debugUnblockTrace(trackId, "v1-force-on-error");
-      }
-    }
 
     if (!unblockPath || !shouldTryUnblock) {
       if (bestCandidate) {
@@ -953,7 +950,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
           this.debugUnblockTrace(trackId, source ? "match-source-empty-response" : "match-no-source-empty-response", { source });
           continue;
         }
-        const unblockData = this.extractPlayData(unblockRaw);
+        const unblockData = await candidateData(unblockRaw);
         if (!this.hasPlayableUrl(unblockData)) {
           this.debugUnblockTrace(trackId, source ? "match-source-no-url" : "match-no-source-no-url", { source });
           continue;

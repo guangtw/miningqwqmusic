@@ -66,6 +66,7 @@ export type PlaySource = {
   url: string;
   preview: boolean;
   level?: PlayQualityLevel;
+  requestedLevel?: PlayQualityLevel;
   bitrate?: number;
   restrictionReason?: string;
   resolvedVia?: "primary" | "unblock" | "grace";

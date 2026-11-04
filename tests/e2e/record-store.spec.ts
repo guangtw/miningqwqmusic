@@ -27,7 +27,7 @@ function wav() {
   return out;
 }
 
-async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean } = {}) {
+async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string } = {}) {
   const calls: { path: string; method: string; authorization?: string; body: unknown }[] = [];
   let signedIn = false;
   let failHome = options.failedHome;
@@ -99,7 +99,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
     if (p.includes('/album/')) return ok({ id: 'b1', name: '测试专辑', coverUrl: cover, artists: tracks[0].artists, tracks });
     if (p.includes('/artist/')) return ok({ id: 'a1', name: '测试艺人', coverUrl: cover, topTracks: tracks });
-    if (p.endsWith('/play-url')) return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60 });
+    if (p.endsWith('/play-url')) return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60, level: options.actualQuality, requestedLevel: url.searchParams.get('level') });
     if (p.endsWith('/lyric')) return ok({ trackId: '101', lines: [{ timeMs: 0, text: '第一句歌词' }, { timeMs: 12000, text: '第二句歌词' }] });
     if (p.includes('/track/')) return ok(tracks[0]);
     return route.fulfill({ status: 404, json: { code: 404, message: '未匹配的测试接口', traceId: 'e2e' } });
@@ -180,6 +180,35 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await expect(page.locator('.detail-title')).toHaveText('测试专辑');
   await page.locator('.byline a').first().click();
   await expect(page.locator('.detail-title')).toHaveText('测试艺人');
+  expect(state.errors).toEqual([]);
+});
+
+test('actual downgraded quality is visible before opening its menu', async ({ page }, info) => {
+  const state = await backend(page, { actualQuality: 'exhigh' });
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
+  await page.goto('/#/playlist/p1');
+  await expect(page.locator('.detail-title')).toHaveText('本期精选');
+  await page.locator('.track .t').first().click();
+  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  const chip = page.getByRole('button', { name: '音质：极高', exact: true });
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute('title', '已选「超清母带」，实际「极高」');
+  await expect(page.locator('.q-panel')).toHaveCount(0);
+  await expect(page.getByText('本曲实际以「极高」音质播放。', { exact: true })).toBeVisible();
+  expect(state.calls.some(c => c.path.includes('quality-options'))).toBe(false);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cph.settings.v2')!).quality)).toBe('jymaster');
+  expect(state.errors).toEqual([]);
+});
+
+test('an unknown actual quality does not masquerade as the selected master tier', async ({ page }, info) => {
+  const state = await backend(page);
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
+  await page.goto('/#/playlist/p1');
+  await page.locator('.track .t').first().click();
+  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  await expect(page.getByRole('button', { name: '音质：未知', exact: true })).toBeVisible();
+  await expect(page.locator('.q-panel')).toHaveCount(0);
+  expect(state.calls.some(c => c.path.includes('quality-options'))).toBe(false);
   expect(state.errors).toEqual([]);
 });
 

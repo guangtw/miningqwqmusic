@@ -1,11 +1,9 @@
 import { runMusicRequest } from "@/src/lib/music/request-context";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
-import { getPlaySource, peekTrackQualityAvailability } from "@/src/lib/music/service";
+import { getPlaySource } from "@/src/lib/music/service";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
-import { resolvePlayableQualityFallback } from "@/src/lib/play-quality";
 import { createTraceId } from "@/src/lib/trace";
-import type { PlayQualityLevel } from "@/src/types/music";
 
 type Context = {
   params: Promise<{ id: string }>;
@@ -28,22 +26,18 @@ async function handleGET(request: Request, context: Context) {
       requestedUnblockMode === "force_off"
         ? "force_off"
         : canUseUnblock
-          ? (requestedUnblockMode ?? "force_on")
+          ? (requestedUnblockMode ?? "auto")
           : "force_off";
-    let effectiveLevel: PlayQualityLevel | undefined = requestedLevel;
-    if (requestedLevel) {
-      const availability = peekTrackQualityAvailability(id);
-      if (availability) {
-        effectiveLevel = resolvePlayableQualityFallback(requestedLevel, availability.availableLevels) ?? requestedLevel;
-      }
-    }
+    // Menu metadata must not change playback behavior merely because the menu
+    // was opened. The source reports its actual level on this very response.
     const data = await getPlaySource(id, {
-      level: effectiveLevel,
+      level: requestedLevel,
       unblockMode: effectiveUnblockMode
     });
     const response = success(
       {
         ...data,
+        requestedLevel,
         authorizationScope: canUseUnblock ? ("authorized" as const) : ("guest" as const),
         authorizationVersion
       },

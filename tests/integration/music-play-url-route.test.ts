@@ -57,9 +57,9 @@ describe("GET /api/music/track/:id/play-url", () => {
   });
 
   it("returns requested and actual quality together even before any menu request", async () => {
-    mocks.getPlaySource.mockReturnValueOnce({ trackId: '1001', url: 'https://music.example/actual.mp3', preview: false, resolvedVia: 'primary', level: 'exhigh' } as never);
+    mocks.getPlaySource.mockReturnValueOnce({ trackId: '1001', url: 'https://music.example/actual.mp3', preview: false, resolvedVia: 'primary', level: 'exhigh', access: 'free' } as never);
     const response = await GET(new Request('http://localhost/api/music/track/1001/play-url?level=jymaster'), context('1001'));
-    expect((await response.json()).data).toMatchObject({ requestedLevel: 'jymaster', level: 'exhigh' });
+    expect((await response.json()).data).toMatchObject({ requestedLevel: 'jymaster', level: 'exhigh', access: 'free' });
   });
 
   it("uses the requested quality directly on a cold cache without probing metadata", async () => {

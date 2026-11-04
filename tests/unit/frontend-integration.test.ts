@@ -92,8 +92,21 @@ describe('frontend account bridge', () => {
     const { music } = await import('@/src/frontend/api/music');
     await expect(music.playUrl('101', 'exhigh')).resolves.toMatchObject({ url: '/audio' });
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      '/api/music/track/101/play-url?level=exhigh', '/api/account/auth/refresh', '/api/music/track/101/play-url?level=exhigh',
+      '/api/music/track/101/play-url?level=exhigh&unblockMode=auto', '/api/account/auth/refresh', '/api/music/track/101/play-url?level=exhigh&unblockMode=auto',
     ]);
+  });
+
+  it.each(['auto', 'force_on', 'force_off'] as const)('passes the %s source mode and cancellation through the frontend playback API', async mode => {
+    const fetchMock = vi.fn(async () => success({ url: '/audio' }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { music } = await import('@/src/frontend/api/music');
+    const controller = new AbortController();
+    await music.playUrl('101', 'jymaster', 'member', controller.signal, mode);
+    const [url, init] = fetchMock.mock.calls.find(call => String((call as unknown[])[0]).includes('/play-url')) as unknown as [string, RequestInit];
+    const query = new URL(url, 'http://localhost').searchParams;
+    expect(query.get('level')).toBe('jymaster');
+    expect(query.get('unblockMode')).toBe(mode);
+    expect(init.signal).toBe(controller.signal);
   });
 
   it('keeps a failed cloud deletion and retries it without resurrecting the favorite', async () => {

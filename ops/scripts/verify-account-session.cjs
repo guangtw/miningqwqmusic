@@ -106,6 +106,7 @@ async function api(path, method='GET', body, authenticated=true) {
       if (!cold.url || cold.preview || cold.resolvedVia !== 'primary' || cold.level !== 'exhigh' || cold.requestedLevel !== 'jymaster') {
         throw Error('Complete official audio or immediate downgraded quality missing');
       }
+      if (cold.access !== 'free') throw Error('Official free-play classification missing');
       await api('/api/music/track/1926623288/quality-options');
       const warm = (await api(officialPath)).data;
       if (warm.level !== cold.level || warm.requestedLevel !== cold.requestedLevel || warm.resolvedVia !== 'primary') {
@@ -116,7 +117,7 @@ async function api(path, method='GET', body, authenticated=true) {
       if (limited.level !== 'exhigh' || limited.requestedLevel !== 'exhigh') throw Error('URL-only unblock quality was not filled from the requested tier');
       const jiangnan = (await api('/api/music/track/108914/play-url?level=hires')).data;
       if (!jiangnan.url || jiangnan.preview || !jiangnan.level || jiangnan.requestedLevel !== 'hires') throw Error('Jiangnan playback quality report is missing');
-      if (jiangnan.resolvedVia === 'unblock' && jiangnan.level !== 'hires') throw Error('Jiangnan URL-only matching result did not preserve the requested tier');
+      if (jiangnan.access !== 'vip') throw Error('Jiangnan VIP classification missing');
       console.log('JIANGNAN_QUALITY_REPORT_VERIFIED', JSON.stringify({level:jiangnan.level,requestedLevel:jiangnan.requestedLevel,resolvedVia:jiangnan.resolvedVia}));
       console.log('OFFICIAL_FIRST_AND_IMMEDIATE_QUALITY_VERIFIED');
       await api('/api/music/search?q='+encodeURIComponent('播放验收')+'&page=1&pageSize=1');

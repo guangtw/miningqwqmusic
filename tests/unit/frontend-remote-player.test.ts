@@ -144,6 +144,99 @@ it('clears stale quality on a track change when a response omits its level', asy
   expect(player.playerStore.get().level).toBeNull();
 });
 
+it.each(['lossless', 'hires', 'jyeffect', 'sky', 'dolby', 'jymaster'] as const)('remembers a manual upgrade from full official exhigh to %s', async level => {
+  f.source.mockResolvedValueOnce({ ...source, level: 'exhigh', resolvedVia: 'primary', access: 'free' })
+    .mockResolvedValue({ ...source, level, resolvedVia: 'unblock', access: 'free' });
+  const player = await import('@/src/frontend/player/player');
+  const settings = await import('@/src/frontend/lib/settings');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  expect(f.source.mock.calls[0][4]).toBe('auto');
+  player.setQuality(level);
+  await vi.waitFor(() => expect(player.playerStore.get().level).toBe(level));
+  expect(f.source.mock.calls[1][4]).toBe('force_on');
+  expect(settings.getSettings()).toMatchObject({ preferUnblock: true, quality: level });
+  expect(JSON.parse(localStorage.getItem('cph.settings.v2')!)).toMatchObject({ preferUnblock: true, quality: level });
+  player.next();
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(3));
+  expect(f.source.mock.calls[2][4]).toBe('force_on');
+  player.clearQueue();
+  vi.resetModules();
+  expect((await import('@/src/frontend/lib/settings')).getSettings().preferUnblock).toBe(true);
+});
+
+it('upgrades even if the preferred master tier was already selected before official playback fell back', async () => {
+  const settings = await import('@/src/frontend/lib/settings');
+  settings.updateSettings({ quality: 'jymaster' });
+  f.source.mockResolvedValueOnce({ ...source, level: 'exhigh', resolvedVia: 'primary' })
+    .mockResolvedValue({ ...source, level: 'jymaster', resolvedVia: 'unblock' });
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  player.setQuality('jymaster');
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(2));
+  expect(f.source.mock.calls[1][4]).toBe('force_on');
+  expect(settings.getSettings().preferUnblock).toBe(true);
+});
+
+it.each([
+  { level: 'exhigh', resolvedVia: 'primary', preview: true },
+  { level: 'exhigh', resolvedVia: 'unblock', preview: false },
+  { level: 'lossless', resolvedVia: 'primary', preview: false },
+  { level: 'exhigh', preview: false }
+])('does not infer a persistent preference from an unconfirmed official-exhigh result: %j', async response => {
+  f.source.mockResolvedValue({ ...source, ...response });
+  const player = await import('@/src/frontend/player/player');
+  const settings = await import('@/src/frontend/lib/settings');
+  player.playList([track]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  player.setQuality('jymaster');
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(2));
+  expect(settings.getSettings().preferUnblock).toBe(false);
+  expect(f.source.mock.calls[1][4]).toBe('auto');
+});
+
+it.each([
+  ['free', 'unblock', false, true], ['vip', 'unblock', false, false], ['paid', 'unblock', false, false],
+  [undefined, 'unblock', false, false], ['free', 'primary', false, false], ['free', 'unblock', true, false]
+])('exposes recovery eligibility for access=%s via=%s preview=%s, without a default prompt', async (access, resolvedVia, preview, eligible) => {
+  f.source.mockResolvedValue({ ...source, level: 'exhigh', access, resolvedVia, preview });
+  const player = await import('@/src/frontend/player/player');
+  const { toastStore } = await import('@/src/frontend/lib/toast');
+  player.playList([track]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  expect(player.playerStore.get().canSwitchToStableSource).toBe(eligible);
+  expect(toastStore.get().message ?? '').not.toContain('放的歌不对');
+  if (!eligible) expect(player.switchToStableSource()).toBe(false);
+});
+
+it('temporarily restores official audio, preserves seek/pause and renewals, then uses the saved preference on the next track', async () => {
+  const settings = await import('@/src/frontend/lib/settings');
+  settings.updateSettings({ preferUnblock: true, quality: 'jymaster' });
+  f.source.mockImplementation(async (_id, _level, _token, _signal, mode) => ({ ...source, access: 'free',
+    resolvedVia: mode === 'force_off' ? 'primary' : 'unblock', level: mode === 'force_off' ? 'exhigh' : 'jymaster' }));
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track, { ...track, id: 'two' }]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  FakeAudio.last.currentTime = 42;
+  expect(player.switchToStableSource('a-previous-track')).toBe(false);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  player.toggle();
+  expect(player.switchToStableSource()).toBe(true);
+  expect(player.switchToStableSource()).toBe(false);
+  await vi.waitFor(() => expect(player.playerStore.get()).toMatchObject({ loading: false, unblockMode: 'force_off', resolvedVia: 'primary' }));
+  expect(FakeAudio.last.currentTime).toBe(42);
+  expect(FakeAudio.last.paused).toBe(true);
+  expect(settings.getSettings()).toMatchObject({ preferUnblock: true, quality: 'jymaster' });
+  FakeAudio.last.dispatchEvent(new Event('error'));
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(3));
+  expect(f.source.mock.calls[2][4]).toBe('force_off');
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  player.next();
+  await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(4));
+  expect(f.source.mock.calls[3][4]).toBe('force_on');
+});
+
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValue(new Promise(r => { resolve = r; }));

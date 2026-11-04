@@ -41,12 +41,13 @@ function headResponseWithoutLength(contentType = "audio/mpeg") {
   });
 }
 
-function trackDetailResponse(trackId = "108485", durationMs = 240000) {
+function trackDetailResponse(trackId = "108485", durationMs = 240000, fee?: number) {
   return jsonResponse({
     songs: [
       {
         id: Number(trackId),
         name: "Test Song",
+        fee,
         ar: [{ id: 11, name: "Singer A" }],
         al: { id: 22, name: "Album X" },
         dt: durationMs
@@ -61,6 +62,7 @@ function mockPlaySourceFetch(
     trackId?: string;
     trackDurationMs?: number;
     headResponses?: Response[];
+    fee?: number;
   }
 ) {
   const trackId = options?.trackId ?? "108485";
@@ -74,7 +76,7 @@ function mockPlaySourceFetch(
       return headQueue.shift() ?? headResponse();
     }
     if (url.includes("/song/detail")) {
-      return trackDetailResponse(trackId, trackDurationMs);
+      return trackDetailResponse(trackId, trackDurationMs, options?.fee);
     }
     const next = responseQueue.shift();
     if (!next) {
@@ -435,6 +437,18 @@ describe("NeteaseLikeAdapter mapping", () => {
       jsonResponse({ data: "https://cdn.test/unblocked", level: "lossless" })
     ]);
     await expect(adapter.getPlaySource("108485", { level: "jymaster" })).resolves.toMatchObject({ level: "lossless", resolvedVia: "unblock" });
+  });
+
+  it.each([
+    [0, "free"], [8, "free"], [1, "vip"], [4, "paid"], [16, undefined], [undefined, undefined]
+  ] as const)("reports track access from official fee %s without another metadata request", async (fee, access) => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: "https://cdn.test/unblocked" })], { fee });
+    const result = await adapter.getPlaySource("108485", { level: "jymaster", unblockMode: "force_on" });
+    expect(result).toMatchObject({ resolvedVia: "unblock", level: "jymaster" });
+    expect(result.access).toBe(access);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/song/detail"))).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("reports a missing ordinary MP3 tier from its actual bitrate",async()=>{

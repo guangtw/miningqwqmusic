@@ -67,6 +67,8 @@ export type PlaySource = {
   preview: boolean;
   level?: PlayQualityLevel;
   requestedLevel?: PlayQualityLevel;
+  /** 网易歌曲付费类型；free 包括免费播放、较高音质需会员的类型。 */
+  access?: "free" | "vip" | "paid";
   bitrate?: number;
   restrictionReason?: string;
   resolvedVia?: "primary" | "unblock" | "grace";

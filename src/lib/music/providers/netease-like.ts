@@ -52,6 +52,7 @@ type NeteaseAlbum = {
 type NeteaseSong = {
   id: number | string;
   name: string;
+  fee?: number;
   ar?: NeteaseArtist[];
   artists?: NeteaseArtist[];
   al?: NeteaseAlbum;
@@ -144,6 +145,7 @@ type PlayData = {
   freeTrialPrivilege?: Record<string, unknown> | null;
   freeTimeTrialPrivilege?: Record<string, unknown> | null;
   expectedDurationMs?: number;
+  access?: PlaySource["access"];
 };
 
 type PlayCandidate = {
@@ -605,6 +607,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       // Match endpoints may expose only a URL. Follow the upstream v1 contract
       // for that case: report the requested tier, while preserving explicit reports.
       level: toPlayQualityLevel(data.level) ?? (resolvedVia === "unblock" ? toPlayQualityLevel(requestedLevel) : bitrateLevel),
+      access: data.access,
       bitrate,
       restrictionReason: this.getRestrictionReason(raw, data),
       resolvedVia,
@@ -613,16 +616,18 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
   }
 
-  private async getTrackDurationMs(trackId: string): Promise<number | undefined> {
+  private async getTrackPlaybackMetadata(trackId: string): Promise<{ durationMs?: number; access?: PlaySource["access"] }> {
     try {
       const raw = await this.requestSafe<{ songs?: NeteaseSong[] }>(this.config.pathTrackDetail, { ids: trackId });
       const song = raw?.songs?.find(item => String(item.id) === trackId);
-      return asNumber(song?.dt) ?? asNumber(song?.duration);
+      const fee = asNumber(song?.fee);
+      const access = fee === 0 || fee === 8 ? "free" : fee === 1 ? "vip" : fee === 4 ? "paid" : undefined;
+      return { durationMs: asNumber(song?.dt) ?? asNumber(song?.duration), access };
     } catch (error) {
       if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError") ||
           (error instanceof AppError && [2002, 2008, 2011].includes(error.code))) throw error;
       // Missing auxiliary metadata must not disable an otherwise playable URL.
-      return undefined;
+      return {};
     }
   }
 
@@ -887,22 +892,22 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         return null;
       }
     };
-    let trackDurationMsPromise: Promise<number | undefined> | null = null;
-    const ensureTrackDurationMs = () => {
-      trackDurationMsPromise ??= this.getTrackDurationMs(trackId);
-      return trackDurationMsPromise;
+    let trackMetadataPromise: ReturnType<NeteaseLikeAdapter["getTrackPlaybackMetadata"]> | null = null;
+    const ensureTrackMetadata = () => {
+      trackMetadataPromise ??= this.getTrackPlaybackMetadata(trackId);
+      return trackMetadataPromise;
     };
     const candidateData = async (payload: unknown): Promise<PlayData | null> => {
       const extracted = this.extractPlayData(payload);
-      return this.hasPlayableUrl(extracted)
-        ? { ...extracted, expectedDurationMs: await ensureTrackDurationMs() }
-        : extracted;
+      if (!this.hasPlayableUrl(extracted)) return extracted;
+      const metadata = await ensureTrackMetadata();
+      return { ...extracted, expectedDurationMs: metadata.durationMs, access: metadata.access };
     };
     const shouldRejectCandidate = async (candidate: PlayCandidate, label: string) => {
       if (this.isRestrictedPlaySource(candidate.raw, candidate.data)) {
         return false;
       }
-      const validation = await this.validateCandidateUrl(trackId, label, await ensureTrackDurationMs(), candidate.data);
+      const validation = await this.validateCandidateUrl(trackId, label, (await ensureTrackMetadata()).durationMs, candidate.data);
       return validation === "mismatch";
     };
     const raw = await candidateRequest(this.config.pathPlayUrl, this.buildPrimaryPlayQuery(trackId, level, unblockMode)) ?? {};

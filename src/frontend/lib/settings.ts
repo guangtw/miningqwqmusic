@@ -6,6 +6,8 @@ export type Theme = 'paper' | 'night' | 'auto';
 
 export interface Settings {
   quality: PlayQualityLevel;
+  /** 用户主动从完整官方极高切换到更高音质后，跨歌曲保留解灰偏好。 */
+  preferUnblock: boolean;
   theme: Theme;
   /** 尊重系统「减少动态效果」之外，用户也可以手动关掉大部分动画 */
   motion: 'full' | 'reduced';
@@ -13,7 +15,7 @@ export interface Settings {
 
 const KEY = 'cph.settings.v2';
 
-const defaults: Settings = { quality: defaultQuality, theme: 'auto', motion: 'full' };
+const defaults: Settings = { quality: defaultQuality, preferUnblock: false, theme: 'auto', motion: 'full' };
 
 let current: Settings = { ...defaults, ...readJSON<Partial<Settings>>(KEY, {}) };
 const listeners = new Set<() => void>();

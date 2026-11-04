@@ -27,7 +27,7 @@ function wav() {
   return out;
 }
 
-async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string; unblocked?: boolean } = {}) {
+async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string; unblocked?: boolean; qualityUpgrade?: boolean } = {}) {
   const calls: { path: string; method: string; authorization?: string; body: unknown }[] = [];
   let signedIn = false;
   let failHome = options.failedHome;
@@ -99,7 +99,13 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
     if (p.includes('/album/')) return ok({ id: 'b1', name: '测试专辑', coverUrl: cover, artists: tracks[0].artists, tracks });
     if (p.includes('/artist/')) return ok({ id: 'a1', name: '测试艺人', coverUrl: cover, topTracks: tracks });
-    if (p.endsWith('/play-url')) return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60, level: options.actualQuality, requestedLevel: url.searchParams.get('level'), resolvedVia: options.unblocked ? 'unblock' : 'primary' });
+    if (p.endsWith('/quality-options')) return ok({ trackId: p.split('/')[4], availableLevels: ['standard', 'higher', 'exhigh'], fallbackMap: { jymaster: 'exhigh' } });
+    if (p.endsWith('/play-url')) {
+      const unblocked = options.qualityUpgrade ? url.searchParams.get('unblockMode') === 'force_on' : options.unblocked;
+      const level = options.qualityUpgrade ? unblocked ? url.searchParams.get('level') : 'exhigh' : options.actualQuality;
+      return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60, level,
+        requestedLevel: url.searchParams.get('level'), resolvedVia: unblocked ? 'unblock' : 'primary', access: 'free' });
+    }
     if (p.endsWith('/lyric')) return ok({ trackId: '101', lines: [{ timeMs: 0, text: '第一句歌词' }, { timeMs: 12000, text: '第二句歌词' }] });
     if (p.includes('/track/')) return ok(tracks[0]);
     return route.fulfill({ status: 404, json: { code: 404, message: '未匹配的测试接口', traceId: 'e2e' } });
@@ -129,7 +135,7 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.locator('.track').first().getByRole('button', { name: '收藏', exact: true }).click();
   await page.locator('.track .t').first().click();
   await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
-  expect(state.calls.some((c) => c.path === '/api/music/track/101/play-url?level=exhigh')).toBe(true);
+  expect(state.calls.some((c) => c.path === '/api/music/track/101/play-url?level=exhigh&unblockMode=auto')).toBe(true);
   await page.locator('.player .np-text').click();
   await expect(page.locator('.nowplaying')).toHaveClass(/open/);
   await expect(page.getByText('第一句歌词', { exact: true })).toBeVisible();
@@ -210,6 +216,24 @@ test('an unblock quality report is displayed immediately without an unknown tier
   await expect(page.getByText('音质未知', { exact: true })).toHaveCount(0);
   await expect(page.locator('.q-panel')).toHaveCount(0);
   expect(state.calls.some(c => c.path.includes('quality-options'))).toBe(false);
+  expect(state.errors).toEqual([]);
+});
+
+test('a manual upgrade remembers forced matching across tracks and reloads without a default source prompt', async ({ page }, info) => {
+  const state = await backend(page, { qualityUpgrade: true });
+  await page.goto('/#/playlist/p1');
+  await page.locator('.track .t').first().click();
+  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  await page.getByRole('button', { name: '音质：极高', exact: true }).click();
+  await page.getByRole('radio', { name: /超清母带/ }).click();
+  await expect(page.getByRole('button', { name: '音质：超清母带', exact: true })).toBeVisible();
+  expect(state.calls.some(c => c.path === '/api/music/track/101/play-url?level=jymaster&unblockMode=force_on')).toBe(true);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cph.settings.v2')!).preferUnblock)).toBe(true);
+  await expect(page.getByText('放的歌不对？点我暂时切换回稳定音源', { exact: true })).toHaveCount(0);
+  await page.reload();
+  await page.locator('.track .t').nth(1).click();
+  await expect.poll(() => state.calls.some(c => c.path === '/api/music/track/102/play-url?level=jymaster&unblockMode=force_on')).toBe(true);
+  await expect(page.getByText('放的歌不对？点我暂时切换回稳定音源', { exact: true })).toHaveCount(0);
   expect(state.errors).toEqual([]);
 });
 

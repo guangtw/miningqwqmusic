@@ -12,6 +12,7 @@ import type {
   Playlist,
   PlayQualityLevel,
   PlaySource,
+  PlayUnblockMode,
   PlaylistResolveResult,
   SceneData,
   SearchAssist,
@@ -76,8 +77,8 @@ export const music = {
   },
 
   track: (id: string) => request<Track>(path(p.track, { id })),
-  playUrl: (id: string, level: PlayQualityLevel, token?: string | null, signal?: AbortSignal) =>
-    authed<PlaySource>(path(p.playUrl, { id }), { query: { level }, token, signal }),
+  playUrl: (id: string, level: PlayQualityLevel, token?: string | null, signal?: AbortSignal, unblockMode: PlayUnblockMode = 'auto') =>
+    authed<PlaySource>(path(p.playUrl, { id }), { query: { level, unblockMode }, token, signal }),
   lyric: (id: string, signal?: AbortSignal) => request<TrackLyric>(path(p.lyric, { id }), { signal }),
   qualityOptions: (id: string, token?: string | null) =>
     authed<TrackQualityAvailability>(path(p.qualityOptions, { id }), { token }),

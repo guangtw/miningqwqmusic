@@ -1,12 +1,12 @@
 import { ApiError, coverOf, music, type Track, type TrackLyric } from '../api';
 import { api } from '../config/site';
 import { authStore, pushRecent } from '../lib/account';
-import type { PlayQualityLevel } from '../api/types';
+import type { PlayQualityLevel, PlaySource, PlayUnblockMode } from '../api/types';
 import { getSettings, updateSettings } from '../lib/settings';
 import { readJSON, writeJSON } from '../lib/storage';
 import { createStore } from '../lib/store';
 import { toast } from '../lib/toast';
-import { getPlayQualityLabel } from '@/src/lib/play-quality';
+import { getPlayQualityLabel, PLAY_QUALITY_LEVELS } from '@/src/lib/play-quality';
 
 export type PlayMode = 'order' | 'loop' | 'one' | 'shuffle';
 
@@ -26,6 +26,12 @@ export interface PlayerState {
   preview: boolean;
   /** 后端报告的音质（可低于偏好）；未取到地址或缺少字段时为 null。 */
   level: PlayQualityLevel | null;
+  /** 本次请求的策略与实际命中的链路分开提供给展示层。 */
+  unblockMode: PlayUnblockMode;
+  resolvedVia: PlaySource['resolvedVia'] | null;
+  access: PlaySource['access'] | null;
+  /** 展示层可据此提供“放的歌不对？”入口；播放器不自动弹提示。 */
+  canSwitchToStableSource: boolean;
 }
 
 const SAVE_KEY = 'cph.player.v2';
@@ -44,6 +50,10 @@ export const playerStore = createStore<PlayerState>({
   lyric: null,
   preview: false,
   level: null,
+  unblockMode: 'auto',
+  resolvedVia: null,
+  access: null,
+  canSwitchToStableSource: false,
 });
 
 const audio = new Audio();
@@ -162,6 +172,7 @@ authStore.subscribe(() => {
   const resumeAt = audio.currentTime * 1000;
   const autoplay = !audio.paused;
   loaded = null;
+  set({ resolvedVia: null, access: null, canSwitchToStableSource: false });
   loadToken += 1;
   audio.pause();
   if (autoplay) void resolveAndPlay(get().index, { resumeAt, autoplay: true });
@@ -235,6 +246,8 @@ function expiryOf(src: { expiresAt?: string; ttlSeconds?: number }) {
 
 const expiringSoon = () => !!loaded && Date.now() > loaded.expiresAt - api.playUrlRenewLeadSeconds * 1000;
 let lastQualityNotice = '';
+/** 只影响当前一轮播放；不写入持久音源偏好。 */
+let stableSourceTrackId: string | null = null;
 
 /** 取播放地址并装进 <audio>；resumeAt 用于续签后从原位置继续 */
 async function resolveAndPlay(
@@ -249,7 +262,7 @@ async function resolveAndPlay(
     intendedPlaying = false;
     loaded = null;
     audio.pause();
-    set({ loading: false, playing: false });
+    set({ loading: false, playing: false, canSwitchToStableSource: false });
     if (Date.now() - lastLimitToast > 3000) {
       lastLimitToast = Date.now();
       toast(`音乐上游限制了请求频率，请在 ${Math.ceil((retryNotBefore - Date.now()) / 1000)} 秒后重试。`);
@@ -268,20 +281,24 @@ async function resolveAndPlay(
   if (!audio.paused) set({ playing: false });
   const silenced = fadeTo(0, FADE_OUT_MS).then(() => { if (token === loadToken) audio.pause(); });
   if (fresh) {
+    stableSourceTrackId = null;
     lastQualityNotice = '';
     renewedOnce = false;
     recentPushed = false;
-    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null });
+    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null,
+      resolvedVia: null, access: null, canSwitchToStableSource: false });
     updateMediaSession(track);
   }
-  set({ loading: true });
+  const unblockMode: PlayUnblockMode = stableSourceTrackId === track.id ? 'force_off'
+    : getSettings().preferUnblock === true ? 'force_on' : 'auto';
+  set({ loading: true, unblockMode, canSwitchToStableSource: false });
 
   try {
     // Coalesce same-tick changes before starting either request.
     await Promise.resolve();
     if (token !== loadToken || signal.aborted) return;
     const requestedQuality = getSettings().quality;
-    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, signal);
+    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, signal, unblockMode);
     if (fresh) loadLyric(track.id, token, signal);
     const src = await source;
     if (token !== loadToken) return;
@@ -307,7 +324,7 @@ async function resolveAndPlay(
       audio.currentTime = at / 1000;
       set({ position: at });
     }
-    set({ preview: src.preview, level: src.level ?? null });
+    set({ preview: src.preview, level: src.level ?? null, resolvedVia: src.resolvedVia ?? null, access: src.access ?? null });
     const qualityNotice = `${track.id}:${requestedQuality}:${src.level ?? 'unknown'}`;
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
@@ -321,7 +338,7 @@ async function resolveAndPlay(
     });
     if (token !== loadToken) return;
     if (remoteTarget) alignRemote();
-    set({ loading: false });
+    set({ loading: false, canSwitchToStableSource: src.resolvedVia === 'unblock' && src.access === 'free' && !src.preview });
   } catch (e) {
     if (token !== loadToken) return;
     if (signal.aborted || (e as Error).name === 'AbortError') return;
@@ -557,7 +574,8 @@ function unload() {
   audio.load();
   loaded = null;
   lastQualityNotice = '';
-  set({ level: null });
+  stableSourceTrackId = null;
+  set({ level: null, resolvedVia: null, access: null, canSwitchToStableSource: false, unblockMode: 'auto' });
 }
 
 export function removeAt(i: number) {
@@ -612,9 +630,24 @@ if ('mediaSession' in navigator) {
 
 /** 换音质：记进设置，正在放的这首立刻按新音质重取地址，从当前位置接着放 */
 export function setQuality(level: PlayQualityLevel) {
-  if (getSettings().quality === level) return;
-  updateSettings({ quality: level });
   const s = get();
+  const upgradeOfficial = !!loaded && !s.loading && !s.preview && s.resolvedVia === 'primary' && s.level === 'exhigh'
+    && PLAY_QUALITY_LEVELS.indexOf(level) > PLAY_QUALITY_LEVELS.indexOf('exhigh');
+  // Clicking the already-selected preference must still upgrade an official
+  // fallback. This preference survives subsequent tracks and page reloads.
+  if (getSettings().quality === level && !upgradeOfficial) return;
+  updateSettings({ quality: level, ...(upgradeOfficial ? { preferUnblock: true } : {}) });
+  if (upgradeOfficial) stableSourceTrackId = null;
   if (!loaded || !currentTrack(s)) return;
   void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: s.playing });
+}
+
+/** 展示层主动调用：本曲临时改走官方；切歌后仍沿用持久解灰偏好。 */
+export function switchToStableSource(expectedTrackId?: string): boolean {
+  const s = get();
+  const track = currentTrack(s);
+  if (!loaded || !track || (expectedTrackId != null && expectedTrackId !== track.id) || s.loading || !s.canSwitchToStableSource) return false;
+  stableSourceTrackId = track.id;
+  void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: s.playing });
+  return true;
 }

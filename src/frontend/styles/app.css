@@ -7725,6 +7725,80 @@ html {
   width: 16px;
   height: 16px;
 }
+/* 看过整句之后：正在播放页只在歌手名后面跟一枚小标签 */
+.src-tag {
+  display: inline-grid;
+  vertical-align: 1px;
+  margin-left: 12px;
+  animation: src-tag-in 0.5s var(--ease-spring) both;
+}
+.src-tag[data-state='closing'] {
+  animation: src-tag-out 0.3s var(--ease-out) both;
+}
+.src-tag .src-fix-btn {
+  gap: 5px;
+  /* 字小，点按范围往外放一圈 */
+  padding: 8px 6px;
+  margin: -8px -6px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.src-tag .src-fix-icon {
+  width: 18px;
+  height: 18px;
+}
+.src-tag .src-fix-text {
+  text-decoration: none;
+}
+.src-tag.is-offer .src-fix-btn:hover .src-fix-text {
+  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+}
+/* 播放台：心形旁边一枚小圆钮 */
+.src-dot {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: src-tag-in 0.5s var(--ease-spring) both;
+  transition: background 0.25s, color 0.25s, transform 0.4s var(--ease-spring);
+}
+.src-dot[data-state='closing'] {
+  animation: src-tag-out 0.3s var(--ease-out) both;
+}
+.src-dot.is-offer:hover {
+  transform: rotate(-28deg);
+}
+.src-dot.is-offer:active {
+  transform: scale(0.88) rotate(-28deg);
+}
+.src-dot.is-switching svg {
+  animation: src-spin 0.9s linear infinite reverse;
+}
+.src-dot.is-done {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: none;
+}
+.src-dot:disabled {
+  cursor: default;
+}
+@keyframes src-tag-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.85);
+  }
+}
+@keyframes src-tag-out {
+  to {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
 /* 音质面板：选项和说明之间 */
 .src-panel .src-fix-btn {
   width: 100%;
@@ -7784,7 +7858,8 @@ html {
   }
 }
 @media (max-width: 860px) {
-  .src-bar {
+  .src-bar,
+  .src-dot {
     display: none;
   }
   .src-line .src-fix-btn {

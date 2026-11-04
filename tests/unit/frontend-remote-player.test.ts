@@ -254,6 +254,19 @@ it('walks the source recovery entry through switching, done and back to hidden',
   await vi.waitFor(() => expect(player.playerStore.get().canSwitchToStableSource).toBe(true));
 });
 
+it('shows the full recovery sentence once per device, then only for the rest of that track', async () => {
+  const { noteIntroShown, recoveryStore } = await import('@/src/frontend/lib/sourceRecovery');
+  expect(recoveryStore.get().introSeen).toBe(false);
+  noteIntroShown('one');
+  expect(recoveryStore.get()).toMatchObject({ introSeen: true, introTrack: 'one' });
+  expect(localStorage.getItem('cph.srcfix.intro.v1')).toBe('true');
+  noteIntroShown('two');
+  expect(recoveryStore.get().introTrack).toBe('one');
+  vi.resetModules();
+  const again = await import('@/src/frontend/lib/sourceRecovery');
+  expect(again.recoveryStore.get()).toMatchObject({ introSeen: true, introTrack: null });
+});
+
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValue(new Promise(r => { resolve = r; }));

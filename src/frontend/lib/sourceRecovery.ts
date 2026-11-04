@@ -1,4 +1,5 @@
 import { currentTrack, playerStore, switchToStableSource } from '../player/player';
+import { readJSON, writeJSON } from './storage';
 import { createStore, useStore } from './store';
 
 /**
@@ -10,11 +11,16 @@ interface Recovery {
   /** 换源请求落定的时刻；0 = 还在换 */
   settledAt: number;
   ok: boolean;
+  /** 这台设备上已经完整看过一次那句说明；之后的歌只给一个小标签 */
+  introSeen: boolean;
+  /** 看到说明的那首：这首放完之前一直用整句，不在半路缩回去 */
+  introTrack: string | null;
 }
 
 const DONE_MS = 4200;
-const idle: Recovery = { trackId: null, settledAt: 0, ok: false };
-export const recoveryStore = createStore<Recovery>(idle);
+const INTRO_KEY = 'cph.srcfix.intro.v1';
+const idle = { trackId: null, settledAt: 0, ok: false };
+export const recoveryStore = createStore<Recovery>({ ...idle, introSeen: readJSON<unknown>(INTRO_KEY, false) === true, introTrack: null });
 
 let clearTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -45,6 +51,19 @@ export function recoverSource() {
   // 被限流时播放器当场就收手了，不会再有状态变化
   check();
   return true;
+}
+
+/** 整句在屏幕上停够了：记下来，下一首起换成小标签 */
+export function noteIntroShown(trackId: string) {
+  if (recoveryStore.get().introSeen) return;
+  writeJSON(INTRO_KEY, true);
+  recoveryStore.set({ introSeen: true, introTrack: trackId });
+}
+
+/** 当前这首该用整句还是小标签 */
+export function useRecoveryCompact() {
+  const id = useStore(playerStore, (s) => currentTrack(s)?.id);
+  return useStore(recoveryStore, (s) => s.introSeen && s.introTrack !== id);
 }
 
 export type RecoveryPhase = 'offer' | 'switching' | 'done' | null;

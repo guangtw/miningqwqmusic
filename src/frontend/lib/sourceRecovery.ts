@@ -1,35 +1,61 @@
 import { currentTrack, playerStore, switchToStableSource } from '../player/player';
-import { readJSON, writeJSON } from './storage';
 import { createStore, useStore } from './store';
 
 /**
  * 「放的歌不对？」入口的状态。播放器只给能不能切（canSwitchToStableSource）和切的动作；
- * 这里补上点了之后那一小段：切换中 → 切好了（停几秒）→ 收起。几处入口共用同一份，点了哪个都一起变。
+ * 这里补上两件事：
+ * 1. 歌名附近什么时候冒出来（nudge）：放错集中在免费歌 + 超清母带，这个档位每首开头露 10 秒；
+ *    别的档位一次打开网页只露一回。其余时候只在音质面板里。
+ * 2. 点了之后那一小段：切换中 → 切好了（带 Q&A 入口，停一会儿）→ 收起。几处入口共用同一份，点了哪个都一起变。
  */
 interface Recovery {
   trackId: string | null;
   /** 换源请求落定的时刻；0 = 还在换 */
   settledAt: number;
   ok: boolean;
-  /** 这台设备上已经完整看过一次那句说明；之后的歌只给一个小标签 */
-  introSeen: boolean;
-  /** 看到说明的那首：这首放完之前一直用整句，不在半路缩回去 */
-  introTrack: string | null;
+  /** 正在歌名附近露面的那首 */
+  nudge: string | null;
 }
 
-const DONE_MS = 4200;
-const INTRO_KEY = 'cph.srcfix.intro.v1';
+/** 切好之后那行字（带 Q&A）停多久 */
+const DONE_MS = 12_000;
+const NUDGE_MASTER_MS = 10_000;
+const NUDGE_OTHER_MS = 6_000;
 const idle = { trackId: null, settledAt: 0, ok: false };
-export const recoveryStore = createStore<Recovery>({ ...idle, introSeen: readJSON<unknown>(INTRO_KEY, false) === true, introTrack: null });
+export const recoveryStore = createStore<Recovery>({ ...idle, nudge: null });
 
 let clearTimer: ReturnType<typeof setTimeout> | undefined;
+let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
+/** 已经轮过露面的那首：续签、换源后重新可切时不再露第二次 */
+let nudgedFor: string | null = null;
+/** 超清母带以外的档位，这次打开网页露过了 */
+let nudgedOther = false;
 
 function check() {
-  const r = recoveryStore.get();
-  if (!r.trackId) return;
   const s = playerStore.get();
+  const id = currentTrack(s)?.id ?? null;
+  const r = recoveryStore.get();
+
+  if (r.nudge && r.nudge !== id) {
+    clearTimeout(nudgeTimer);
+    recoveryStore.set({ nudge: null });
+  }
+  if (s.canSwitchToStableSource && id && nudgedFor !== id) {
+    nudgedFor = id;
+    const master = s.level === 'jymaster';
+    if (master || !nudgedOther) {
+      if (!master) nudgedOther = true;
+      clearTimeout(nudgeTimer);
+      recoveryStore.set({ nudge: id });
+      nudgeTimer = setTimeout(() => {
+        if (recoveryStore.get().nudge === id) recoveryStore.set({ nudge: null });
+      }, master ? NUDGE_MASTER_MS : NUDGE_OTHER_MS);
+    }
+  }
+
+  if (!r.trackId) return;
   // 切歌、清队列：这条状态跟着那首歌走
-  if (currentTrack(s)?.id !== r.trackId) {
+  if (id !== r.trackId) {
     clearTimeout(clearTimer);
     return recoveryStore.set(idle);
   }
@@ -53,25 +79,19 @@ export function recoverSource() {
   return true;
 }
 
-/** 整句在屏幕上停够了：记下来，下一首起换成小标签 */
-export function noteIntroShown(trackId: string) {
-  if (recoveryStore.get().introSeen) return;
-  writeJSON(INTRO_KEY, true);
-  recoveryStore.set({ introSeen: true, introTrack: trackId });
-}
-
-/** 当前这首该用整句还是小标签 */
-export function useRecoveryCompact() {
-  const id = useStore(playerStore, (s) => currentTrack(s)?.id);
-  return useStore(recoveryStore, (s) => s.introSeen && s.introTrack !== id);
-}
-
 export type RecoveryPhase = 'offer' | 'switching' | 'done' | null;
 
-export function useRecoveryPhase(): RecoveryPhase {
+/**
+ * where：
+ * - near：歌名附近（正在播放页、播放台），只在露面期间或刚点过时出现；
+ * - panel：音质面板，能切就一直在，这首切回之后一直写着「已切回」。
+ */
+export function useRecoveryPhase(where: 'near' | 'panel'): RecoveryPhase {
   const can = useStore(playerStore, (s) => s.canSwitchToStableSource);
   const id = useStore(playerStore, (s) => currentTrack(s)?.id);
+  const stable = useStore(playerStore, (s) => s.unblockMode === 'force_off' && s.resolvedVia === 'primary' && !s.loading);
   const r = useStore(recoveryStore, (s) => s);
   if (r.trackId && r.trackId === id) return !r.settledAt ? 'switching' : r.ok ? 'done' : null;
-  return can ? 'offer' : null;
+  if (where === 'panel') return can ? 'offer' : stable ? 'done' : null;
+  return can && r.nudge === id ? 'offer' : null;
 }

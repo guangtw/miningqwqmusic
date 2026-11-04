@@ -254,17 +254,22 @@ it('walks the source recovery entry through switching, done and back to hidden',
   await vi.waitFor(() => expect(player.playerStore.get().canSwitchToStableSource).toBe(true));
 });
 
-it('shows the full recovery sentence once per device, then only for the rest of that track', async () => {
-  const { noteIntroShown, recoveryStore } = await import('@/src/frontend/lib/sourceRecovery');
-  expect(recoveryStore.get().introSeen).toBe(false);
-  noteIntroShown('one');
-  expect(recoveryStore.get()).toMatchObject({ introSeen: true, introTrack: 'one' });
-  expect(localStorage.getItem('cph.srcfix.intro.v1')).toBe('true');
-  noteIntroShown('two');
-  expect(recoveryStore.get().introTrack).toBe('one');
-  vi.resetModules();
-  const again = await import('@/src/frontend/lib/sourceRecovery');
-  expect(again.recoveryStore.get()).toMatchObject({ introSeen: true, introTrack: null });
+it('nudges near the title on every 超清母带 track, but only once per visit for other qualities', async () => {
+  let level = 'jymaster';
+  f.source.mockImplementation(async () => ({ ...source, access: 'free', resolvedVia: 'unblock', level }));
+  const player = await import('@/src/frontend/player/player');
+  const { recoveryStore } = await import('@/src/frontend/lib/sourceRecovery');
+  const ids = ['m1', 'm2', 'o1', 'o2'];
+  player.playList(ids.map((id) => ({ ...track, id })));
+  const nudged: (string | null)[] = [];
+  for (const id of ids) {
+    if (id !== 'm1') player.next();
+    level = id.startsWith('m') ? 'jymaster' : 'lossless';
+    await vi.waitFor(() => expect(player.playerStore.get()).toMatchObject({ loading: false, canSwitchToStableSource: true }));
+    expect(player.currentTrack()?.id).toBe(id);
+    nudged.push(recoveryStore.get().nudge);
+  }
+  expect(nudged).toEqual(['m1', 'm2', 'o1', null]);
 });
 
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {

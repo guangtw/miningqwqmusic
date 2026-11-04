@@ -97,7 +97,6 @@ export function PlayerBar() {
               <div className="np-artist">{artistNames(track.artists)}</div>
               <SourceRecovery variant="bar" />
             </div>
-            <SourceRecovery variant="dot" />
             <HeartButton className="hide-sm" liked={liked} onToggle={() => toggleFavorite(track)} />
           </div>
         ) : (

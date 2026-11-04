@@ -6,6 +6,7 @@ import { setQuality } from '../player/player';
 import { authStore } from '../lib/account';
 import { transition } from '../lib/motion';
 import { getSettings, subscribeSettings, updateSettings, type Settings, type Theme } from '../lib/settings';
+import { href } from '../lib/router';
 import { useStore } from '../lib/store';
 import { useAsync } from '../lib/useAsync';
 
@@ -145,8 +146,11 @@ function SourceField() {
         </div>
         <p className="help">
           {seen.current
-            ? '只影响之后放的歌，正在放的这首不打断。某首放得不对时，正在播放页歌名下面可以临时换回原平台音源。'
-            : '放原平台「极高」音质的歌时，把音质换成无损或更高，会自动打开。只记在这台设备上。'}
+            ? '只影响之后放的歌，正在放的这首不打断。某首放得不对时，打开音质面板可以临时换回原平台音源。'
+            : '放原平台「极高」音质的歌时，把音质换成无损或更高，会自动打开。只记在这台设备上。'}{' '}
+          <a className="link" href={href.help('source')}>
+            放的歌不对？看 Q&amp;A
+          </a>
         </p>
       </div>
     </div>

@@ -33,7 +33,7 @@ function useLoginHint(show: boolean) {
   return [on, () => setOn(false)] as const;
 }
 
-const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'inbox', chat: 'inbox' };
+const SECTION_ALIAS: Record<string, string> = { mine: 'library', friends: 'inbox', chat: 'inbox', help: 'settings' };
 
 export function Sidebar() {
   const route = useRoute();

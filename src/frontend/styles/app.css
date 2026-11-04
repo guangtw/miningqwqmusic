@@ -7642,9 +7642,16 @@ html {
 .src-fix[data-state='closing'] {
   animation: src-fold 0.32s var(--ease-out) both;
 }
-.src-fix-btn {
+.src-fix-row {
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.src-fix-btn {
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -7709,15 +7716,20 @@ html {
 }
 
 /* 正在播放页：歌手那一行下面 */
+.src-line .src-fix-row {
+  padding-top: 12px;
+}
 .src-line .src-fix-btn {
-  margin-top: 12px;
   font-size: 12.5px;
   color: var(--ink-2);
 }
 /* 播放台：歌手名下面一行更小的字 */
+.src-bar .src-fix-row {
+  gap: 6px;
+  padding-top: 1px;
+}
 .src-bar .src-fix-btn {
   gap: 5px;
-  margin-top: 1px;
   font-size: 11.5px;
   line-height: 1.3;
 }
@@ -7725,92 +7737,58 @@ html {
   width: 16px;
   height: 16px;
 }
-/* 看过整句之后：正在播放页只在歌手名后面跟一枚小标签 */
-.src-tag {
-  display: inline-grid;
-  vertical-align: 1px;
-  margin-left: 12px;
-  animation: src-tag-in 0.5s var(--ease-spring) both;
-}
-.src-tag[data-state='closing'] {
-  animation: src-tag-out 0.3s var(--ease-out) both;
-}
-.src-tag .src-fix-btn {
-  gap: 5px;
-  /* 字小，点按范围往外放一圈 */
-  padding: 8px 6px;
-  margin: -8px -6px;
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.src-tag .src-fix-icon {
-  width: 18px;
-  height: 18px;
-}
-.src-tag .src-fix-text {
-  text-decoration: none;
-}
-.src-tag.is-offer .src-fix-btn:hover .src-fix-text {
-  text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
-}
-/* 播放台：心形旁边一枚小圆钮 */
-.src-dot {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
-  animation: src-tag-in 0.5s var(--ease-spring) both;
-  transition: background 0.25s, color 0.25s, transform 0.4s var(--ease-spring);
-}
-.src-dot[data-state='closing'] {
-  animation: src-tag-out 0.3s var(--ease-out) both;
-}
-.src-dot.is-offer:hover {
-  transform: rotate(-28deg);
-}
-.src-dot.is-offer:active {
-  transform: scale(0.88) rotate(-28deg);
-}
-.src-dot.is-switching svg {
-  animation: src-spin 0.9s linear infinite reverse;
-}
-.src-dot.is-done {
-  color: #fff;
-  background: var(--accent);
-  box-shadow: none;
-}
-.src-dot:disabled {
-  cursor: default;
-}
-@keyframes src-tag-in {
-  from {
-    opacity: 0;
-    transform: translateX(-6px) scale(0.85);
-  }
-}
-@keyframes src-tag-out {
-  to {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-}
 /* 音质面板：选项和说明之间 */
-.src-panel .src-fix-btn {
-  width: 100%;
+.src-panel .src-fix-row {
   margin-top: 12px;
-  padding: 9px 12px 9px 9px;
+  padding: 9px 10px 9px 9px;
   border-radius: 12px;
-  font-size: 12.5px;
   background: color-mix(in srgb, var(--accent) 6%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  transition: background 0.2s;
 }
-.src-panel.is-offer .src-fix-btn:hover {
+.src-panel .src-fix-btn {
+  flex: 1;
+  font-size: 12.5px;
+}
+.src-panel.is-offer .src-fix-row:hover {
   background: var(--accent-soft);
+}
+
+/* Q&A：切回之后挂在后面，点进问答页 */
+.src-qa {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-2);
+  animation: src-text-in 0.4s 0.12s var(--ease-out) both;
+}
+.src-qa b {
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  transition: background 0.2s, color 0.2s;
+}
+.src-qa span {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-underline-offset: 3px;
+}
+.src-qa:hover {
+  color: var(--ink);
+}
+.src-qa:hover b {
+  color: #fff;
+  background: var(--accent);
+}
+.src-bar .src-qa b {
+  padding: 1px 5px;
+  font-size: 9.5px;
 }
 
 @keyframes src-unfold {
@@ -7858,16 +7836,222 @@ html {
   }
 }
 @media (max-width: 860px) {
-  .src-bar,
-  .src-dot {
+  .src-bar {
     display: none;
   }
-  .src-line .src-fix-btn {
-    margin-top: 8px;
+  .src-line .src-fix-row {
+    padding-top: 8px;
   }
 }
 .pref-switch {
   max-width: 560px;
   padding: 2px 0 0;
   border-bottom: 0;
+}
+
+/* ---- 问与答 ----
+   像唱片内页的说明：一条「怎么放错的」信号路径，几档音质对照，然后一问一答。 */
+.qa-page {
+  max-width: 980px;
+}
+.qa-lead {
+  max-width: 36em;
+  margin-top: 18px;
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.qa-sec {
+  margin-top: 44px;
+}
+.qa-h {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* 路径：四站连成一道刻纹，最后一站是放错的那一下 */
+.qa-path {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+  margin-top: 26px;
+  list-style: none;
+}
+.qa-path::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: 12px;
+  right: 12px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--ink) 28%, transparent) 0 6px, transparent 6px 10px);
+}
+.qa-path li {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+.qa-step {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 10.5px;
+  color: var(--ink-2);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 35%, transparent);
+}
+.qa-path b {
+  margin-top: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.qa-path li > span:last-child {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+.qa-path .end .qa-step {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: 0 0 0 5px var(--accent-soft);
+  animation: qa-ping 2.4s 0.8s var(--ease-out) 2;
+}
+.qa-path .end b {
+  color: var(--accent);
+}
+@keyframes qa-ping {
+  50% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+}
+
+/* 音质对照 */
+.qa-levels {
+  display: grid;
+  margin-top: 6px;
+}
+.qa-level {
+  display: grid;
+  grid-template-columns: 210px 1fr auto;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--ink-2);
+}
+.qa-level > .qm,
+.qa-level > em {
+  justify-self: start;
+}
+.qa-level > em {
+  justify-self: end;
+}
+.qa-level.hot {
+  color: var(--ink);
+  font-weight: 500;
+}
+.qa-marks {
+  display: inline-flex;
+  gap: 8px;
+}
+.qa-level em {
+  font-style: normal;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 一问一答：问在左，答在右 */
+.qa-list {
+  display: grid;
+}
+.qa-item {
+  display: grid;
+  grid-template-columns: minmax(0, 0.42fr) minmax(0, 0.58fr);
+  gap: 28px;
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 24px;
+}
+.qa-item dt {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+.qa-item dd {
+  display: grid;
+  gap: 10px;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.qa-item dd b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.qa-item.on dt {
+  color: var(--accent);
+}
+
+@media (max-width: 860px) {
+  .qa-path {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  /* 竖排时每一站往下接一段，到最后一站为止 */
+  .qa-path::before {
+    display: none;
+  }
+  .qa-path li:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 28px;
+    bottom: -14px;
+    left: 11px;
+    width: 1px;
+    background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--ink) 28%, transparent) 0 6px, transparent 6px 10px);
+  }
+  .qa-path li {
+    grid-template-columns: 24px 1fr;
+    column-gap: 14px;
+    row-gap: 4px;
+  }
+  .qa-path li > :not(.qa-step) {
+    grid-column: 2;
+  }
+  .qa-path .qa-step {
+    grid-row: 1 / span 2;
+  }
+  .qa-path b {
+    margin-top: 2px;
+  }
+  .qa-level {
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+  }
+  .qa-level > span:not(.qa-marks):not(.qm) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: 13px;
+  }
+  .qa-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .qa-item dt {
+    font-size: 16px;
+  }
 }

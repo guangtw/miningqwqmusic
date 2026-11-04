@@ -285,7 +285,6 @@ export function NowPlaying() {
                     </a>
                   </>
                 )}
-                <SourceRecovery variant="tag" />
               </p>
               <SourceRecovery variant="line" />
               <div className="np-actions">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiError, waitLabel } from '../api/http';
-import { login, register } from '../lib/account';
+import { emailLoginStatus, loginWithCode, login, register, requestLoginCode, type EmailLoginStatus } from '../lib/account';
 import { redeemCode } from '../lib/membership';
 import { usePresence } from '../lib/motion';
 import { passwordProblem } from '../lib/profile';
@@ -8,6 +8,7 @@ import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
 import { Icon } from './Icon';
+import { OtpInput, useSecondsLeft } from './OtpInput';
 import { PasswordRules } from './PasswordRules';
 
 type Mode = 'login' | 'register';
@@ -17,6 +18,9 @@ export function LoginDialog() {
   const open = useStore(uiStore, (s) => s.login);
   const { mounted, state } = usePresence(open, 220);
   const [mode, setMode] = useState<Mode>('login');
+  // 登录页里切到「邮箱验证码」：给忘了密码的已有账号用
+  const [viaCode, setViaCode] = useState(false);
+  const [otp, setOtp] = useState<EmailLoginStatus | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
@@ -34,6 +38,9 @@ export function LoginDialog() {
   useEffect(() => {
     if (!open) return;
     setError(null);
+    setViaCode(false);
+    // 只问一下验证码登录开没开，不会自动发验证码
+    emailLoginStatus().then(setOtp, () => setOtp(null));
     // 只在焦点还没进对话框时才聚焦邮箱，否则会把正在输入的密码框的焦点抢走
     setTimeout(() => {
       if (!emailRef.current?.closest('.dialog')?.contains(document.activeElement)) emailRef.current?.focus();
@@ -126,6 +133,22 @@ export function LoginDialog() {
             </button>
           ))}
         </div>
+        {mode === 'login' && viaCode ? (
+          <CodeLogin
+            email={email}
+            setEmail={setEmail}
+            status={otp}
+            onBack={() => {
+              setViaCode(false);
+              setError(null);
+            }}
+            onDone={() => {
+              setPassword('');
+              close();
+            }}
+          />
+        ) : (
+          <>
         <h2 id="login-title">{mode === 'login' ? '回到唱片架' : '办一张会员卡'}</h2>
         <p className="muted small">登录后收藏和最近播放会在设备之间同步。</p>
         <form onSubmit={submit} noValidate className="login-form">
@@ -188,7 +211,158 @@ export function LoginDialog() {
             {busy ? '请稍候…' : remaining > 0 ? `${remaining} 秒后重试` : mode === 'login' ? '登录' : '注册并登录'}
           </button>
         </form>
+        {mode === 'login' && otp?.enabled && (
+          <button
+            type="button"
+            className="text-btn login-alt"
+            onClick={() => {
+              setViaCode(true);
+              setError(null);
+            }}
+          >
+            <Icon name="mail" size={15} /> 忘了密码？用邮箱验证码登录
+          </button>
+        )}
+          </>
+        )}
       </div>
+    </>
+  );
+}
+
+/**
+ * 邮箱辅助登录：发验证码 → 填验证码 → 和密码登录一样进账号。
+ * 发送接口对没注册的邮箱也返回成功（不暴露账号是否存在），所以提示语不说「已发送」，说「如果注册过会收到」。
+ * 重发会让旧验证码失效，只认最新一次的 challengeId；倒计时按服务端给的时间算。
+ */
+function CodeLogin({
+  email,
+  setEmail,
+  status,
+  onBack,
+  onDone,
+}: {
+  email: string;
+  setEmail: (v: string) => void;
+  status: EmailLoginStatus | null;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const [challenge, setChallenge] = useState<{ id: string; email: string; resendAt: number; expiresAt: number } | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState<'send' | 'verify' | null>(null);
+  const [error, setError] = useState<{ text: string; field?: 'email' | 'code' } | null>(null);
+  const [blockedUntil, setBlockedUntil] = useState<number | null>(null);
+  const resendIn = useSecondsLeft(challenge?.resendAt ?? null);
+  const blocked = useSecondsLeft(blockedUntil);
+  const len = status?.codeLength ?? 6;
+  const available = !!status?.available;
+  const sameEmail = challenge?.email === email.trim().toLowerCase();
+
+  const fail = (err: unknown, field?: 'email' | 'code') => {
+    if (err instanceof ApiError && err.retryAfterSeconds && (err.status === 429 || err.code === 5910 || err.code === 5914)) {
+      setBlockedUntil(Date.now() + err.retryAfterSeconds * 1000);
+    }
+    setError({ text: (err as Error).message, field });
+  };
+
+  const send = async () => {
+    const to = email.trim();
+    if (!/^\S+@\S+\.\S+$/.test(to)) return setError({ field: 'email', text: '填一个有效的邮箱。' });
+    if (busy || blocked > 0 || (sameEmail && resendIn > 0)) return;
+    setBusy('send');
+    setError(null);
+    try {
+      const r = await requestLoginCode(to);
+      // 服务端时间和本机可能差几秒：按服务端给的间隔换算成本机时间点
+      const skew = Date.now() - Date.parse(r.serverTime);
+      setChallenge({ id: r.challengeId, email: to.toLowerCase(), resendAt: Date.parse(r.resendAfter) + skew, expiresAt: Date.parse(r.expiresAt) + skew });
+      setCode('');
+    } catch (err) {
+      fail(err, 'email');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const verify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!challenge || busy) return;
+    if (code.length !== len) return setError({ field: 'code', text: `验证码是 ${len} 位数字。` });
+    if (Date.now() > challenge.expiresAt) return setError({ field: 'code', text: '验证码已经过期了，重新发一个。' });
+    setBusy('verify');
+    setError(null);
+    try {
+      await loginWithCode(challenge.id, code);
+      toast('欢迎回来。');
+      onDone();
+    } catch (err) {
+      setCode('');
+      fail(err, 'code');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <>
+      <h2 id="login-title">用验证码登录</h2>
+      <p className="muted small">给已经注册的邮箱发一个 {len} 位验证码。只是登录，不会改你的密码。</p>
+      {!status || !available ? (
+        <p className="field-error login-code-off" role="status">
+          {status && !status.enabled ? '验证码登录暂时关闭了，' : '邮件服务暂时不可用，'}先用密码登录，或者稍后再试。
+        </p>
+      ) : null}
+      <form className="login-form" onSubmit={verify} noValidate>
+        <div className="login-code-row">
+          <label className="float">
+            <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError(null);
+              }}
+              placeholder=" "
+              aria-invalid={error?.field === 'email'}
+            />
+            <span>邮箱</span>
+          </label>
+          <button
+            type="button"
+            className="btn login-send"
+            onClick={() => void send()}
+            disabled={!available || busy === 'send' || blocked > 0 || (sameEmail && resendIn > 0)}
+          >
+            {busy === 'send' ? '发送中…' : sameEmail && resendIn > 0 ? `${resendIn} 秒` : challenge && sameEmail ? '重新发送' : '发送验证码'}
+          </button>
+        </div>
+        {error?.field === 'email' && <p className="field-error">{blocked > 0 ? `尝试太频繁了，请在 ${waitLabel(blocked)}后再试。` : error.text}</p>}
+        {challenge && sameEmail && (
+          <div className="login-code-step">
+            <p className="login-code-note">
+              <Icon name="mail" size={15} />
+              <span>
+                如该邮箱已注册，将收到登录验证码；新用户请先注册。{' '}
+                <span className="faint">没收到的话看看垃圾邮件。</span>
+              </span>
+            </p>
+            <OtpInput value={code} onChange={(v) => (setCode(v), setError(null))} length={len} invalid={error?.field === 'code'} autoFocus />
+            {error?.field === 'code' && (
+              <p className="field-error" role="alert">
+                {blocked > 0 ? `尝试太频繁了，请在 ${waitLabel(blocked)}后再试。` : error.text}
+              </p>
+            )}
+            <button className="btn solid wide" disabled={busy === 'verify' || code.length !== len || blocked > 0}>
+              {busy === 'verify' ? '正在核对…' : '登录'}
+            </button>
+          </div>
+        )}
+      </form>
+      <button type="button" className="text-btn login-alt" onClick={onBack}>
+        <Icon name="left" size={15} /> 用密码登录
+      </button>
     </>
   );
 }

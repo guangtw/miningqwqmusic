@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { site } from '../config/site';
 import { authStore, displayName } from '../lib/account';
-import { redeemCode, refreshEntitlement } from '../lib/membership';
+import { fetchApplication, redeemCode, refreshEntitlement } from '../lib/membership';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
@@ -150,6 +150,8 @@ export function MemberCard() {
     const before = timed ? auth?.expiresAt : undefined;
     try {
       const r = await redeemCode(c);
+      // 用的可能是申请发来的码：申请那一栏跟着更新
+      void fetchApplication().catch(() => undefined);
       if (r.enabled && before && r.membershipKind === 'timed' && r.expiresAt === before) {
         setError('这个邀请码已经用在你的账号上了，到期时间没变。');
       } else if (r.enabled) {

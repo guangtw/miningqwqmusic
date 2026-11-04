@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { MemberCard } from '../components/MemberCard';
+import { MemberApply } from '../components/MemberApply';
 import { PasswordRules } from '../components/PasswordRules';
 import { Empty, Loading } from '../components/States';
 import { ApiError } from '../api';
@@ -303,6 +304,7 @@ function AcctTabs({ tab }: { tab: 'account' | 'settings' }) {
 export function AccountView() {
   const status = useStore(authStore, (s) => s.status);
   const user = useStore(authStore, (s) => s.user);
+  const auth = useStore(authStore, (s) => s.playbackAuthorization);
   const tab = useRoute().query.get('tab') === 'settings' ? 'settings' : 'account';
 
   if (status === 'checking') {
@@ -344,10 +346,13 @@ export function AccountView() {
     );
   }
 
+  const permanent = !!auth?.enabled && auth.membershipKind === 'permanent';
   const fields: [string, React.ReactNode][] = [
     ['头像', <AvatarField key="a" />],
     ['昵称', <NicknameField key="n" />],
     ['会员卡', <MemberCard key="m" />],
+    // 永久会员用不着排队
+    ...(permanent ? [] : ([['会员申请', <MemberApply key="ap" />]] as [string, React.ReactNode][])),
     ['好友和私信', <FriendsField key="f" />],
     ['密码', <PasswordField key="p" />],
     ['登录设备', <SessionsField key="s" />],
@@ -365,7 +370,7 @@ export function AccountView() {
             {joined(user.createdAt) && <span className="faint"> · {joined(user.createdAt)}</span>}
             {user.role === 'admin' && (
               <a className="acct-admin" href={href.admin()}>
-                <Icon name="card" size={15} /> 授权管理
+                <Icon name="card" size={15} /> 会员管理
               </a>
             )}
           </p>

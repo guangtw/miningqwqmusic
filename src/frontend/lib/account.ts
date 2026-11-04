@@ -1,5 +1,6 @@
 import { ApiError, coverOf, type AccountUser, type AuthPayload, type AuthTokenData, type LibraryRevisionResult, type LibrarySnapshot, type Track } from '../api';
 import type { PlaybackAuthorization } from '@/src/types/account';
+import type { OtpChallengeResponse } from '@/src/types/membership';
 import type { ImportedPlaylist } from '@/src/types/music';
 import { path, request, type RequestInitEx } from '../api/http';
 import { api } from '../config/site';
@@ -171,6 +172,34 @@ export async function register(email: string, password: string, nickname?: strin
   lastPull = 0;
   const generation = ++authGeneration;
   const data = await sessionLock(() => request<AuthPayload>(p.authRegister, { method: 'POST', body: { email, password, nickname: nickname || undefined } }));
+  if (generation !== authGeneration) return;
+  apply(data);
+  publishAuth('login');
+  void pullLibrary({ merge: true });
+}
+
+// ---------------- 邮箱辅助登录 ----------------
+// 只给已有账号发验证码，不注册、不改密码。未注册的邮箱返回一样的结果，界面上也不能区分。
+
+export interface EmailLoginStatus {
+  enabled: boolean;
+  /** 邮件服务和后台任务都正常；不可用时只留密码登录 */
+  available: boolean;
+  codeLength: number;
+  expiresInSeconds: number;
+  resendAfterSeconds: number;
+}
+
+export const emailLoginStatus = () => request<EmailLoginStatus>(p.authEmail);
+
+/** 每次重发都会让旧验证码作废，记住最新的 challengeId */
+export const requestLoginCode = (email: string) => request<OtpChallengeResponse>(p.authEmailRequest, { method: 'POST', body: { email } });
+
+/** 验证成功和密码登录走同一个收尾；失败不动现有会话 */
+export async function loginWithCode(challengeId: string, code: string) {
+  lastPull = 0;
+  const generation = ++authGeneration;
+  const data = await sessionLock(() => request<AuthPayload>(p.authEmailVerify, { method: 'POST', body: { challengeId, code } }));
   if (generation !== authGeneration) return;
   apply(data);
   publishAuth('login');

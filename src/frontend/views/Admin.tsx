@@ -3,7 +3,8 @@ import { Icon } from '../components/Icon';
 import { Empty, ErrorState, Loading } from '../components/States';
 import { authStore } from '../lib/account';
 import { grantAuthorization, listAuthorizedUsers, revokeAuthorization, type AuthorizedUser } from '../lib/membership';
-import { href } from '../lib/router';
+import { href, useRoute } from '../lib/router';
+import { MembershipAdmin } from './AdminMembership';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 
@@ -16,7 +17,7 @@ function stateText(u: AuthorizedUser) {
   return a.source === 'invite' ? `邀请码${a.inviteLabel ? `「${a.inviteLabel}」` : ''}${when}` : `手动开通${when}`;
 }
 
-/** 授权管理（仅管理员）：按邮箱或昵称找人，开通 / 撤销播放授权 */
+/** 会员管理（仅管理员）：会员名单里开通 / 撤销播放授权，会员申请里管名额和开关 */
 export function AdminView() {
   const status = useStore(authStore, (s) => s.status);
   const role = useStore(authStore, (s) => s.user?.role);
@@ -26,10 +27,11 @@ export function AdminView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const allowed = status === 'authenticated' && role === 'admin';
+  const tab = useRoute().query.get('tab') === 'apply' ? 'apply' : 'members';
 
   // 输入停 300ms 再查；新的查询会取消上一个
   useEffect(() => {
-    if (!allowed) return;
+    if (!allowed || tab !== 'members') return;
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       setError(null);
@@ -41,7 +43,7 @@ export function AdminView() {
       clearTimeout(t);
       ctrl.abort();
     };
-  }, [q, allowed, tick]);
+  }, [q, allowed, tick, tab]);
 
   const flip = async (u: AuthorizedUser) => {
     setBusy(u.id);
@@ -75,11 +77,25 @@ export function AdminView() {
     <div className="page">
       <header className="page-head reveal">
         <div className="kicker">管理</div>
-        <h1 className="page-title">授权管理</h1>
+        <h1 className="page-title">会员管理</h1>
         <p className="muted small" style={{ marginTop: 14 }}>
-          开通后对方可以放灰色歌曲。改动立刻生效，对方正在放的歌会按新权限重新取音源。
+          {tab === 'apply'
+            ? '会员申请按名额自动发码：正常发放后不超过 9 人，10 到 15 是软限制区，15 是硬顶。'
+            : '开通后对方可以放灰色歌曲。改动立刻生效，对方正在放的歌会按新权限重新取音源。'}
         </p>
       </header>
+      <div className="seg admin-tabs" role="tablist" aria-label="会员管理">
+        <a role="tab" href={href.admin()} aria-selected={tab === 'members'} className={tab === 'members' ? 'on' : ''}>
+          会员名单
+        </a>
+        <a role="tab" href={`${href.admin()}?tab=apply`} aria-selected={tab === 'apply'} className={tab === 'apply' ? 'on' : ''}>
+          会员申请
+        </a>
+      </div>
+      {tab === 'apply' ? (
+        <MembershipAdmin />
+      ) : (
+        <>
 
       <div className="admin-bar reveal" style={{ '--i': 1 } as React.CSSProperties}>
         <label className="admin-search">
@@ -126,6 +142,8 @@ export function AdminView() {
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   );

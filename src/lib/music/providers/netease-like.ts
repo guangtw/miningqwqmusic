@@ -556,6 +556,20 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return options?.unblockMode ?? "auto";
   }
 
+  private async resolveUnblockPlayLevel(trackId: string, requestedLevel: string): Promise<string> {
+    const requested = toPlayQualityLevel(requestedLevel);
+    if (!requested || !["jyeffect", "sky", "dolby"].includes(requested)) return requestedLevel;
+    try {
+      const availability = await this.getTrackQualityAvailability(trackId);
+      return resolvePlayableQualityFallback(requested, availability.availableLevels) ?? requestedLevel;
+    } catch (error) {
+      if (requestContext()?.signal?.aborted || (error instanceof Error && error.name === "AbortError") ||
+          (error instanceof AppError && [2002, 2008, 2011].includes(error.code))) throw error;
+      // Missing catalog metadata must not disable the existing matching path.
+      return requestedLevel;
+    }
+  }
+
   private buildPrimaryPlayQuery(trackId: string, level: string, unblockMode: PlayUnblockMode): Record<string, string | number | boolean> {
     if (unblockMode === "force_on") {
       return {
@@ -880,8 +894,9 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
   }
 
   private async resolvePlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
-    const level = this.resolvePlayLevel(options);
     const unblockMode = this.resolvePlayUnblockMode(options);
+    const requestedLevel = this.resolvePlayLevel(options);
+    let level = unblockMode === "force_on" ? await this.resolveUnblockPlayLevel(trackId, requestedLevel) : requestedLevel;
     let sourceError: unknown;
     const candidateRequest = async (path: string, query: Record<string, string | number | boolean>) => {
       try { return await this.request<AnyRecord>(path, query); }
@@ -937,6 +952,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
+
+    if (unblockMode === "auto") level = await this.resolveUnblockPlayLevel(trackId, requestedLevel);
 
     const fallbackSources = this.config.unblockSources?.length
       ? this.config.unblockSources

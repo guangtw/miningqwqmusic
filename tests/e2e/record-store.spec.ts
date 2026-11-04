@@ -27,7 +27,7 @@ function wav() {
   return out;
 }
 
-async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string; unblocked?: boolean; qualityUpgrade?: boolean } = {}) {
+async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string; unblocked?: boolean; qualityUpgrade?: boolean; spatialFallback?: boolean } = {}) {
   const calls: { path: string; method: string; authorization?: string; body: unknown }[] = [];
   let signedIn = false;
   let failHome = options.failedHome;
@@ -99,7 +99,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
     if (p.includes('/album/')) return ok({ id: 'b1', name: '测试专辑', coverUrl: cover, artists: tracks[0].artists, tracks });
     if (p.includes('/artist/')) return ok({ id: 'a1', name: '测试艺人', coverUrl: cover, topTracks: tracks });
-    if (p.endsWith('/quality-options')) return ok({ trackId: p.split('/')[4], availableLevels: ['standard', 'higher', 'exhigh'], fallbackMap: { jymaster: 'exhigh' } });
+    if (p.endsWith('/quality-options')) return ok({ trackId: p.split('/')[4], availableLevels: options.spatialFallback ? ['standard', 'higher', 'exhigh', 'sky'] : ['standard', 'higher', 'exhigh'], fallbackMap: options.spatialFallback ? { dolby: 'sky' } : { jymaster: 'exhigh' } });
     if (p.endsWith('/play-url')) {
       const unblocked = options.qualityUpgrade ? url.searchParams.get('unblockMode') === 'force_on' : options.unblocked;
       const level = options.qualityUpgrade ? unblocked ? url.searchParams.get('level') : 'exhigh' : options.actualQuality;
@@ -216,6 +216,26 @@ test('an unblock quality report is displayed immediately without an unknown tier
   await expect(page.getByText('音质未知', { exact: true })).toHaveCount(0);
   await expect(page.locator('.q-panel')).toHaveCount(0);
   expect(state.calls.some(c => c.path.includes('quality-options'))).toBe(false);
+  expect(state.errors).toEqual([]);
+});
+
+test('a Dolby preference falling back to sky displays the immersive tag consistently before and after opening the menu', async ({ page }, info) => {
+  const state = await backend(page, { actualQuality: 'sky', unblocked: true, spatialFallback: true });
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'dolby', preferUnblock: true })));
+  await page.goto('/#/playlist/p1');
+  await page.locator('.track .t').first().click();
+  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  const chip = page.getByRole('button', { name: '音质：沉浸环绕声', exact: true });
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute('title', '已选「杜比全景声」，实际「沉浸环绕声」');
+  await expect(page.locator('.q-panel')).toHaveCount(0);
+  await chip.click();
+  await expect(page.locator('.q-panel .q-now')).toContainText('360°');
+  await expect(page.getByRole('radio', { name: /杜比全景声/ })).toHaveText(/本曲按「沉浸环绕声」/);
+  await expect(page.getByRole('button', { name: '音质：杜比全景声', exact: true })).toHaveCount(0);
+  await chip.click();
+  await expect(chip).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cph.settings.v2')!).quality)).toBe('dolby');
   expect(state.errors).toEqual([]);
 });
 

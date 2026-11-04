@@ -63,6 +63,7 @@ function mockPlaySourceFetch(
     trackDurationMs?: number;
     headResponses?: Response[];
     fee?: number;
+    spatialLevels?: Array<"jyeffect" | "sky" | "dolby">;
   }
 ) {
   const trackId = options?.trackId ?? "108485";
@@ -77,6 +78,11 @@ function mockPlaySourceFetch(
     }
     if (url.includes("/song/detail")) {
       return trackDetailResponse(trackId, trackDurationMs, options?.fee);
+    }
+    if (url.includes("/song/music/detail")) {
+      const fields = { jyeffect: "je", sky: "sk", dolby: "db" };
+      const spatial = Object.fromEntries((options?.spatialLevels ?? ["jyeffect", "sky", "dolby"]).map(level => [fields[level], { br: 999000 }]));
+      return jsonResponse({ data: { l: { br: 128000 }, m: { br: 192000 }, h: { br: 320000 }, sq: { br: 999000 }, hr: { br: 1999000 }, jm: { br: 1999000 }, ...spatial } });
     }
     const next = responseQueue.shift();
     if (!next) {
@@ -415,7 +421,7 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.level).toBeUndefined();
   });
 
-  it.each(["standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "dolby", "jymaster"] as const)("fills an URL-only unblock result with this request's %s tier without extra requests", async level => {
+  it.each(["standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "dolby", "jymaster"] as const)("fills an URL-only unblock result with the supported requested %s tier", async level => {
     const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
     const fetchMock = mockPlaySourceFetch([
       jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000, level: "exhigh" }] }),
@@ -425,9 +431,10 @@ describe("NeteaseLikeAdapter mapping", () => {
       url: "https://cdn.test/unblocked", resolvedVia: "unblock", preview: false, level
     });
     const calls = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
-    expect(calls.map(url => url.pathname)).toEqual(["/song/url/v1", "/song/detail", "/song/url/match", "/unblocked"]);
-    expect(calls[2].searchParams.get("level")).toBe(level);
-    expect(fetchMock.mock.calls[3][1]?.method).toBe("HEAD");
+    const spatial = ["jyeffect", "sky", "dolby"].includes(level);
+    expect(calls.map(url => url.pathname)).toEqual(["/song/url/v1", "/song/detail", ...(spatial ? ["/song/music/detail"] : []), "/song/url/match", "/unblocked"]);
+    expect(calls.find(url => url.pathname === "/song/url/match")!.searchParams.get("level")).toBe(level);
+    expect(fetchMock.mock.calls.at(-1)![1]?.method).toBe("HEAD");
   });
 
   it("preserves an explicit unblock quality report over the requested tier", async () => {
@@ -437,6 +444,67 @@ describe("NeteaseLikeAdapter mapping", () => {
       jsonResponse({ data: "https://cdn.test/unblocked", level: "lossless" })
     ]);
     await expect(adapter.getPlaySource("108485", { level: "jymaster" })).resolves.toMatchObject({ level: "lossless", resolvedVia: "unblock" });
+  });
+
+  it.each([false, true])("requests sky when Dolby is missing, independently of whether the menu was opened: %s", async warm => {
+    const adapter = createAdapter();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (init?.method === "HEAD") return headResponse();
+      if (url.pathname === "/song/detail") return trackDetailResponse();
+      if (url.pathname === "/song/music/detail") return jsonResponse({ data: { h: { br: 320000 }, hr: { br: 999000 }, sk: { br: 999000 } } });
+      if (url.pathname === "/song/url/v1") return jsonResponse({ data: [{ url: "https://cdn.test/full", time: 240000, level: url.searchParams.get("level") }] });
+      throw Error(`Unexpected request: ${url.pathname}`);
+    });
+    if (warm) await adapter.getTrackQualityAvailability("108485");
+    const result = await adapter.getPlaySource("108485", { level: "dolby", unblockMode: "force_on" });
+    expect(result).toMatchObject({ level: "sky", resolvedVia: "unblock", preview: false });
+    await adapter.getTrackQualityAvailability("108485");
+    await expect(adapter.getPlaySource("108485", { level: "dolby", unblockMode: "force_on" })).resolves.toMatchObject({ level: "sky" });
+    const calls = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
+    expect(calls.filter(url => url.pathname === "/song/url/v1").map(url => url.searchParams.get("level"))).toEqual(["sky", "sky"]);
+    expect(calls.filter(url => url.pathname === "/song/music/detail")).toHaveLength(1);
+    expect(calls.filter(url => url.pathname === "/song/detail")).toHaveLength(1);
+  });
+
+  it("applies the same spatial fallback when auto mode recovers an official preview through matching", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview", time: 30000 }] }),
+      jsonResponse({ data: "https://cdn.test/unblocked" })
+    ], { spatialLevels: ["sky"] });
+    await expect(adapter.getPlaySource("108485", { level: "dolby", unblockMode: "auto" })).resolves.toMatchObject({ level: "sky", resolvedVia: "unblock" });
+    const match = fetchMock.mock.calls.map(([url]) => new URL(String(url))).find(url => url.pathname === "/song/url/match")!;
+    expect(match.searchParams.get("level")).toBe("sky");
+  });
+
+  it.each(["lossless", "hires", "jymaster"] as const)("preserves the existing %s request contract without spatial metadata queries", async level => {
+    const adapter = createAdapter();
+    const fetchMock = mockPlaySourceFetch([jsonResponse({ data: "https://cdn.test/unblocked" })]);
+    await expect(adapter.getPlaySource("108485", { level, unblockMode: "force_on" })).resolves.toMatchObject({ level });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/song/music/detail"))).toBe(false);
+  });
+
+  it("keeps matching usable if optional spatial catalog metadata is unavailable", async () => {
+    const adapter = createAdapter();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (init?.method === "HEAD") return headResponse();
+      if (url.pathname === "/song/detail") return trackDetailResponse();
+      if (url.pathname === "/song/music/detail") return jsonResponse({ code: 503 }, 503);
+      return jsonResponse({ data: [{ url: "https://cdn.test/full", time: 240000, level: url.searchParams.get("level") }] });
+    });
+    await expect(adapter.getPlaySource("108485", { level: "dolby", unblockMode: "force_on" })).resolves.toMatchObject({ level: "dolby" });
+    expect(fetchMock.mock.calls.some(([url]) => new URL(String(url)).searchParams.get("level") === "dolby")).toBe(true);
+  });
+
+  it("stops before resolving audio on a spatial metadata rate limit", async () => {
+    const adapter = createAdapter();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async input => {
+      return String(input).includes("/song/music/detail") ? jsonResponse({ code: 429 }, 429) : trackDetailResponse();
+    });
+    await expect(adapter.getPlaySource("108485", { level: "dolby", unblockMode: "force_on" })).rejects.toMatchObject({ code: 2002 });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/song/url/"))).toBe(false);
   });
 
   it.each([

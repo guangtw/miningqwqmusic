@@ -9,6 +9,8 @@ interface Props {
   available?: PlayQualityLevel[] | null;
   /** 选了这首没有的音质时，后端实际会给哪一档 */
   fallback?: Partial<Record<PlayQualityLevel, PlayQualityLevel>> | null;
+  /** 当前播放响应的档位，优先于曲库对所选档位的回退预估。 */
+  actualLevel?: PlayQualityLevel | null;
 }
 
 const labelOf = (k: PlayQualityLevel) => qualities.find((q) => q.key === k)?.label ?? k;
@@ -17,9 +19,10 @@ const labelOf = (k: PlayQualityLevel) => qualities.find((q) => q.key === k)?.lab
  * 九种音质按三档排：常规是一排分段按钮，无损是两行卡片，臻品是 2×2 卡片。
  * 这首歌没有的音质仍可选（作为以后的偏好），但会注明这首实际按哪档放。
  */
-export function QualityPicker({ value, onPick, available = null, fallback = null }: Props) {
+export function QualityPicker({ value, onPick, available = null, fallback = null, actualLevel = null }: Props) {
   const missing = (q: QualityOption) => !!available && !available.includes(q.key);
   const note = (q: QualityOption) => {
+    if (q.key === value && actualLevel) return actualLevel === value ? null : `本曲按「${labelOf(actualLevel)}」`;
     if (!missing(q)) return null;
     const f = fallback?.[q.key];
     return f ? `本曲按「${labelOf(f)}」` : '本曲没有';

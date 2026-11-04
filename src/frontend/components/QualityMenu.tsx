@@ -134,6 +134,7 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
               onPick={(k) => setQuality(k)}
               available={forTrack?.availableLevels ?? null}
               fallback={forTrack?.fallbackMap ?? null}
+              actualLevel={level}
             />
             <SourceRecovery variant="panel" />
             <p className="q-foot">

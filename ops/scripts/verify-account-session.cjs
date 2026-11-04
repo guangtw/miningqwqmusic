@@ -119,6 +119,9 @@ async function api(path, method='GET', body, authenticated=true) {
       if (!jiangnan.url || jiangnan.preview || !jiangnan.level || jiangnan.requestedLevel !== 'hires') throw Error('Jiangnan playback quality report is missing');
       if (jiangnan.access !== 'vip') throw Error('Jiangnan VIP classification missing');
       console.log('JIANGNAN_QUALITY_REPORT_VERIFIED', JSON.stringify({level:jiangnan.level,requestedLevel:jiangnan.requestedLevel,resolvedVia:jiangnan.resolvedVia}));
+      const spatial = (await api('/api/music/track/1953696921/play-url?level=dolby&unblockMode=force_on')).data;
+      if (!spatial.url || spatial.preview || spatial.requestedLevel !== 'dolby' || spatial.level !== 'sky') throw Error('Dolby-to-immersive fallback is inconsistent');
+      console.log('DOLBY_TO_IMMERSIVE_FALLBACK_VERIFIED');
       console.log('OFFICIAL_FIRST_AND_IMMEDIATE_QUALITY_VERIFIED');
       await api('/api/music/search?q='+encodeURIComponent('播放验收')+'&page=1&pageSize=1');
       console.log('SEARCH_AFTER_PLAYBACK_PASSED');

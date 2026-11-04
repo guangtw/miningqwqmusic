@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "platforms": [
+    {
+      "platform": "windows",
+      "name": "Windows",
+      "version": "1.0.0",
+      "architecture": "x64",
+      "releaseTag": "windows-v1.0.0",
+      "publishedAt": "2026-11-01T13:30:25Z",
+      "artifacts": [
+        {
+          "variant": "installer",
+          "fileName": "MiningQwQMusic-Windows-1.0.0-x64-Setup.exe",
+          "size": 88154103,
+          "sha256": "4f17b68163dba7b7aefbd0f89b70afbb832ac98bf4f764c3554a107587dbd92b",
+          "contentType": "application/vnd.microsoft.portable-executable"
+        }
+      ]
+    },
+    {
+      "platform": "android",
+      "name": "Android",
+      "version": "1.0.3",
+      "architecture": "universal",
+      "releaseTag": "android-v1.0.3",
+      "publishedAt": "2026-11-02T03:58:19Z",
+      "artifacts": [
+        {
+          "variant": "apk",
+          "fileName": "MiningQwQMusic-android-v1.0.3.apk",
+          "size": 1028139,
+          "sha256": "91f0846d02d6bca24d4a28471a67e2bb4b98ddf48db86b91c65011db40d7d30a",
+          "contentType": "application/vnd.android.package-archive"
+        }
+      ]
+    }
+  ]
+}

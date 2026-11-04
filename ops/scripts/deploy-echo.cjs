@@ -190,6 +190,8 @@ function verifyLoopbackListeners() {
   }
 }
 function liveAccountQa(origin) {
+  execFileSync(node, [path.join(packageDir, 'ops/verify-client-downloads.cjs'), origin,
+    path.join(musicRelease, 'src/lib/client-downloads/catalog.json')], { stdio: 'inherit', timeout: 90000 });
   if (fs.existsSync(musicBase + '/shared/mail.env')) {
     execFileSync(node, ['scripts/mail-channel.mjs', '--verify'], { cwd: loginRelease, stdio: 'inherit', timeout: 35000 });
     console.log('SMTP_AUTHENTICATION_REGRESSION_PASSED');

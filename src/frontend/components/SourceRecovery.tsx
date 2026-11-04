@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { usePresence } from '../lib/motion';
 import { href, navigate } from '../lib/router';
-import { recoverSource, useRecoveryPhase, type RecoveryPhase } from '../lib/sourceRecovery';
+import { recoverSource, setRecoveryHints, useRecoveryPhase, type RecoveryPhase } from '../lib/sourceRecovery';
+import { toast } from '../lib/toast';
 import { uiStore } from '../player/ui';
 import { Icon } from './Icon';
 import { toggleNowPlaying } from './PlayerBar';
@@ -12,7 +13,7 @@ type Variant = 'line' | 'bar' | 'panel';
 const FULL = '放的歌不对？点我暂时切换回稳定音源';
 const TEXT: Record<Variant, Record<Phase, string>> = {
   line: { offer: FULL, switching: '正在切回稳定音源…', done: '本曲已切回稳定音源' },
-  panel: { offer: '放的歌不对？点这里切回稳定音源', switching: '正在切回稳定音源…', done: '本曲已切回稳定音源，下一首照常' },
+  panel: { offer: FULL, switching: '正在切回稳定音源…', done: '本曲已切回稳定音源，下一首照常' },
   bar: { offer: '放的歌不对？换回稳定音源', switching: '正在切回稳定音源…', done: '已切回稳定音源' },
 };
 const HINT = '这首放的是其他音源的完整版。不对的话点一下，本曲先换回原平台音源，下一首照常';
@@ -30,6 +31,7 @@ export function openSourceQA(e: React.MouseEvent) {
  * 「放的歌不对？」入口：只在这首是免费歌、走了完整音源时才有，不弹窗。
  * line：正在播放页歌手下面；bar：播放台歌手名下面（只在电脑上）。这两处只在露面期间出现（超清母带每首开头一会儿，
  * 别的音质一次打开网页一回），点过之后显示「已切回」和 Q&A 入口，停一会儿收起。
+ * 歌名附近露面时后面跟「知道了，不再提醒」，点了这台设备上就只剩音质面板里的入口。
  * panel：音质面板里，能切就一直在。
  */
 export function SourceRecovery({ variant }: { variant: Variant }) {
@@ -63,10 +65,24 @@ export function SourceRecovery({ variant }: { variant: Variant }) {
             {TEXT[variant][p]}
           </span>
         </button>
+        {p === 'offer' && variant !== 'panel' && (
+          <button
+            type="button"
+            className="src-mute"
+            title="以后不在歌名附近提醒；音质面板里随时能切回稳定音源"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRecoveryHints(false);
+              toast('好，不再提醒。以后歌不对，在音质面板里就能切回稳定音源。');
+            }}
+          >
+            {variant === 'bar' ? '知道了' : '知道了，不再提醒'}
+          </button>
+        )}
         {qa && (
           <a className="src-qa" href={href.help('source')} onClick={openSourceQA} title="为什么会放错？怎么避开？">
             <b className="mono">Q&amp;A</b>
-            {variant !== 'bar' && <span>{p === 'done' ? '为什么会放错？' : '为什么'}</span>}
+            {variant !== 'bar' && p === 'done' && <span>为什么会放错？</span>}
           </a>
         )}
       </span>

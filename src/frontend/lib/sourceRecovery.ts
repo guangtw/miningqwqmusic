@@ -1,11 +1,12 @@
 import { currentTrack, playerStore, switchToStableSource } from '../player/player';
+import { readJSON, writeJSON } from './storage';
 import { createStore, useStore } from './store';
 
 /**
  * 「放的歌不对？」入口的状态。播放器只给能不能切（canSwitchToStableSource）和切的动作；
  * 这里补上两件事：
  * 1. 歌名附近什么时候冒出来（nudge）：放错集中在免费歌 + 超清母带，这个档位每首开头露 10 秒；
- *    别的档位一次打开网页只露一回。其余时候只在音质面板里。
+ *    别的档位一次打开网页只露一回。其余时候只在音质面板里。点过「知道了，不再提醒」就再也不露（记在这台设备上）。
  * 2. 点了之后那一小段：切换中 → 切好了（带 Q&A 入口，停一会儿）→ 收起。几处入口共用同一份，点了哪个都一起变。
  */
 interface Recovery {
@@ -15,14 +16,17 @@ interface Recovery {
   ok: boolean;
   /** 正在歌名附近露面的那首 */
   nudge: string | null;
+  /** 用户点过「知道了，不再提醒」 */
+  muted: boolean;
 }
 
 /** 切好之后那行字（带 Q&A）停多久 */
 const DONE_MS = 12_000;
 const NUDGE_MASTER_MS = 10_000;
 const NUDGE_OTHER_MS = 6_000;
+const MUTE_KEY = 'cph.srcfix.muted.v1';
 const idle = { trackId: null, settledAt: 0, ok: false };
-export const recoveryStore = createStore<Recovery>({ ...idle, nudge: null });
+export const recoveryStore = createStore<Recovery>({ ...idle, nudge: null, muted: readJSON<unknown>(MUTE_KEY, false) === true });
 
 let clearTimer: ReturnType<typeof setTimeout> | undefined;
 let nudgeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -40,7 +44,7 @@ function check() {
     clearTimeout(nudgeTimer);
     recoveryStore.set({ nudge: null });
   }
-  if (s.canSwitchToStableSource && id && nudgedFor !== id) {
+  if (s.canSwitchToStableSource && id && nudgedFor !== id && !r.muted) {
     nudgedFor = id;
     const master = s.level === 'jymaster';
     if (master || !nudgedOther) {
@@ -77,6 +81,13 @@ export function recoverSource() {
   // 被限流时播放器当场就收手了，不会再有状态变化
   check();
   return true;
+}
+
+/** 「知道了，不再提醒」：歌名附近不再露面，音质面板里的入口照旧；设置页可以改回来 */
+export function setRecoveryHints(on: boolean) {
+  writeJSON(MUTE_KEY, !on);
+  clearTimeout(nudgeTimer);
+  recoveryStore.set(on ? { muted: false } : { muted: true, nudge: null });
 }
 
 export type RecoveryPhase = 'offer' | 'switching' | 'done' | null;

@@ -7,6 +7,7 @@ import { authStore } from '../lib/account';
 import { transition } from '../lib/motion';
 import { getSettings, subscribeSettings, updateSettings, type Settings, type Theme } from '../lib/settings';
 import { href } from '../lib/router';
+import { recoveryStore, setRecoveryHints } from '../lib/sourceRecovery';
 import { useStore } from '../lib/store';
 import { useAsync } from '../lib/useAsync';
 
@@ -123,6 +124,7 @@ function SourceField() {
   const on = useSyncExternalStore(subscribeSettings, () => getSettings().preferUnblock);
   const seen = useRef(on);
   if (on) seen.current = true;
+  const muted = useStore(recoveryStore, (s) => s.muted);
   return (
     <div className="field reveal" style={{ '--i': 1 } as React.CSSProperties}>
       <span className="label">音源</span>
@@ -152,6 +154,14 @@ function SourceField() {
             放的歌不对？看 Q&amp;A
           </a>
         </p>
+        {muted && (
+          <p className="help">
+            歌名附近的「放的歌不对？」提醒已关掉，音质面板里的入口还在。{' '}
+            <button type="button" className="link" onClick={() => setRecoveryHints(true)}>
+              重新显示提醒
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

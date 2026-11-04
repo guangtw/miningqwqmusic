@@ -272,6 +272,23 @@ it('nudges near the title on every 超清母带 track, but only once per visit f
   expect(nudged).toEqual(['m1', 'm2', 'o1', null]);
 });
 
+it('stops nudging near the title after 知道了, and can turn hints back on', async () => {
+  f.source.mockResolvedValue({ ...source, access: 'free', resolvedVia: 'unblock', level: 'jymaster' });
+  const player = await import('@/src/frontend/player/player');
+  const { recoveryStore, setRecoveryHints } = await import('@/src/frontend/lib/sourceRecovery');
+  player.playList([track, { ...track, id: 'two' }, { ...track, id: 'three' }]);
+  await vi.waitFor(() => expect(recoveryStore.get().nudge).toBe('one'));
+  setRecoveryHints(false);
+  expect(recoveryStore.get()).toMatchObject({ nudge: null, muted: true });
+  expect(localStorage.getItem('cph.srcfix.muted.v1')).toBe('true');
+  player.next();
+  await vi.waitFor(() => expect(player.playerStore.get()).toMatchObject({ loading: false, canSwitchToStableSource: true }));
+  expect(recoveryStore.get().nudge).toBeNull();
+  setRecoveryHints(true);
+  player.next();
+  await vi.waitFor(() => expect(recoveryStore.get().nudge).toBe('three'));
+});
+
 it('honors a local pause during address loading and lets only the leader loop automatically', async () => {
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValue(new Promise(r => { resolve = r; }));

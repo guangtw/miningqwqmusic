@@ -79,6 +79,8 @@ export const href = {
   settings: () => '#/settings',
   /** 问与答；topic 对应页面里的一节，进来时滚到那里 */
   help: (topic?: string) => `#/help${topic ? `?q=${encodeURIComponent(topic)}` : ''}`,
+  /** 客户端下载；topic 同问与答，进来时滚到某一问 */
+  download: (topic?: string) => `#/download${topic ? `?q=${encodeURIComponent(topic)}` : ''}`,
   admin: () => '#/admin',
   account: () => '#/account',
   accountSettings: () => '#/account?tab=settings',

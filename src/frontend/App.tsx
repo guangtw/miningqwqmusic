@@ -36,6 +36,7 @@ import { RadioView } from './views/Radio';
 import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
 import { HelpView } from './views/HelpView';
+import { DownloadView } from './views/DownloadView';
 import { SharedPlaylistView } from './views/SharedPlaylist';
 
 function View({ route }: { route: Route }) {
@@ -65,6 +66,8 @@ function View({ route }: { route: Route }) {
       return <SettingsView />;
     case 'help':
       return <HelpView topic={route.query.get('q') ?? ''} />;
+    case 'download':
+      return <DownloadView topic={route.query.get('q') ?? ''} />;
     case 'admin':
       return <AdminView />;
     case 'account':

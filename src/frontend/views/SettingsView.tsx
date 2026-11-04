@@ -1,6 +1,8 @@
 import { useRef, useSyncExternalStore } from 'react';
 import { music } from '../api';
 import { api } from '../config/site';
+import { Icon } from '../components/Icon';
+import { PlatformGlyph } from '../components/PlatformGlyph';
 import { QualityPicker } from '../components/QualityPicker';
 import { setQuality } from '../player/player';
 import { authStore } from '../lib/account';
@@ -82,6 +84,21 @@ export function SettingsPanel() {
         </div>
 
         <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
+          <span className="label">客户端</span>
+          <a className="dl-entry" href={href.download()}>
+            <span className="dl-entry-glyphs" aria-hidden="true">
+              <PlatformGlyph platform="windows" size={18} />
+              <PlatformGlyph platform="android" size={18} />
+            </span>
+            <span className="dl-entry-text">
+              <b>下载客户端</b>
+              <small>Windows 和 Android，登录后歌单照常同步</small>
+            </span>
+            <Icon name="arrow" />
+          </a>
+        </div>
+
+        <div className="field reveal" style={{ '--i': 5 } as React.CSSProperties}>
           <span className="label">后端</span>
           <div>
             <div className="field-inline">

@@ -17,6 +17,14 @@ const user = { id: 'u1', email: 'listener@example.com', nickname: '唱片听众'
 const friend = { id: 'u2', email: 'friend@example.com', nickname: '同桌' };
 const listenRoom = { id: 'room1', inviteCode: 'ABC123', hostUserId: 'u1', status: 'open', version: 1, playbackState: { queue: tracks, currentIndex: 0, currentTimeMs: 0, isPlaying: false, mode: 'sequence', updatedAt: new Date().toISOString() }, members: [{ user, role: 'host', joinedAt: '', lastSeenAt: '', online: true }, { user: friend, role: 'member', joinedAt: '', lastSeenAt: '', online: true }], lastActor: user, expiresAt: '', createdAt: '', updatedAt: '' };
 
+const artifact = (platform: string, variant: string, fileName: string, size: number, sha256: string) => ({ variant, fileName, size, sha256, contentType: 'application/octet-stream', url: `/downloads/clients/${fileName}`, downloadUrl: `/api/downloads/${platform}?variant=${variant}` });
+const clientDownloads = { schemaVersion: 1, platforms: [
+  { platform: 'windows', name: 'Windows', version: '1.2.0', architecture: 'x64', releaseTag: 'windows-v1.2.0', publishedAt: '2026-11-01T13:30:25Z', downloadUrl: '/api/downloads/windows',
+    artifacts: [artifact('windows', 'installer', 'MiningQwQMusic-Windows-1.2.0-x64-Setup.exe', 88154103, 'a'.repeat(56) + '87dbd92b')] },
+  { platform: 'android', name: 'Android', version: '1.0.9', architecture: 'universal', releaseTag: 'android-v1.0.9', publishedAt: '2026-11-02T03:58:19Z', downloadUrl: '/api/downloads/android',
+    artifacts: [artifact('android', 'apk', 'MiningQwQMusic-android-v1.0.9.apk', 1028139, 'b'.repeat(64))] },
+] };
+
 function wav() {
   const length = 8000 * 30 * 2;
   const out = Buffer.alloc(44 + length);
@@ -71,6 +79,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
       return ok(discover);
     }
     if (p.endsWith('/search-assist')) return ok(assist);
+    if (p === '/api/downloads') return ok(clientDownloads);
     if (p.endsWith('/search/artists')) return ok({ items: [{ id: 'a1', name: '测试艺人', coverUrl: cover }], page: 1, pageSize: 30, total: 1 });
     if (p.endsWith('/search/playlists')) return ok({ items: [playlist], page: 1, pageSize: 30, total: 1 });
     if (p.endsWith('/search')) return ok({ items: url.searchParams.get('page') === '2' ? [tracks[1]] : tracks, page: Number(url.searchParams.get('page')), pageSize: 30, total: 31 });
@@ -535,4 +544,40 @@ test('upstream desktop/mobile visual fidelity', async ({ page, browser }, info) 
   await fs.writeFile(path.join(dir, `${info.project.name}-upstream.png`), expected);
   expect(actual.equals(expected), 'Upstream and integrated screenshots should be pixel identical').toBe(true);
   await reference.close();
+});
+
+test('client downloads: versions come from the API, the link downloads in place, the Android shell sees its update', async ({ page, browser }, info) => {
+  const state = await backend(page);
+  await page.route('**/api/downloads/windows', (route) => route.fulfill({ body: 'MZ', headers: { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="MiningQwQMusic-Windows-1.2.0-x64-Setup.exe"' } }));
+  await page.goto('/#/settings');
+  await page.getByRole('link', { name: /下载客户端/ }).click();
+  await expect(page).toHaveURL(/#\/download$/);
+  const windows = page.locator('.dl-card[data-platform="windows"]');
+  await expect(windows.locator('.dl-meta')).toContainText('v1.2.0');
+  await expect(windows.locator('.dl-meta')).toContainText('84.1 MB');
+  await expect(page.locator('.dl-card[data-platform="android"] .dl-meta')).toContainText('1.0 MB');
+  await expect(windows.locator('.dl-go')).toHaveAttribute('href', '/api/downloads/windows');
+  await windows.getByRole('button', { name: /^a{8}…87dbd92b$/ }).click();
+  await expect(windows.locator('.dl-hash-v')).toHaveText('a'.repeat(56) + '87dbd92b');
+
+  const download = page.waitForEvent('download');
+  await windows.locator('.dl-go').click();
+  // 「已交给浏览器下载」只停几秒，先看它再等下载事件
+  await expect(windows.locator('.dl-go')).toContainText('已交给浏览器下载');
+  expect((await download).suggestedFilename()).toBe('MiningQwQMusic-Windows-1.2.0-x64-Setup.exe');
+  await expect(windows.getByRole('link', { name: '用 v1.2.0 的直链再试一次' })).toHaveAttribute('href', '/downloads/clients/MiningQwQMusic-Windows-1.2.0-x64-Setup.exe');
+  await expect(page).toHaveURL(/#\/download$/);
+  expect(state.errors).toEqual([]);
+
+  if (info.project.name !== 'chromium-mobile') return;
+  const shell = await browser.newContext({ ...devices['Pixel 7'], userAgent: `${devices['Pixel 7'].userAgent} MiningQwQMusicAndroid/1.0.3` });
+  const phone = await shell.newPage();
+  await backend(phone);
+  await phone.goto('/#/download');
+  const android = phone.locator('.dl-card').first();
+  await expect(android).toHaveAttribute('data-platform', 'android');
+  await expect(android.locator('.dl-tag')).toHaveText('有新版本 · 你的是 v1.0.3');
+  await expect(android.locator('.dl-go')).toContainText('更新到 v1.0.9');
+  await expect(android.locator('.dl-go')).toHaveAttribute('download', 'MiningQwQMusic-android-v1.0.9.apk');
+  await shell.close();
 });

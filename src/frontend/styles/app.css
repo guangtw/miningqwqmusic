@@ -8085,3 +8085,428 @@ html {
   text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
   text-underline-offset: 3px;
 }
+
+/* ---- 客户端下载 ----
+   每个平台是一张唱片封套：唱片从封套右边探出一截，悬停多露一点；
+   点下载时整张滑出来转几圈，按钮换成「已交给浏览器下载」，然后再收回去。 */
+.dl-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.dl-card {
+  --hue: 24;
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--surface);
+  transition: border-color 0.3s, box-shadow 0.4s var(--ease-out);
+}
+.dl-card[data-platform='windows'] {
+  --hue: 208;
+}
+.dl-card[data-platform='android'] {
+  --hue: 148;
+}
+.dl-card.hot {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--line));
+  box-shadow: var(--shadow-1);
+}
+
+.dl-art {
+  position: relative;
+  width: 120px;
+  height: 120px;
+}
+.dl-sleeve {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.94);
+  background:
+    radial-gradient(120% 90% at 18% 10%, rgba(255, 255, 255, 0.22), transparent 55%),
+    linear-gradient(150deg, hsl(var(--hue) 34% 52%), hsl(var(--hue) 42% 30%));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 1px 2px rgba(17, 17, 17, 0.12), 0 14px 28px -16px hsl(var(--hue) 40% 20% / 0.7);
+}
+.dl-sleeve-ver {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.72);
+}
+.dl-disc {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  transform: translateX(30%);
+  transition: transform 0.7s var(--ease-spring);
+}
+/* 唱片表面的反光不跟着转 */
+.dl-disc::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 20deg, transparent 0 6%, rgba(255, 255, 255, 0.13) 12%, transparent 20% 52%, rgba(255, 255, 255, 0.1) 60%, transparent 68%);
+  pointer-events: none;
+}
+.dl-disc-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle at 50% 50%, #141414 0 1.4px, #222 1.4px 2.8px);
+  box-shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+}
+.dl-label {
+  display: grid;
+  place-items: center;
+  width: 36%;
+  height: 36%;
+  border-radius: 50%;
+  color: #fff;
+  background: hsl(var(--hue) 46% 56%);
+  box-shadow: 0 0 0 3px #101010;
+}
+.dl-card:hover .dl-disc {
+  transform: translateX(44%) rotate(24deg);
+}
+.dl-card.spinning .dl-disc {
+  transform: translateX(64%);
+}
+.dl-card.spinning .dl-disc-face {
+  animation: dl-spin 1.6s linear infinite;
+}
+@keyframes dl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dl-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.dl-title h2 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+.dl-tag {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--surface-2);
+  animation: dl-tag-in 0.6s 0.35s var(--ease-spring) both;
+}
+.dl-tag.hot {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+@keyframes dl-tag-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+.dl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: var(--ink-2);
+}
+.dl-meta span + span::before {
+  content: '·';
+  margin: 0 7px;
+  color: var(--ink-3);
+}
+.dl-needs {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.dl-perks {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.5;
+}
+/* 小圆点是一圈刻纹 */
+.dl-perks li {
+  position: relative;
+  padding-left: 18px;
+}
+.dl-perks li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.5em;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px hsl(var(--hue) 36% 48%);
+}
+
+.dl-act {
+  margin-top: 24px;
+}
+.dl-go {
+  height: 46px;
+  padding: 0 22px;
+}
+.dl-go-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  animation: dl-face-in 0.45s var(--ease-spring) both;
+}
+@keyframes dl-face-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.dl-go-size {
+  margin-left: 2px;
+  opacity: 0.6;
+}
+.dl-card.spinning .dl-go {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.dl-retry {
+  animation: reveal 0.5s var(--ease-out) both;
+}
+
+.dl-hash {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+.dl-hash > span.mono {
+  flex: none;
+  font-size: 11px;
+}
+.dl-hash-v {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  text-align: left;
+  transition: color 0.2s;
+}
+.dl-hash-v:hover {
+  color: var(--ink);
+}
+.dl-hash-v.open {
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.6;
+}
+.dl-copy {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  border-radius: 50%;
+  color: var(--ink-2);
+  transition: background 0.2s, color 0.2s, transform 0.25s var(--ease-spring);
+}
+.dl-copy:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.dl-copy:active {
+  transform: scale(0.88);
+}
+.dl-copy svg {
+  width: 15px;
+  height: 15px;
+}
+.dl-copy.done {
+  color: var(--accent);
+}
+.dl-copy.done svg {
+  animation: dl-pop 0.45s var(--ease-spring);
+}
+@keyframes dl-pop {
+  from {
+    transform: scale(0.4);
+  }
+}
+.dl-line {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.dl-line code {
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+  word-break: break-all;
+}
+.dl-line .dl-copy {
+  margin-left: 0;
+}
+.dl-line .dl-copy:hover {
+  background: var(--surface);
+}
+
+.dl-card-skel .dl-sleeve {
+  box-shadow: none;
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface) 40%, var(--surface-2) 80%);
+  background-size: 300% 100%;
+}
+.dl-card-skel .dl-body {
+  min-height: 190px;
+}
+
+.dl-apple {
+  max-width: 44em;
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  background: var(--accent-soft);
+}
+.dl-apple b {
+  margin-right: 4px;
+  color: var(--ink);
+}
+
+.dl-steps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dl-steps-head h2 {
+  font: inherit;
+}
+.dl-steps-head .seg button {
+  height: 28px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* 设置里的入口：两枚平台小标叠在一起，悬停时分开 */
+.dl-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.2s, transform 0.25s var(--ease-spring);
+}
+.dl-entry:hover {
+  border-color: var(--line-strong);
+}
+.dl-entry:active {
+  transform: scale(0.98);
+}
+.dl-entry-glyphs {
+  display: flex;
+}
+.dl-entry-glyphs .glyph {
+  box-sizing: content-box;
+  padding: 8px;
+  border-radius: 50%;
+  color: #fff;
+  background: hsl(208 34% 46%);
+  box-shadow: 0 0 0 2px var(--surface);
+  transition: margin 0.4s var(--ease-spring), transform 0.4s var(--ease-spring);
+}
+.dl-entry-glyphs .glyph + .glyph {
+  margin-left: -9px;
+  background: hsl(148 34% 40%);
+}
+.dl-entry:hover .glyph + .glyph {
+  margin-left: 3px;
+  transform: rotate(-8deg);
+}
+.dl-entry-text b {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.dl-entry-text small {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.dl-entry > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-3);
+  transition: transform 0.3s var(--ease-spring), color 0.2s;
+}
+.dl-entry:hover > svg {
+  color: var(--ink);
+  transform: translateX(3px);
+}
+
+@media (max-width: 860px) {
+  .dl-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .dl-card {
+    padding: 20px;
+    gap: 18px;
+  }
+  .dl-art {
+    width: 96px;
+    height: 96px;
+  }
+  .dl-disc {
+    top: 4px;
+    left: 4px;
+    width: 88px;
+    height: 88px;
+  }
+  .dl-sleeve .glyph {
+    width: 38px;
+    height: 38px;
+  }
+  .dl-title h2 {
+    font-size: 28px;
+  }
+  .dl-go {
+    width: 100%;
+  }
+}

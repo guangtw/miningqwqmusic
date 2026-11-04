@@ -55,6 +55,8 @@ export const api = {
     insight: '/api/music/track/:id/insight',
     downloadUrl: '/api/music/track/:id/download-url',
     comments: '/api/music/track/:id/comments',
+    /** Windows / Android 客户端的版本、大小和哈希 */
+    clientDownloads: '/api/downloads',
     sceneSati: '/api/music/scene/sati',
     sceneSport: '/api/music/scene/sport',
     playlist: '/api/music/playlist/:id',

@@ -6,6 +6,7 @@ import { PlatformGlyph } from '../components/PlatformGlyph';
 import { QualityPicker } from '../components/QualityPicker';
 import { setQuality } from '../player/player';
 import { authStore } from '../lib/account';
+import { isNativeClient } from '../lib/clientDownloads';
 import { transition } from '../lib/motion';
 import { getSettings, subscribeSettings, updateSettings, type Settings, type Theme } from '../lib/settings';
 import { href } from '../lib/router';
@@ -83,7 +84,7 @@ export function SettingsPanel() {
           </div>
         </div>
 
-        <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
+        {!isNativeClient() && <div className="field reveal" style={{ '--i': 4 } as React.CSSProperties}>
           <span className="label">客户端</span>
           <a className="dl-entry" href={href.download()}>
             <span className="dl-entry-glyphs" aria-hidden="true">
@@ -96,7 +97,7 @@ export function SettingsPanel() {
             </span>
             <Icon name="arrow" />
           </a>
-        </div>
+        </div>}
 
         <div className="field reveal" style={{ '--i': 5 } as React.CSSProperties}>
           <span className="label">后端</span>

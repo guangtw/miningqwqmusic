@@ -89,6 +89,11 @@ export function detectVisitor(ua = navigator.userAgent, w: { chrome?: { webview?
   return { platform: null, apple: false, inClient: null };
 }
 
+/** 客户端不再推广安装客户端；普通 Windows / Android 浏览器仍可看到下载入口。 */
+export function isNativeClient(): boolean {
+  return typeof window !== 'undefined' && typeof navigator !== 'undefined' && detectVisitor().inClient !== null;
+}
+
 /** 推荐的那个排第一，其余保持接口给的顺序 */
 export function orderFor(platforms: ClientPlatform[], first: string | null): ClientPlatform[] {
   if (!first) return platforms;

@@ -37,7 +37,16 @@ import { SearchView } from './views/SearchView';
 import { SettingsView } from './views/SettingsView';
 import { HelpView } from './views/HelpView';
 import { DownloadView } from './views/DownloadView';
+import { isNativeClient } from './lib/clientDownloads';
 import { SharedPlaylistView } from './views/SharedPlaylist';
+
+function ClientDownloadRoute({ topic }: { topic: string }) {
+  const native = isNativeClient();
+  useEffect(() => {
+    if (native) location.replace(href.settings());
+  }, [native]);
+  return native ? <SettingsView /> : <DownloadView topic={topic} />;
+}
 
 function View({ route }: { route: Route }) {
   const [section, id] = route.parts;
@@ -67,7 +76,7 @@ function View({ route }: { route: Route }) {
     case 'help':
       return <HelpView topic={route.query.get('q') ?? ''} />;
     case 'download':
-      return <DownloadView topic={route.query.get('q') ?? ''} />;
+      return <ClientDownloadRoute topic={route.query.get('q') ?? ''} />;
     case 'admin':
       return <AdminView />;
     case 'account':

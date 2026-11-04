@@ -546,7 +546,7 @@ test('upstream desktop/mobile visual fidelity', async ({ page, browser }, info) 
   await reference.close();
 });
 
-test('client downloads: versions come from the API, the link downloads in place, the Android shell sees its update', async ({ page, browser }, info) => {
+test('client downloads: browser versions come from the API and the link downloads in place', async ({ page }) => {
   const state = await backend(page);
   await page.route('**/api/downloads/windows', (route) => route.fulfill({ body: 'MZ', headers: { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="MiningQwQMusic-Windows-1.2.0-x64-Setup.exe"' } }));
   await page.goto('/#/settings');
@@ -569,15 +569,28 @@ test('client downloads: versions come from the API, the link downloads in place,
   await expect(page).toHaveURL(/#\/download$/);
   expect(state.errors).toEqual([]);
 
-  if (info.project.name !== 'chromium-mobile') return;
-  const shell = await browser.newContext({ ...devices['Pixel 7'], userAgent: `${devices['Pixel 7'].userAgent} MiningQwQMusicAndroid/1.0.3` });
-  const phone = await shell.newPage();
-  await backend(phone);
-  await phone.goto('/#/download');
-  const android = phone.locator('.dl-card').first();
-  await expect(android).toHaveAttribute('data-platform', 'android');
-  await expect(android.locator('.dl-tag')).toHaveText('有新版本 · 你的是 v1.0.3');
-  await expect(android.locator('.dl-go')).toContainText('更新到 v1.0.9');
-  await expect(android.locator('.dl-go')).toHaveAttribute('download', 'MiningQwQMusic-android-v1.0.9.apk');
-  await shell.close();
+});
+
+test('native Windows and Android clients hide installer entries and cannot open the download view', async ({ browser }) => {
+  for (const platform of ['windows', 'android']) {
+    const shell = await browser.newContext(platform === 'android'
+      ? { ...devices['Pixel 7'], userAgent: `${devices['Pixel 7'].userAgent} MiningQwQMusicAndroid/1.0.3` }
+      : { ...devices['Desktop Chrome'] });
+    try {
+      if (platform === 'windows') await shell.addInitScript(() => {
+        Object.defineProperty(window, 'chrome', { configurable: true, value: { webview: {} } });
+      });
+      const page = await shell.newPage();
+      const state = await backend(page);
+      await page.goto('/#/settings');
+      await expect(page.getByRole('heading', { name: '唱机调校', exact: true })).toBeVisible();
+      await expect(page.locator('a[href^="#/download"]')).toHaveCount(0);
+      await expect(page.getByRole('link', { name: /下载客户端/ })).toHaveCount(0);
+      await page.goto('/#/download');
+      await expect(page).toHaveURL(/#\/settings$/);
+      await expect(page.locator('.dl-card')).toHaveCount(0);
+      expect(state.calls.some(call => call.path === '/api/downloads')).toBe(false);
+      expect(state.errors).toEqual([]);
+    } finally { await shell.close(); }
+  }
 });

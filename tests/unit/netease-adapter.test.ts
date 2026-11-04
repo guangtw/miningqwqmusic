@@ -413,6 +413,30 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(result.level).toBeUndefined();
   });
 
+  it.each(["standard", "higher", "exhigh", "lossless", "hires", "jyeffect", "sky", "dolby", "jymaster"] as const)("fills an URL-only unblock result with this request's %s tier without extra requests", async level => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const fetchMock = mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000, level: "exhigh" }] }),
+      jsonResponse({ data: "https://cdn.test/unblocked" })
+    ]);
+    await expect(adapter.getPlaySource("108485", { level })).resolves.toMatchObject({
+      url: "https://cdn.test/unblocked", resolvedVia: "unblock", preview: false, level
+    });
+    const calls = fetchMock.mock.calls.map(([url]) => new URL(String(url)));
+    expect(calls.map(url => url.pathname)).toEqual(["/song/url/v1", "/song/detail", "/song/url/match", "/unblocked"]);
+    expect(calls[2].searchParams.get("level")).toBe(level);
+    expect(fetchMock.mock.calls[3][1]?.method).toBe("HEAD");
+  });
+
+  it("preserves an explicit unblock quality report over the requested tier", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    mockPlaySourceFetch([
+      jsonResponse({ data: [{ url: "https://cdn.test/preview.mp3", time: 30000 }] }),
+      jsonResponse({ data: "https://cdn.test/unblocked", level: "lossless" })
+    ]);
+    await expect(adapter.getPlaySource("108485", { level: "jymaster" })).resolves.toMatchObject({ level: "lossless", resolvedVia: "unblock" });
+  });
+
   it("reports a missing ordinary MP3 tier from its actual bitrate",async()=>{
     const adapter=createAdapter();
     mockPlaySourceFetch([jsonResponse({data:{url:"https://cdn.test/full",time:240000,type:"mp3",br:320000}})]);

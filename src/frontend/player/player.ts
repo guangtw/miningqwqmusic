@@ -24,10 +24,8 @@ export interface PlayerState {
   lyric: TrackLyric | null;
   /** 当前是试听片段 */
   preview: boolean;
-  /** 后端实际给的音质（账号权限不够时会比设置的低）；还没取到地址时为 null */
+  /** 后端报告的音质（可低于偏好）；未取到地址或缺少字段时为 null。 */
   level: PlayQualityLevel | null;
-  /** 已收到本次音源的音质结果；null 音质此时表示来源未知。 */
-  qualityResolved: boolean;
 }
 
 const SAVE_KEY = 'cph.player.v2';
@@ -46,7 +44,6 @@ export const playerStore = createStore<PlayerState>({
   lyric: null,
   preview: false,
   level: null,
-  qualityResolved: false,
 });
 
 const audio = new Audio();
@@ -274,7 +271,7 @@ async function resolveAndPlay(
     lastQualityNotice = '';
     renewedOnce = false;
     recentPushed = false;
-    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null, qualityResolved: false });
+    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null });
     updateMediaSession(track);
   }
   set({ loading: true });
@@ -310,7 +307,7 @@ async function resolveAndPlay(
       audio.currentTime = at / 1000;
       set({ position: at });
     }
-    set({ preview: src.preview, level: src.level ?? null, qualityResolved: true });
+    set({ preview: src.preview, level: src.level ?? null });
     const qualityNotice = `${track.id}:${requestedQuality}:${src.level ?? 'unknown'}`;
     if (fresh && src.preview) toast(src.restrictionReason && /[一-鿿]/.test(src.restrictionReason)
       ? src.restrictionReason : '这首只能试听片段。');
@@ -560,7 +557,7 @@ function unload() {
   audio.load();
   loaded = null;
   lastQualityNotice = '';
-  set({ level: null, qualityResolved: false });
+  set({ level: null });
 }
 
 export function removeAt(i: number) {

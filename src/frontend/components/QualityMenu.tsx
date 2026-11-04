@@ -24,7 +24,6 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
   const { mounted, state } = usePresence(open, 200);
   const chosen = useSyncExternalStore(subscribeSettings, () => getSettings().quality, () => getSettings().quality);
   const level = useStore(playerStore, (s) => s.level);
-  const qualityResolved = useStore(playerStore, (s) => s.qualityResolved);
   const track = useStore(playerStore, (s) => currentTrack(s));
   const [avail, setAvail] = useState<TrackQualityAvailability | null>(null);
   const [pos, setPos] = useState<{ left: number; top?: number; bottom?: number; width: number; origin: number; maxHeight?: number } | null>(null);
@@ -89,8 +88,7 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
   }, [open, place]);
 
   const shown = optionOf(level ?? chosen);
-  const unknown = qualityResolved && !level;
-  const actualLabel = unknown ? '未知' : shown.label;
+  const actualLabel = shown.label;
   const forTrack = avail && track && avail.trackId === track.id ? avail : null;
   const downgraded = !!level && level !== chosen;
 
@@ -98,16 +96,16 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
     <div className={`quality ${plate ? 'q-plate' : ''} ${className}`}>
       <button
         ref={chipRef}
-        className={`q-chip ${!unknown && shown.mark ? `has-mark kind-${shown.mark.kind}` : ''} ${open ? 'on' : ''}`}
+        className={`q-chip ${shown.mark ? `has-mark kind-${shown.mark.kind}` : ''} ${open ? 'on' : ''}`}
         onClick={() => setOpen(!open)}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={`音质：${actualLabel}`}
-        title={unknown ? '当前音源未提供实际音质' : downgraded ? `已选「${optionOf(chosen).label}」，实际「${actualLabel}」` : '音质'}
+        title={downgraded ? `已选「${optionOf(chosen).label}」，实际「${actualLabel}」` : '音质'}
       >
         {plate && <span className="q-plate-label mono">音质</span>}
         <span className="swap-icon" key={shown.key}>
-          {unknown ? '音质未知' : <QualityMark option={shown} withLabel={shown.mark?.kind === 'sq' || shown.mark?.kind === 'spatial'} />}
+          <QualityMark option={shown} withLabel={shown.mark?.kind === 'sq' || shown.mark?.kind === 'spatial'} />
         </span>
       </button>
 
@@ -126,7 +124,7 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
               <h3>音质</h3>
               {track && (
                 <span className="q-now">
-                  正在播放 {unknown ? '音质未知' : <QualityMark option={shown} />}
+                  正在播放 <QualityMark option={shown} />
                 </span>
               )}
             </header>
@@ -137,7 +135,7 @@ export function QualityMenu({ plate = false, className = '' }: { plate?: boolean
               fallback={forTrack?.fallbackMap ?? null}
             />
             <p className="q-foot">
-              {unknown ? '当前音源未提供实际音质，所选偏好会继续保留。' : downgraded
+              {downgraded
                 ? `你选的是「${optionOf(chosen).label}」，账号权限或音源不够，这首实际是「${shown.label}」。`
                 : '账号权限或音源不够时，后端会自动降到可用的最高一档。'}
             </p>

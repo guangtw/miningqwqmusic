@@ -591,7 +591,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     return undefined;
   }
 
-  private toPlaySource(trackId: string, raw: unknown, data: PlayData, resolvedVia: "primary" | "unblock"): PlaySource {
+  private toPlaySource(trackId: string, raw: unknown, data: PlayData, resolvedVia: "primary" | "unblock", requestedLevel: string): PlaySource {
     const preview = this.isVipPreview(data);
     const format = asString(data.type)?.toLowerCase();
     const bitrate = asNumber(data.br);
@@ -602,7 +602,9 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       trackId,
       url: data.url ?? "",
       preview,
-      level: toPlayQualityLevel(data.level) ?? bitrateLevel,
+      // Match endpoints may expose only a URL. Follow the upstream v1 contract
+      // for that case: report the requested tier, while preserving explicit reports.
+      level: toPlayQualityLevel(data.level) ?? (resolvedVia === "unblock" ? toPlayQualityLevel(requestedLevel) : bitrateLevel),
       bitrate,
       restrictionReason: this.getRestrictionReason(raw, data),
       resolvedVia,
@@ -926,7 +928,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
     if (!unblockPath || !shouldTryUnblock) {
       if (bestCandidate) {
-        return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
+        return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia, level);
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
     }
@@ -971,7 +973,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
         ) {
           bestCandidate = this.pickBetterPlayCandidate(bestCandidate, unblockCandidate);
           if (!unblockRestricted) {
-            return this.toPlaySource(trackId, unblockRaw, unblockData, "unblock");
+            return this.toPlaySource(trackId, unblockRaw, unblockData, "unblock", level);
           }
         }
       } catch (error) {
@@ -984,7 +986,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     }
 
     if (bestCandidate) {
-      return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia);
+      return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia, level);
     }
 
     if (sourceError) throw sourceError;

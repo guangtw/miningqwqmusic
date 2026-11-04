@@ -27,7 +27,7 @@ function wav() {
   return out;
 }
 
-async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string } = {}) {
+async function backend(page: Page, options: { disabled?: boolean; failedHome?: boolean; actualQuality?: string; unblocked?: boolean } = {}) {
   const calls: { path: string; method: string; authorization?: string; body: unknown }[] = [];
   let signedIn = false;
   let failHome = options.failedHome;
@@ -99,7 +99,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.includes('/playlist/') || p.includes('/toplist/')) return ok(playlist);
     if (p.includes('/album/')) return ok({ id: 'b1', name: '测试专辑', coverUrl: cover, artists: tracks[0].artists, tracks });
     if (p.includes('/artist/')) return ok({ id: 'a1', name: '测试艺人', coverUrl: cover, topTracks: tracks });
-    if (p.endsWith('/play-url')) return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60, level: options.actualQuality, requestedLevel: url.searchParams.get('level') });
+    if (p.endsWith('/play-url')) return ok({ trackId: p.split('/')[4], url: '/test-audio.wav', preview: false, ttlSeconds: 60, level: options.actualQuality, requestedLevel: url.searchParams.get('level'), resolvedVia: options.unblocked ? 'unblock' : 'primary' });
     if (p.endsWith('/lyric')) return ok({ trackId: '101', lines: [{ timeMs: 0, text: '第一句歌词' }, { timeMs: 12000, text: '第二句歌词' }] });
     if (p.includes('/track/')) return ok(tracks[0]);
     return route.fulfill({ status: 404, json: { code: 404, message: '未匹配的测试接口', traceId: 'e2e' } });
@@ -200,13 +200,14 @@ test('actual downgraded quality is visible before opening its menu', async ({ pa
   expect(state.errors).toEqual([]);
 });
 
-test('an unknown actual quality does not masquerade as the selected master tier', async ({ page }, info) => {
-  const state = await backend(page);
+test('an unblock quality report is displayed immediately without an unknown tier', async ({ page }, info) => {
+  const state = await backend(page, { actualQuality: 'jymaster', unblocked: true });
   await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
   if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
-  await expect(page.getByRole('button', { name: '音质：未知', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '音质：超清母带', exact: true })).toBeVisible();
+  await expect(page.getByText('音质未知', { exact: true })).toHaveCount(0);
   await expect(page.locator('.q-panel')).toHaveCount(0);
   expect(state.calls.some(c => c.path.includes('quality-options'))).toBe(false);
   expect(state.errors).toEqual([]);

@@ -121,15 +121,15 @@ it('publishes actual downgraded quality and a notice as soon as the address reso
   const player = await import('@/src/frontend/player/player');
   const { toastStore } = await import('@/src/frontend/lib/toast');
   player.playList([track]);
-  await vi.waitFor(() => expect(player.playerStore.get().qualityResolved).toBe(true));
+  await vi.waitFor(() => expect(player.playerStore.get().level).toBe('exhigh'));
   expect(player.playerStore.get().level).toBe('exhigh');
   expect(settings.getSettings().quality).toBe('jymaster');
   expect(toastStore.get().message).toContain('极高');
   player.clearQueue();
-  expect(player.playerStore.get()).toMatchObject({ level: null, qualityResolved: false });
+  expect(player.playerStore.get()).toMatchObject({ level: null });
 });
 
-it('clears stale quality on a track change and marks an unknown result explicitly', async () => {
+it('clears stale quality on a track change when a response omits its level', async () => {
   f.source.mockResolvedValueOnce({ ...source, level: 'lossless' });
   const player = await import('@/src/frontend/player/player');
   player.playList([track, { ...track, id: 'two' }]);
@@ -137,10 +137,10 @@ it('clears stale quality on a track change and marks an unknown result explicitl
   let resolve!: (value: typeof source) => void;
   f.source.mockReturnValueOnce(new Promise(r => { resolve = r; }));
   player.next();
-  expect(player.playerStore.get()).toMatchObject({ level: null, qualityResolved: false });
+  expect(player.playerStore.get()).toMatchObject({ level: null });
   await vi.waitFor(() => expect(f.source).toHaveBeenCalledTimes(2));
   resolve(source);
-  await vi.waitFor(() => expect(player.playerStore.get().qualityResolved).toBe(true));
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
   expect(player.playerStore.get().level).toBeNull();
 });
 

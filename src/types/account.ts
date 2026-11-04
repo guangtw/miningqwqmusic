@@ -3,6 +3,7 @@ import type { ImportedPlaylist, Track } from "@/src/types/music";
 export type AccountUser = {
   id: string;
   email: string;
+  emailVerifiedAt?: string | null;
   role?: "user" | "admin";
   nickname?: string | null;
   avatarUrl?: string | null;

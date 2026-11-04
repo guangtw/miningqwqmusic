@@ -94,6 +94,16 @@ describe("account proxy route", () => {
     expect(payload.code).toBe(5403);
     expect(payload.retryable).toBe(true);
   });
+  it("rejects cross-site email-login requests before forwarding or sending mail", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const response = await POST(new NextRequest("http://localhost/api/account/auth/email/request", {
+      method: "POST", headers: {"content-type": "application/json", origin: "https://other.example.test"},
+      body: JSON.stringify({email: "user@example.test"})
+    }), createContext(["auth", "email", "request"]));
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 
   it("preserves account event resumption and message rate-limit hints", async () => {
     process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";

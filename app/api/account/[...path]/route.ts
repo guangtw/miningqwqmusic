@@ -77,6 +77,14 @@ async function proxyAccountRequest(request: NextRequest, pathSegments: string[])
   }
 
   const method = request.method.toUpperCase();
+  if (method === "POST" && pathSegments[0] === "auth" && pathSegments[1] === "email") {
+    const source = request.headers.get("origin") ?? request.headers.get("referer");
+    if (source) {
+      let allowed = false;
+      try { allowed = new URL(source).origin === request.nextUrl.origin; } catch { /* Reject malformed origins. */ }
+      if (!allowed) return failure({code: 5207, message: "Origin not allowed", traceId, status: 403});
+    }
+  }
   const hasBody = method !== "GET" && method !== "HEAD";
   const controller = new AbortController();
   const onAbort = () => controller.abort();

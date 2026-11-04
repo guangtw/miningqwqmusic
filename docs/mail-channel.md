@@ -1,6 +1,6 @@
 # 服务器邮件通道
 
-本次只接通事务邮件发送，不开放会员申请、不自动发码、不改变会员名额规则，也不修改前端视觉或数据库结构。
+本文说明事务邮件通道。会员申请、人数控制、持久邮件任务与邮箱辅助登录见 [Claude 前端交接](backend-membership-application-handoff.md) 和 [调度设计](membership-admission-design.md)；申请与自动发放默认关闭。本轮没有修改前端视觉。
 
 账户服务使用 Nodemailer（需要 Node 20+；生产使用 Node 24）通过 SMTP 发送品牌 HTML 通知，同时附带可独立阅读的纯文本版本。163 邮箱使用 `smtp.163.com:465`、直接 TLS、客户端授权码；证书必须验证通过。587 等非直接 TLS 连接强制 STARTTLS，配置不得用 `SMTP_SECURE=false` 连接 465。
 
@@ -24,7 +24,7 @@
 
 `node scripts/preview-mail.mjs <绝对输出目录>` 离线生成自包含 `brand-mail.html` 和标准 MIME `brand-mail.eml`，使用虚构的 `preview@example.test` 地址，无需 SMTP 配置，不联网发信。`--send-test` 会发送这一品牌预览样式到已配置的发件地址，每次实际发信仍须用户明确授权。
 
-未来自动申请功能可调用内部发送函数；申请资格、名额预留、发码幂等和候补规则须另外实现，当前配置不代表这些功能已上线。
+会员申请和邮箱辅助登录通过持久任务调用内部发送函数，自动发放取决于管理开关。仅配置SMTP不代表会员申请已开放。
 
 ## 运维与验收
 

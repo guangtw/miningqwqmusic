@@ -28,6 +28,7 @@ const processes = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }))
 const originalLogin = processes.find(p => p.name === 'miningqwqlogin')?.pm2_env;
 const originalMusic = processes.find(p => p.name === 'miningqwqmusic')?.pm2_env;
 const originalUpstream = processes.find(p => p.name === 'ncm-api')?.pm2_env;
+const originalWorker = processes.find(p => p.name === 'miningqwq-membership-worker')?.pm2_env;
 const previousMusic = fs.realpathSync(musicBase + '/current');
 const database = '/www/wwwroot/miningqwqlogin/prisma/dev.db';
 if (!originalMusic || !originalLogin || !originalUpstream || !fs.existsSync(database)) throw Error('Existing account service/upstream/database missing');
@@ -148,6 +149,37 @@ function configureMusic(cwd, rollback = false) {
   if (current.some(p => p.name === 'miningqwqmusic')) execFileSync(pm2, ['delete', 'miningqwqmusic'], { stdio: 'inherit' });
   execFileSync(pm2, ['start', file, '--only', 'miningqwqmusic'], { stdio: 'inherit' });
 }
+let workerStartedAt = 0;
+function configureMembershipWorker(cwd, rollback = false) {
+  const current = JSON.parse(execFileSync(pm2, ['jlist'], { encoding: 'utf8' }));
+  if (current.some(p => p.name === 'miningqwq-membership-worker')) {
+    execFileSync(pm2, ['delete', 'miningqwq-membership-worker'], { stdio: 'inherit' });
+  }
+  if (rollback && !originalWorker) return;
+  const source = rollback ? originalWorker : originalLogin;
+  const env = { ...(source.env || {}), NODE_ENV: 'production', DATABASE_URL: 'file:' + database };
+  const config = { apps: [{ name: 'miningqwq-membership-worker', cwd,
+    script: rollback ? originalWorker.pm_exec_path : cwd + '/scripts/membership-worker.mjs',
+    interpreter: node, exec_mode: 'fork', instances: 1, kill_timeout: 35000, env }] };
+  const file = work + (rollback ? '/worker-rollback.json' : '/worker-release.json');
+  fs.writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
+  if (!rollback) workerStartedAt = Date.now();
+  execFileSync(pm2, ['start', file, '--only', 'miningqwq-membership-worker'], { stdio: 'inherit' });
+}
+async function readyMembershipWorker() {
+  for (let i = 0; i < 20; i++) {
+    const heartbeat = execFileSync('/usr/bin/sqlite3', [database,
+      'SELECT "workerHeartbeatAt" FROM "MembershipPolicy" WHERE id=1'], { encoding: 'utf8' }).trim();
+    // Prisma's SQLite DateTime is stored as milliseconds.
+    if (heartbeat && Number.isFinite(Number(heartbeat)) && Number(heartbeat) >= workerStartedAt &&
+      Math.abs(Date.now() - Number(heartbeat)) < 30000) {
+      console.log('MEMBERSHIP_WORKER_HEARTBEAT_VERIFIED');
+      return;
+    }
+    await pause(1000);
+  }
+  throw Error('Membership worker heartbeat missing');
+}
 function verifyLoopbackListeners() {
   const sockets = execFileSync('ss', ['-ltn'], { encoding: 'utf8' }).split('\n');
   for (const port of [3001, 3002]) {
@@ -177,6 +209,7 @@ let failed = false;
   fs.writeFileSync(backup + '/login-before.json', JSON.stringify(originalLogin), { mode: 0o600 });
   fs.writeFileSync(backup + '/music-before.json', JSON.stringify(originalMusic), { mode: 0o600 });
   fs.writeFileSync(backup + '/upstream-before.json', JSON.stringify(originalUpstream), { mode: 0o600 });
+  if (originalWorker) fs.writeFileSync(backup + '/worker-before.json', JSON.stringify(originalWorker), { mode: 0o600 });
   fs.copyFileSync(packageDir + '/ops/music-egress.cjs', work + '/music-egress.cjs');
   execFileSync(node, ['--check', work + '/music-egress.cjs']);
   // Real sockets, fake DNS to loopback only. Never load-test the music provider.
@@ -205,6 +238,7 @@ let failed = false;
   let loginChanged = false;
   let musicChanged = false;
   let musicEnvChanged = false;
+  let workerChanged = false;
   try {
     if (releaseMusicEnv !== originalMusicEnv) {
       fs.writeFileSync(work + '/music-env-before', originalMusicEnv, { mode: 0o600 });
@@ -215,6 +249,9 @@ let failed = false;
     loginChanged = true;
     configureLogin(loginRelease);
     await ready(3002, true);
+    workerChanged = true;
+    configureMembershipWorker(loginRelease);
+    await readyMembershipWorker();
     pointMusic(musicRelease);
     musicChanged = true;
     configureMusic(musicBase + '/current');
@@ -234,6 +271,7 @@ let failed = false;
     try { if (musicEnvChanged) fs.writeFileSync(musicEnvFile, originalMusicEnv, { mode: 0o600 }); } catch (e) { recoveryErrors.push(e.message); }
     try { if (musicChanged) { pointMusic(previousMusic); configureMusic(originalMusic.pm_cwd, true); } } catch (e) { recoveryErrors.push(e.message); }
     try { if (loginChanged) configureLogin(originalLogin.pm_cwd, true); } catch (e) { recoveryErrors.push(e.message); }
+    try { if (workerChanged) configureMembershipWorker(originalWorker?.pm_cwd ?? originalLogin.pm_cwd, true); } catch (e) { recoveryErrors.push(e.message); }
     try { execFileSync(pm2, ['save'], { stdio: 'inherit' }); } catch (e) { recoveryErrors.push(e.message); }
     if (recoveryErrors.length) console.error('ROLLBACK_REQUIRES_ATTENTION', recoveryErrors.join('; '));
     throw error;

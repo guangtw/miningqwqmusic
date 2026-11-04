@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const origin = process.argv[2];
 const accountRoot = process.argv[3];
 if (!origin || !accountRoot?.startsWith('/www/wwwroot/miningqwqlogin-releases/')) throw Error('Explicit QA target required');
-const email = 'codex-deploy-' + crypto.randomBytes(8).toString('hex') + '@example.invalid';
+const email = 'codex-deploy-' + crypto.randomBytes(8).toString('hex') + '@example.test';
 const password = 'Aa1!' + crypto.randomBytes(24).toString('base64url');
 const cookies = new Map();
 let token = null;
@@ -37,13 +37,26 @@ async function api(path, method='GET', body, authenticated=true) {
   try {
     const registered=await api('/api/account/auth/register','POST',{email,password,nickname:'Deployment QA'},false);
     createdId=registered.data.user.id; token=registered.data.accessToken;
-    for (const [path, method] of [['/api/account/admin/mail', 'GET'], ['/api/account/admin/mail/verify', 'POST']]) {
+    for (const [path, method] of [['/api/account/admin/mail', 'GET'], ['/api/account/admin/mail/verify', 'POST'],
+      ['/api/account/admin/membership', 'GET'], ['/api/account/admin/membership/applications', 'GET'],
+      ['/api/account/admin/membership/audit', 'GET'], ['/api/account/admin/membership/mail', 'GET']]) {
       const denied = await fetch(origin + path, { method, headers: { authorization: 'Bearer ' + token }, signal: AbortSignal.timeout(10000) });
       if (denied.status !== 403 || denied.headers.get('cache-control') !== 'no-store') throw Error('Mail administrator permission check failed');
       const anonymous = await fetch(origin + path, { method, signal: AbortSignal.timeout(10000) });
       if (anonymous.status !== 401) throw Error('Mail administrator endpoint accepts unauthenticated access');
     }
     console.log('MAIL_ADMINISTRATOR_BOUNDARY_REGRESSION_PASSED');
+    const applicationState = await api('/api/account/membership/application');
+    if (applicationState.data.emailVerifiedAt !== null || applicationState.data.application !== null) {
+      throw Error('New account inherited verification/application state');
+    }
+    const loginConfig = await api('/api/account/auth/email', 'GET', undefined, false);
+    if (loginConfig.data.codeLength !== 6 || loginConfig.data.expiresInSeconds !== 600) throw Error('Email login contract failed');
+    const invalidOtp = await fetch(origin + '/api/account/auth/email/verify', {method: 'POST',
+      headers: {'content-type':'application/json'}, body: JSON.stringify({challengeId:crypto.randomUUID(),code:'000000'}),
+      signal:AbortSignal.timeout(10000)});
+    if (invalidOtp.status !== 400 || invalidOtp.headers.get('set-cookie')) throw Error('Invalid OTP created a session');
+    console.log('MEMBERSHIP_APPLICATION_AND_EMAIL_LOGIN_BOUNDARIES_VERIFIED');
     if(!registered.headers.get('set-cookie')?.includes('HttpOnly')) throw Error('Refresh cookie is not HttpOnly');
 
     const originalCookie=[...cookies.entries()].map(([key,value])=>key+'='+value).join('; ');

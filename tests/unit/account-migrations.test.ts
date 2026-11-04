@@ -11,15 +11,18 @@ describe("account deployment migration chain", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "echo-migration-plan-"));
     try {
       fs.mkdirSync(path.join(root, "scripts"));
-      const names = ["20261101130000_single_use_memberships", "20261103120000_direct_messages", "20261103160000_rich_direct_messages"];
-      const scripts = ["migrate-single-use-memberships.mjs", "migrate-direct-messages.mjs", "migrate-rich-direct-messages.mjs"];
+      const names = ["20261101130000_single_use_memberships", "20261103120000_direct_messages", "20261103160000_rich_direct_messages",
+        "20261104120000_membership_applications"];
+      const scripts = ["migrate-single-use-memberships.mjs", "migrate-direct-messages.mjs", "migrate-rich-direct-messages.mjs",
+        "migrate-membership-applications.mjs"];
       for (let i = 0; i < names.length; i++) {
         const dir = path.join(root, "prisma/migrations", names[i]); fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(path.join(dir, "migration.sql"), "SELECT 1;");
         fs.writeFileSync(path.join(root, "scripts", scripts[i]), "// fixture");
         fs.writeFileSync(path.join(dir, "plan.json"), JSON.stringify({ previousSchemaSha256: hash(`schema-${i}`), targetSchemaSha256: hash(`schema-${i + 1}`), migrationSha256: hash("SELECT 1;") }));
       }
-      expect(selectAccountMigrations(root, "schema-0", "schema-3").map((x: { name: string }) => x.name)).toEqual(names);
+      expect(selectAccountMigrations(root, "schema-0", "schema-4").map((x: { name: string }) => x.name)).toEqual(names);
+      expect(selectAccountMigrations(root, "schema-3", "schema-4")).toHaveLength(1);
       expect(selectAccountMigrations(root, "schema-1", "schema-3")).toHaveLength(2);
       expect(selectAccountMigrations(root, "schema-2", "schema-3")).toHaveLength(1);
       expect(selectAccountMigrations(root, "schema-3", "schema-3")).toEqual([]);

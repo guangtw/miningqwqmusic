@@ -59,7 +59,7 @@ function checkRepo(repo) {
 function npm(stage, args) {
   const cli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
   if (!fs.existsSync(cli)) throw Error('Run this script with npm run deploy:echo');
-  run(process.execPath, [cli, ...args], stage, { env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', PLAYWRIGHT_PORT: '3047', PLAYWRIGHT_BASE_URL: 'http://127.0.0.1:3047', PLAYWRIGHT_ISOLATED: '1', REFERENCE_BASE_URL: '' } });
+  run(process.execPath, [cli, ...args], stage, { env: { ...process.env, NEXT_TELEMETRY_DISABLED: '1', PLAYWRIGHT_PORT: '3047', PLAYWRIGHT_BASE_URL: 'http://127.0.0.1:3047', PLAYWRIGHT_ISOLATED: '1', PLAYWRIGHT_PRODUCTION: '1', PLAYWRIGHT_WORKERS: '1', REFERENCE_BASE_URL: '' } });
 }
 function dependencies(repo, exported) {
   if (flags.has('--reuse-local-deps')) {
@@ -101,6 +101,8 @@ try {
     // Tests that intentionally issue concurrent requests still run unchanged.
     npm(path.join(stage, 'login'), ['run', 'test:run', '--', '--fileParallelism=false']);
     npm(path.join(stage, 'music'), ['run', 'test:run', '--', '--fileParallelism=false']);
+    // Browser timing and chunk loading must exercise a fixed production build, not dev compilation/HMR.
+    npm(path.join(stage, 'music'), ['run', 'build']);
     npm(path.join(stage, 'music'), ['run', 'test:e2e']);
   }
   const archive = path.join(stage, id + '.tar.gz');

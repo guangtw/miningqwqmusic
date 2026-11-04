@@ -219,7 +219,7 @@ test('an unblock quality report is displayed immediately without an unknown tier
   expect(state.errors).toEqual([]);
 });
 
-test('a manual upgrade remembers forced matching across tracks and reloads without a default source prompt', async ({ page }, info) => {
+test('a manual upgrade remembers forced matching and inline recovery preserves that preference across reloads', async ({ page }, info) => {
   const state = await backend(page, { qualityUpgrade: true });
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
@@ -229,11 +229,17 @@ test('a manual upgrade remembers forced matching across tracks and reloads witho
   await expect(page.getByRole('button', { name: '音质：超清母带', exact: true })).toBeVisible();
   expect(state.calls.some(c => c.path === '/api/music/track/101/play-url?level=jymaster&unblockMode=force_on')).toBe(true);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cph.settings.v2')!).preferUnblock)).toBe(true);
-  await expect(page.getByText('放的歌不对？点我暂时切换回稳定音源', { exact: true })).toHaveCount(0);
+  const recovery = page.locator('.q-panel').getByRole('button', { name: '放的歌不对？点我暂时切换回稳定音源', exact: true });
+  await expect(recovery).toBeVisible();
+  await recovery.click();
+  await expect.poll(() => state.calls.some(c => c.path === '/api/music/track/101/play-url?level=jymaster&unblockMode=force_off')).toBe(true);
+  await expect(page.getByRole('button', { name: '音质：极高', exact: true })).toBeVisible();
+  await expect(page.locator('.q-panel').getByRole('button', { name: '本曲已切回稳定音源，下一首照常', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('cph.settings.v2')!).preferUnblock)).toBe(true);
   await page.reload();
   await page.locator('.track .t').nth(1).click();
   await expect.poll(() => state.calls.some(c => c.path === '/api/music/track/102/play-url?level=jymaster&unblockMode=force_on')).toBe(true);
-  await expect(page.getByText('放的歌不对？点我暂时切换回稳定音源', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.toast').filter({ hasText: '放的歌不对' })).toHaveCount(0);
   expect(state.errors).toEqual([]);
 });
 

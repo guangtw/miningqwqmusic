@@ -1,13 +1,13 @@
 # 音源偏好与前端提醒接入
 
-本次交付播放策略、状态与动作接口，提醒出现的位置、样式和交互由 Claude 接入。没有新增默认弹窗、Toast 或自动“放的歌不对”提示。现有试听、限流及明确音质回退提示继续保留。此文档所在提交包含完整实现；生产版本以 `/__deployment.json` 为准，GitHub 推送本身不代表已部署。
+前端已在 `6d5a74a`、`51a6461` 接入 `SourceRecovery`，入口位于播放台、正在播放页及音质面板，不使用独立提醒弹窗或 Toast。首次说明实际可见满 3 秒后记住已读，本曲继续保留整句，后续歌曲使用小标签；音质面板始终保留完整说明。设置页提供音源偏好开关。现有试听、限流及明确音质回退提示继续保留。生产版本以 `/__deployment.json` 为准，GitHub 推送本身不代表已部署。
 
 ## 已实现的播放规则
 
 1. 老用户没有 `preferUnblock` 字段时默认为 `false`，先走官方；完整可播即保留，试听、时长不足或地址异常才解灰。
 2. 当前歌曲确认 `resolvedVia === 'primary'`、`level === 'exhigh'`、`preview === false` 且已经加载完毕时，用户通过现有 `setQuality()` 选择无损及以上档位，会同时保存音质和 `preferUnblock=true`。即使被点击的高档位原本已经是所选偏好，也会重取一次强制解灰地址。
 3. 后续歌曲和页面刷新按保存的偏好请求 `force_on`。之后只改音质不会自动清除此偏好；仍按每次所选档位传参，不固定为 Hi-Res。
-4. 当前完整解灰结果属于免费可播歌曲时，播放器仅设置 `canSwitchToStableSource=true`，不自动展示提醒。
+4. 当前完整解灰结果属于免费可播歌曲时，播放器设置 `canSwitchToStableSource=true`，由 `SourceRecovery` 在既有界面内显示恢复入口，播放器本身不弹提醒。
 5. 用户点击展示层提供的入口后，调用 `switchToStableSource()`：本曲改为 `force_off`，保留进度、播放/暂停状态与所选音质，不清除 `preferUnblock`。本曲 URL 续签仍走官方；切歌、重新点播、清队列或刷新后恢复保存的偏好。
 
 这些是当前浏览器的设备设置，保存在既有 `localStorage['cph.settings.v2']`。不是网易 Cookie、会员凭据或账号云设置；其他设备不会自动同步。不要从“全局已经选了母带”反推用户完成过上述主动升级步骤，也不要在每次渲染时调用 `setQuality()`。
@@ -26,7 +26,7 @@
 | `state.level` / `state.preview` / `state.loading` | 当前音质报告、是否试听和是否正在换源，沿用现有状态 |
 | `switchToStableSource(expectedTrackId?): boolean` | 发起本曲临时回到官方；接受操作返回 `true`。无可用入口、仍在加载或传入的 ID 已不是当前歌曲时返回 `false`，重复点击不重复发请求。返回值不是网络完成或播放成功证明，后续结果继续读 Store |
 | `setQuality(level)` | 沿用现有音质选择入口；自动执行上述持久偏好规则 |
-| `getSettings().preferUnblock` / `subscribeSettings` | 读取、订阅持久偏好；`updateSettings({ preferUnblock: false })` 可供未来设置页关闭偏好，影响后续解析，不会自动打断当前音频 |
+| `getSettings().preferUnblock` / `subscribeSettings` | 读取、订阅持久偏好；设置页使用 `updateSettings({ preferUnblock: false })` 关闭偏好，影响后续解析，不会自动打断当前音频 |
 
 建议展示文字：**放的歌不对？点我暂时切换回稳定音源**。位置、出现频率、是否收起、是否用常驻入口由前端决定。最小接入示例（没有附加样式）：
 
@@ -81,4 +81,4 @@ music.playUrl(id, level, token, signal, unblockMode); // 默认 auto
 - `tests/unit/frontend-integration.test.ts`：模式与取消信号传递、会话续期后的重试参数。
 - `tests/e2e/record-store.spec.ts`：菜单关闭时的回退显示、解灰档位显示、主动点击升级后的请求模式及刷新保留。
 
-Claude 接入展示时保留现有布局、样式、字体和动效，通过上述接口选择合适位置。临时恢复入口的完整闭环已经在播放器单元测试验证，不需要为了测试修改生产全局对象或暴露调试接口。发布仍按 `docs/release-workflow.md`，只有真实生产回执与提交一致且出现 `PRODUCTION_VERIFIED` 才能报告上线。
+展示通过上述接口接入，保留最新前端布局、样式、字体和动效。临时恢复入口的完整闭环已在播放器单元测试及桌面/手机浏览器验收中覆盖，不需要为了测试修改生产全局对象或暴露调试接口。发布仍按 `docs/release-workflow.md`，只有真实生产回执与提交一致且出现 `PRODUCTION_VERIFIED` 才能报告上线。

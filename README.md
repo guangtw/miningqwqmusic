@@ -18,7 +18,7 @@
 
 生产发布入口：`npm run deploy:echo -- --push`。完整流程、网络预检、日志和回滚说明见 [发布手册](docs/release-workflow.md)。
 
-临时交接资料统一见[交接中心](docs/handoffs/README.md)，包括Claude前端接口、熟人题库加密完整资料及后续集中清理清单。
+临时交接资料统一见[交接中心](docs/handoffs/README.md)，包括Claude前端接口、熟人完整题库与答案及后续集中清理清单。
 
 音源偏好与提醒展示接口见 [前端交接文档](docs/handoffs/playback-source-preference-handoff.md)：主动升级后持久优先解灰、免费/VIP 分类，以及本曲临时切回官方的调用方式。提醒位置和样式由前端接入。
 

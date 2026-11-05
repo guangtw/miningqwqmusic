@@ -22,7 +22,7 @@ npm run deploy:echo -- --push
 
 音乐上游保护与参数见 [请求保护说明](music-upstream-protection.md)。发布时只迁移已知失效的旧音源预设 `kuwo,kugou,migu`；候选验证后才更新共享配置，配置备份仅保存在服务器受保护的发布目录，失败时恢复。
 
-客户端安装包独立于网站发布包，公开下载与 Claude 前端接口见 [下载交接](client-downloads-frontend-handoff.md)。清单升版前先运行 `node ops/scripts/sync-client-downloads.mjs` 上传并核对 EXE/APK，再走标准网站发布。候选与正式验收都会核对目录接口和文件 HEAD/Range；网站回滚不会删除持久目录中的安装包。网站不提供便携 ZIP。
+客户端安装包独立于网站发布包，公开下载与 Claude 前端接口见 [下载交接](handoffs/client-downloads-frontend-handoff.md)。清单升版前先运行 `node ops/scripts/sync-client-downloads.mjs` 上传并核对 EXE/APK，再走标准网站发布。候选与正式验收都会核对目录接口和文件 HEAD/Range；网站回滚不会删除持久目录中的安装包。网站不提供便携 ZIP。
 
 联合修复发布还会确认 `netease-api-v2` 出口标识后取消 BFF 重复限速，保存并恢复原音乐进程配置；网易额度为突发 3、每秒补充 1、在途 2。登录来源信任只在 Nginx 覆盖真实地址、音乐和账户进程均仅监听回环时开启。候选用隔离测试账号验证同邮箱不同来源互不锁定，正式 HTTPS 验证伪造转发头不能绕过锁定，并核验 Retry-After。测试账号按 ID 和随机邮箱精确删除。见 [联合修复规划](backend-request-and-login-repair-plan.md)。
 
@@ -30,13 +30,13 @@ npm run deploy:echo -- --push
 
 ## 会员申请与邮箱辅助登录发布
 
-题型与严格规则再增加`20261105140000_familiar_question_rules`：只新增七个字段，支持服务端选择题和固定两题全对，不改变已发布的旧迁移或既有授权。回退到不识别新规则的旧账户版本前先关闭熟人验证，防止旧any判分器处理严格挑战；题库和其他新数据保留。见[题型交接](backend-familiar-question-types-handoff.md)。
+题型与严格规则再增加`20261105140000_familiar_question_rules`：只新增七个字段，支持服务端选择题和固定两题全对，不改变已发布的旧迁移或既有授权。回退到不识别新规则的旧账户版本前先关闭熟人验证，防止旧any判分器处理严格挑战；题库和其他新数据保留。见[题型交接](handoffs/backend-familiar-question-types-handoff.md)。
 
-熟人暗号扩展新增精确迁移`20261105120000_familiar_membership`及其后续`20261105130000_familiar_periods`（用户自选认识时期定向抽题），沿用原库在线备份及有序SHA256白名单，不改已发布的上一份迁移。新验证默认关闭、调度默认legacy、普通保护空位默认为null。先完成Claude前端联调，再由管理员配置时期、题库、保护空位并开启；GitHub源码推送不会自动切换线上策略。回退到未识别熟人策略的旧Worker之前必须暂停自动发码，保留全部新增表和用户新数据。完整约定见[熟人暗号交接](backend-familiar-membership-handoff.md)。
+熟人暗号扩展新增精确迁移`20261105120000_familiar_membership`及其后续`20261105130000_familiar_periods`（用户自选认识时期定向抽题），沿用原库在线备份及有序SHA256白名单，不改已发布的上一份迁移。新验证默认关闭、调度默认legacy、普通保护空位默认为null。先完成Claude前端联调，再由管理员配置时期、题库、保护空位并开启；GitHub源码推送不会自动切换线上策略。回退到未识别熟人策略的旧Worker之前必须暂停自动发码，保留全部新增表和用户新数据。完整约定见[熟人暗号交接](handoffs/backend-familiar-membership-handoff.md)。
 
 音乐 BFF 使用可信部署配置 `ACCOUNT_PUBLIC_ORIGIN=https://echo.miningqwq.cn` 校验验证码请求来源，避免 Next 内部 localhost/HTTP 地址造成误拦；候选服务单独配置其回环地址。开发环境无此配置时，只兼容同一 HTTP 端口的 localhost/127.0.0.1/IPv6 回环别名。候选与正式验收都使用真实 Origin，并检查跨站来源被拒绝；不信任客户端的 Host 或转发头来放宽来源。
 
-账户迁移链新增 `20261104120000_membership_applications`，精确校验前后 schema 与 SQL，迁移前在线备份；原账号、会话、会员、历史码和头像继续复用。部署同时管理 `miningqwq-membership-worker` PM2 进程，正式切换后校验数据库心跳，回滚恢复原 Worker。新表默认关闭申请和发码，邮箱辅助登录复用原 Cookie 会话。前端联调/开放操作见 [交接文档](backend-membership-application-handoff.md)，后台与保留策略见 [调度设计](membership-admission-design.md)。发布回归不发送真实验证码邮件。
+账户迁移链新增 `20261104120000_membership_applications`，精确校验前后 schema 与 SQL，迁移前在线备份；原账号、会话、会员、历史码和头像继续复用。部署同时管理 `miningqwq-membership-worker` PM2 进程，正式切换后校验数据库心跳，回滚恢复原 Worker。新表默认关闭申请和发码，邮箱辅助登录复用原 Cookie 会话。前端联调/开放操作见 [交接文档](handoffs/backend-membership-application-handoff.md)，后台与保留策略见 [调度设计](membership-admission-design.md)。发布回归不发送真实验证码邮件。
 
 ## 网络检查
 
@@ -55,7 +55,7 @@ ssh aliyun-ai 'sudo -n true && echo READY'
 
 本机临时目录内的 `receipt.json` 记录发布 ID、源码提交与包校验值。服务器任务位于 `/home/aiops/releases/<发布ID>/`，其中 `job.log` 为发布输出，`result.json` 为最终状态。不要在发布结果未知时重复启动第二次发布。
 
-受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；只允许一人一码会员、原私信、音乐卡片元数据迁移组成的已知链，每步旧 schema、新 schema、迁移 SQL 三个 SHA-256 必须完全匹配专用计划。历史迁移保留目标schema快照以校验逐步执行，不拿最终schema替代中间目标。迁移前对原库做包含WAL的在线备份；私信迁移检查原有数据摘要、外键及新增表完整性。应用回滚保留新增表及新消息，不自动用旧备份覆盖现有数据库。详见 [会员协议](membership-invitations.md)、[基础后端交接](backend-social-playlist-handoff.md) 和 [卡片/邀请交接](backend-rich-messages-handoff.md)。
+受保护的构建日志、原运行配置与完成标记位于 `/www/wwwroot/miningqwqmusic/shared/deploy-backups/<发布ID>/`，只通过 sudo 读取，不上传到 GitHub。数据库 schema 变化默认停止发布；只允许一人一码会员、原私信、音乐卡片元数据迁移组成的已知链，每步旧 schema、新 schema、迁移 SQL 三个 SHA-256 必须完全匹配专用计划。历史迁移保留目标schema快照以校验逐步执行，不拿最终schema替代中间目标。迁移前对原库做包含WAL的在线备份；私信迁移检查原有数据摘要、外键及新增表完整性。应用回滚保留新增表及新消息，不自动用旧备份覆盖现有数据库。详见 [会员协议](membership-invitations.md)、[基础后端交接](handoffs/backend-social-playlist-handoff.md) 和 [卡片/邀请交接](handoffs/backend-rich-messages-handoff.md)。
 
 候选及正式验收还会运行 `verify-social-playlist-session.cjs`：以两个临时 `@example.test` 账号验证陌生人限额、幂等、回复解锁、好友关系、SSE及日志补拉、已读、歌单原子排序和首曲封面、音乐卡片/自建歌单快照、自动邀请消息及接受状态，再检查真实只读评论及写入405。测试用户按精确ID与邮箱删除，消息和事件级联清理；这不是本机开发阶段的自动上线入口。
 

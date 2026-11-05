@@ -1,6 +1,6 @@
 # 服务器邮件通道
 
-本文说明事务邮件通道。会员申请、人数控制、持久邮件任务与邮箱辅助登录见 [Claude 前端交接](backend-membership-application-handoff.md) 和 [调度设计](membership-admission-design.md)；申请与自动发放默认关闭。本轮没有修改前端视觉。
+本文说明事务邮件通道。会员申请、人数控制、持久邮件任务与邮箱辅助登录见 [Claude 前端交接](handoffs/backend-membership-application-handoff.md) 和 [调度设计](membership-admission-design.md)；申请与自动发放默认关闭。本轮没有修改前端视觉。
 
 账户服务使用 Nodemailer（需要 Node 20+；生产使用 Node 24）通过 SMTP 发送品牌 HTML 通知，同时附带可独立阅读的纯文本版本。163 邮箱使用 `smtp.163.com:465`、直接 TLS、客户端授权码；证书必须验证通过。587 等非直接 TLS 连接强制 STARTTLS，配置不得用 `SMTP_SECURE=false` 连接 465。
 

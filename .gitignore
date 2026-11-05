@@ -26,3 +26,8 @@ coverage
 playwright-report
 test-results
 *.tsbuildinfo
+
+# Plaintext handoffs and their decryption keys stay outside this public repository.
+*.private.json
+*.private.txt
+*.handoff.key

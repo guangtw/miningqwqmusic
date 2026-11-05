@@ -4,6 +4,7 @@ import { Empty, ErrorState, Loading } from '../components/States';
 import { authStore } from '../lib/account';
 import { grantAuthorization, listAuthorizedUsers, revokeAuthorization, type AuthorizedUser } from '../lib/membership';
 import { href, useRoute } from '../lib/router';
+import { FamiliarAdmin } from './AdminFamiliar';
 import { MembershipAdmin } from './AdminMembership';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
@@ -27,7 +28,8 @@ export function AdminView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   const allowed = status === 'authenticated' && role === 'admin';
-  const tab = useRoute().query.get('tab') === 'apply' ? 'apply' : 'members';
+  const rawTab = useRoute().query.get('tab');
+  const tab = rawTab === 'apply' || rawTab === 'familiar' ? rawTab : 'members';
 
   // 输入停 300ms 再查；新的查询会取消上一个
   useEffect(() => {
@@ -79,7 +81,9 @@ export function AdminView() {
         <div className="kicker">管理</div>
         <h1 className="page-title">会员管理</h1>
         <p className="muted small" style={{ marginTop: 14 }}>
-          {tab === 'apply'
+          {tab === 'familiar'
+            ? '熟人暗号：题目、时期和资格。资格只说明对上过暗号，不代表核实过现实身份，也不会开通会员。'
+            : tab === 'apply'
             ? '会员申请按名额自动发码：正常发放后不超过 9 人，10 到 15 是软限制区，15 是硬顶。'
             : '开通后对方可以放灰色歌曲。改动立刻生效，对方正在放的歌会按新权限重新取音源。'}
         </p>
@@ -91,8 +95,13 @@ export function AdminView() {
         <a role="tab" href={`${href.admin()}?tab=apply`} aria-selected={tab === 'apply'} className={tab === 'apply' ? 'on' : ''}>
           会员申请
         </a>
+        <a role="tab" href={`${href.admin()}?tab=familiar`} aria-selected={tab === 'familiar'} className={tab === 'familiar' ? 'on' : ''}>
+          熟人暗号
+        </a>
       </div>
-      {tab === 'apply' ? (
+      {tab === 'familiar' ? (
+        <FamiliarAdmin />
+      ) : tab === 'apply' ? (
         <MembershipAdmin />
       ) : (
         <>

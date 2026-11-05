@@ -1,5 +1,9 @@
 © 2017-2024 Adobe (http://www.adobe.com/).
-Noto Serif CJK SC Regular, subset to the glyphs the member card uses (pyftsubset --font-number=2).
+Noto Serif CJK SC Regular, subset to the glyphs the member card and familiar-serif-400 use (pyftsubset --font-number=2).
+
+familiar-hand-400.woff2: Long Cang Regular, subset.
+Copyright 2018 The LongCang Project Authors (https://github.com/googlefonts/longcang)
+Licensed under the same SIL Open Font License, Version 1.1.
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

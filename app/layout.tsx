@@ -6,6 +6,7 @@ import "@fontsource/bodoni-moda/600.css";
 import "@/src/frontend/styles/tokens.css";
 import "@/src/frontend/styles/app.css";
 import "@/src/frontend/styles/motion.css";
+import "@/src/frontend/styles/familiar.css";
 import { ServiceWorkerRegister } from "@/src/components/sw-register";
 
 const siteUrl = "https://echo.miningqwq.cn";

@@ -2,14 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   MembershipAdminApplication,
   MembershipAdminMail,
-  MembershipAdminState,
+  MembershipAdmissionAdminState,
+  MembershipAdmissionDecision,
   MembershipApplicationStatus,
   MembershipAuditView,
-  MembershipDecision,
   MembershipPolicyChanges,
 } from '@/src/types/membership';
 import { ErrorState, Loading } from '../components/States';
 import { actOnApplication, adminApplications, adminAudit, adminMail, adminMembership, retryMail, setMembershipPolicy } from '../lib/membership';
+import { adminLaneApplications } from '../lib/familiar';
 import { toast } from '../lib/toast';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -33,13 +34,16 @@ const STATUS: Record<MembershipApplicationStatus, string> = {
   blocked: '已限制',
 };
 
-const REASON: Record<MembershipDecision['reason'], string> = {
+const REASON: Record<MembershipAdmissionDecision['reason'], string> = {
   normal: '正常发放',
   hard_limit: '已到硬顶 15，不能再发',
   soft_wait: '软限制区：队首还没等满 24 小时',
   spill_interval: '软限制区：距上次额外发放不满 24 小时',
   release_expected: '软限制区：24 小时内预计有名额释放，先等',
   controlled_spill: '软限制区：放行队首一人，3 天',
+  ordinary_paused: '普通申请发码没有打开',
+  reserve_unconfigured: '还没配置保护空位 R',
+  protected_capacity: '剩下的名额是给熟人留的',
 };
 
 const SWITCHES: { key: keyof MembershipPolicyChanges; label: string; help: string }[] = [
@@ -54,7 +58,7 @@ const SWITCHES: { key: keyof MembershipPolicyChanges; label: string; help: strin
  * 所有操作的权限和硬顶都在服务端，这里只是把状态和错误说清楚
  */
 export function MembershipAdmin() {
-  const [state, setState] = useState<MembershipAdminState | null>(null);
+  const [state, setState] = useState<MembershipAdmissionAdminState | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
@@ -160,6 +164,11 @@ export function MembershipAdmin() {
         <div>
           <small>排队</small>
           <b>{state.queued} 人</b>
+          {state.queues && (
+            <span className="mono faint">
+              熟人 {state.queues.familiar} · 普通 {state.queues.ordinary}
+            </span>
+          )}
         </div>
         <div>
           <small>下一次判断</small>
@@ -222,8 +231,12 @@ function usePaged<T extends { id: string }>(fetchPage: (cursor?: string) => Prom
   return { rows, more, error, reload, next };
 }
 
+type LaneFilter = 'all' | 'familiar' | 'ordinary';
+
 function Applications({ onChange }: { onChange: () => void }) {
-  const { rows, more, error, reload, next } = usePaged<MembershipAdminApplication>(adminApplications);
+  const [lane, setLane] = useState<LaneFilter>('all');
+  const fetchPage = useCallback((cursor?: string) => (lane === 'all' ? adminApplications(cursor) : adminLaneApplications(lane, cursor)), [lane]);
+  const { rows, more, error, reload, next } = usePaged<MembershipAdminApplication>(fetchPage);
   const [armed, setArmed] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -248,7 +261,20 @@ function Applications({ onChange }: { onChange: () => void }) {
     <section className="madmin-sec reveal" style={{ '--i': 3 } as React.CSSProperties}>
       <div className="section-head">
         <h2>申请</h2>
-        <span className="mono faint small">列表按创建先后，不代表排队顺序</span>
+        <span className="mono faint small">{lane === 'all' ? '全部按创建先后，不代表排队顺序' : '这条队列真实的等待顺序'}</span>
+      </div>
+      <div className="seg madmin-lanes" role="tablist" aria-label="申请队列">
+        {(
+          [
+            ['all', '全部'],
+            ['familiar', '熟人队列'],
+            ['ordinary', '普通队列'],
+          ] as [LaneFilter, string][]
+        ).map(([k, label]) => (
+          <button key={k} role="tab" aria-selected={lane === k} className={lane === k ? 'on' : ''} onClick={() => setLane(k)}>
+            {label}
+          </button>
+        ))}
       </div>
       {error ? (
         <ErrorState error={error} onRetry={reload} />
@@ -272,6 +298,8 @@ function Applications({ onChange }: { onChange: () => void }) {
                     ? `${a.durationDays ?? '?'} 天 · ${a.inviteCode?.redeemedAt ? `${when(a.inviteCode.redeemedAt)} 兑换` : `${when(a.inviteCode?.expiresAt)} 截止`}`
                     : `${when(a.queuedAt)} 排队`}
                   {a.version > 1 && ` · 第 ${a.version} 次`}
+                  {a.user.familiarRecognition?.status === 'active' && ' · 熟人'}
+                  {a.offerLane === 'familiar' && ' · 熟人码'}
                 </span>
                 <span className="madmin-acts">
                   {open && (
@@ -381,6 +409,13 @@ const EVENT: Record<string, string> = {
   mail_delivery_failed: '邮件失败',
   mail_admin_retry: '管理员重试邮件',
   policy_updated: '开关变更',
+  familiar_verified: '对上暗号',
+  familiar_question_saved: '保存暗号题',
+  familiar_question_disabled: '停用暗号题',
+  familiar_period_saved: '保存认识时期',
+  familiar_grant: '授予熟人资格',
+  familiar_revoke: '撤销熟人资格',
+  familiar_unblock: '允许再自行答题',
   membership_email_verified: '确认邮箱',
   email_login_verified: '验证码登录',
   offer_redeemed: '兑换成功',

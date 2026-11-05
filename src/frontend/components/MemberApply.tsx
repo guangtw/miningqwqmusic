@@ -15,6 +15,7 @@ import {
 } from '../lib/membership';
 import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
+import { FamiliarEntry } from './FamiliarQuest';
 import { Icon } from './Icon';
 import { OtpInput, useSecondsLeft } from './OtpInput';
 
@@ -40,9 +41,9 @@ const MAIL: Record<MailDeliveryStatus, string> = {
 };
 
 type Step = 0 | 1 | 2 | 3;
-const STEPS = ['确认邮箱', '排队', '收码', '兑换'];
+const STEPS = ['确认邮箱', '申请', '收码', '兑换'];
 
-/** 排队和等兑换的时候在后台轮询：页面可见才问，切回来立刻问一次 */
+/** 等通知和等兑换的时候在后台轮询：页面可见才问，切回来立刻问一次 */
 function usePolling(active: boolean) {
   useEffect(() => {
     if (!active) return;
@@ -57,9 +58,9 @@ function usePolling(active: boolean) {
 }
 
 /**
- * 会员申请：确认邮箱 → 排队 → 收码 → 兑换。
- * 排队不占名额，轮到时服务端把兑换码发到账号邮箱。能不能申请、排第几、时长几天全听服务端的，
- * 这里只把状态说清楚；按钮防连点，但真正的幂等交给服务端
+ * 会员申请：确认邮箱 → 申请 → 收码 → 兑换。
+ * 申请不占名额，获批时服务端把兑换码发到账号邮箱。能不能申请、位置、时长几天全听服务端的，
+ * 这里只把状态说清楚，不承诺先后和结果；按钮防连点，但真正的幂等交给服务端
  */
 export function MemberApply() {
   const userId = useStore(authStore, (s) => s.user?.id);
@@ -96,6 +97,7 @@ export function MemberApply() {
 
   return (
     <div className="apply">
+      <FamiliarEntry />
       {mine.reason !== 'already_member' && mine.reason !== 'application_blocked' && (mine.applicationsOpen || app) && (
         <ol className="apply-steps mono" aria-label="申请进度">
           {STEPS.map((s, i) => (
@@ -114,15 +116,15 @@ export function MemberApply() {
 function Body({ s, email }: { s: MembershipStatusResponse; email: string }) {
   const app = s.application;
   if (s.reason === 'already_member') {
-    return <p className="muted small">你已经是会员了，申请码不能叠加时长。限时会员到期后，可以回到这里重新排队。</p>;
+    return <p className="muted small">你已经是会员了，申请码不能叠加时长。限时会员到期后，可以回到这里重新申请。</p>;
   }
   if (s.reason === 'application_blocked' || app?.status === 'blocked') {
-    return <p className="muted small apply-blocked">这个账号的申请受到限制，暂时不能排队。有疑问可以联系管理员。</p>;
+    return <p className="muted small apply-blocked">这个账号的申请受到限制，暂时不能申请。有疑问可以联系管理员。</p>;
   }
   if (app?.status === 'queued') return <Queued s={s} />;
   if (app?.status === 'offered') return <Offered s={s} email={email} />;
   if (!s.applicationsOpen) {
-    return <p className="muted small">会员申请暂时没有开放。名额有限，开放以后可以在这里排队。</p>;
+    return <p className="muted small">会员申请暂时没有开放。名额有限，开放以后可以在这里申请。</p>;
   }
   if (s.reason === 'email_verification_required' || !s.emailVerifiedAt) return <ConfirmEmail email={email} />;
   return <Apply s={s} email={email} />;
@@ -160,7 +162,7 @@ function ConfirmEmail({ email }: { email: string }) {
     setError(null);
     try {
       await verifyMemberCode(challenge.id, code);
-      toast('邮箱确认好了，现在可以排队了。');
+      toast('邮箱确认好了，现在可以申请了。');
     } catch (err) {
       setCode('');
       setError((err as Error).message);
@@ -197,7 +199,7 @@ function ConfirmEmail({ email }: { email: string }) {
   );
 }
 
-/** 可以排队：说清楚规则再让人点，不替用户自动提交 */
+/** 可以申请：说清楚规则再让人点，不替用户自动提交 */
 function Apply({ s, email }: { s: MembershipStatusResponse; email: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -209,7 +211,7 @@ function Apply({ s, email }: { s: MembershipStatusResponse; email: string }) {
     setError(null);
     try {
       const r = await applyMembership();
-      if (r.application?.status === 'queued') toast('排上队了，轮到你时会发邮件。');
+      if (r.application?.status === 'queued') toast('申请提交了，有通知会发到邮箱。');
       else if (r.application?.status === 'offered') toast('名额留给你了，兑换码正在发往邮箱。');
     } catch (e) {
       setError((e as Error).message);
@@ -220,17 +222,17 @@ function Apply({ s, email }: { s: MembershipStatusResponse; email: string }) {
 
   return (
     <div className="apply-body">
-      {prev === 'expired' && <p className="apply-lead">上一次的兑换机会过期了，可以重新排队。</p>}
-      {prev === 'cancelled' && <p className="apply-lead">申请已经撤回了，想要的话可以重新排队。</p>}
-      {prev === 'redeemed' && <p className="apply-lead">上一期会员已经结束了，可以重新排队。</p>}
+      {prev === 'expired' && <p className="apply-lead">上一次的兑换机会过期了，可以重新申请。</p>}
+      {prev === 'cancelled' && <p className="apply-lead">申请已经撤回了，想要的话可以重新申请。</p>}
+      {prev === 'redeemed' && <p className="apply-lead">上一期会员已经结束了，可以重新申请。</p>}
       <ul className="apply-rules">
-        <li>排队不占名额。轮到你时，兑换码会发到 {email}，收到后 24 小时内兑换。</li>
+        <li>申请不占名额。获批时，兑换码会发到 {email}，收到后 24 小时内兑换。</li>
         <li>会员时长是 3 天或 7 天，看当时的名额；从兑换成功那一刻开始算。</li>
-        <li>到期后不会自动续期，可以再来排队。</li>
+        <li>名额有限，申请不保证一定获批；到期后不会自动续期，可以再来申请。</li>
       </ul>
       {s.canApply ? (
         <button className="btn solid sm" onClick={() => void go()} disabled={busy}>
-          {busy ? '正在取号…' : '排队申请会员'}
+          {busy ? '正在提交…' : '申请会员'}
         </button>
       ) : (
         <p className="muted small">暂时不能申请，稍后再来看看。</p>
@@ -272,7 +274,7 @@ function Withdraw({ label = '撤回申请' }: { label?: string }) {
   );
 }
 
-/** 排队中：一张取号单，号码会随前面的人兑换、撤回往前挪 */
+/** 等通知：一张申请单。位置只是自己这边的相对位置，不代表先后承诺 */
 function Queued({ s }: { s: MembershipStatusResponse }) {
   const app = s.application!;
   const n = app.queuePosition;
@@ -280,21 +282,21 @@ function Queued({ s }: { s: MembershipStatusResponse }) {
     <div className="apply-body">
       <div className="qticket">
         <div className="qticket-main">
-          <span className="qticket-kicker mono">取号单</span>
+          <span className="qticket-kicker mono">申请位置</span>
           <b className="qticket-no" key={n ?? 'x'}>
             <sup>Nº</sup>
             {n ?? '—'}
           </b>
-          <span className="qticket-sub">{n == null ? '正在排队' : n <= 1 ? '下一个就是你' : `前面还有 ${n - 1} 人`}</span>
+          <span className="qticket-sub">等待通知</span>
         </div>
         <div className="qticket-foot mono">
-          <span>{when(app.queuedAt)} 取号</span>
-          <span>{s.dispatchEnabled ? '等待发码' : '发码暂停中'}</span>
+          <span>{when(app.queuedAt)} 申请</span>
+          <span>{s.dispatchEnabled ? '等待通知' : '发码暂停中'}</span>
         </div>
       </div>
       <p className="help">
-        位置会随着别人兑换、撤回变化，不代表具体什么时候轮到。轮到你时会发邮件，这里也会自动更新。
-        {!s.dispatchEnabled && ' 现在暂停发码，排队记录会保留。'}
+        位置会变化，不代表先后，也不代表什么时候有结果。获批时会发邮件，这里也会自动更新。
+        {!s.dispatchEnabled && ' 现在暂停发码，申请记录会保留。'}
       </p>
       <Withdraw />
     </div>

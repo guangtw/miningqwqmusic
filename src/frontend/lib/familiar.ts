@@ -89,9 +89,9 @@ export function canSubmit(rule: FamiliarChallengeView['passRule'], answers: (Sid
 // 题目只有服务端下发的一段 prompt。展示形式写在 prompt 末尾的 @ 行里，和题干一起存，
 // 所以换题、加题不用发前端，前端也不必知道任何具体题目。认不出的形式退回默认样式。
 
-export type StageName = 'chalk' | 'signboard' | 'dorms' | 'idcard' | 'tracklist' | 'notebook' | 'roster' | 'plaque';
+export type StageName = 'chalk' | 'signboard' | 'dorms' | 'idcard' | 'tracklist' | 'notebook' | 'roster' | 'plaque' | 'groupchat';
 const CHOICE_STAGES: StageName[] = ['chalk', 'signboard', 'dorms', 'idcard', 'tracklist'];
-const TEXT_STAGES: StageName[] = ['notebook', 'roster', 'plaque'];
+const TEXT_STAGES: StageName[] = ['notebook', 'roster', 'plaque', 'groupchat'];
 
 export const STAGE_LABEL: Record<StageName, string> = {
   tracklist: '曲目单（单选默认）',
@@ -102,6 +102,7 @@ export const STAGE_LABEL: Record<StageName, string> = {
   notebook: '横线本（填空默认）',
   roster: '田字格点名册（填空）',
   plaque: '门牌（填空）',
+  groupchat: '群聊标题栏（填空）',
 };
 export const stagesFor = (kind: 'text' | 'single_choice') => (kind === 'text' ? TEXT_STAGES : CHOICE_STAGES);
 

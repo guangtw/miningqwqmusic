@@ -279,6 +279,48 @@ function IdCard({ question, spec, answer, onAnswer, name }: StageProps) {
   );
 }
 
+// ---------------- 群聊：标题栏上的名字被抹掉了 ----------------
+
+/** 聊天内容和题目无关，只是营造气氛 */
+const CHATTER: { text: string; mine?: boolean; tone: number }[] = [
+  { text: '作业写完的借我看看', tone: 0 },
+  { text: '+1', tone: 1 },
+  { text: '老师在群里！！', tone: 2 },
+  { text: '撤撤撤', mine: true, tone: 0 },
+];
+
+function GroupChat({ spec, answer, onAnswer }: StageProps) {
+  return (
+    <div className="st st-chat">
+      <Prompt spec={spec} />
+      <Hint spec={spec} />
+      <div className="chat-window">
+        <div className="chat-bar">
+          <i className="chat-back" aria-hidden="true" />
+          <input
+            value={textAt(answer, 0)}
+            onChange={(e) => onAnswer({ kind: 'text', values: [e.target.value] })}
+            maxLength={64}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={spec.text}
+            placeholder="这里本来有个群名"
+          />
+          <i className="chat-more" aria-hidden="true" />
+        </div>
+        <div className="chat-log" aria-hidden="true">
+          {CHATTER.map((m, i) => (
+            <div key={i} className={`chat-line ${m.mine ? 'mine' : ''}`} style={{ '--i': i } as React.CSSProperties}>
+              <i className={`chat-avatar t${m.tone}`} />
+              <span>{m.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---------------- 默认样式：曲目单和横线本，后台新增的题不写展示形式也好看 ----------------
 
 function Tracklist({ question, spec, answer, onAnswer, name }: StageProps) {
@@ -336,6 +378,7 @@ const STAGES = {
   chalk: Chalk,
   roster: Roster,
   plaque: Plaque,
+  groupchat: GroupChat,
   signboard: Signboard,
   dorms: Dorms,
   idcard: IdCard,

@@ -59,6 +59,8 @@ describe('题面展示协议', () => {
     expect(resolveStage('single_choice', 'dorms', 3)).toBe('tracklist');
     expect(resolveStage('single_choice', 'nonsense' as never, 3)).toBe('tracklist');
     expect(resolveStage('text', undefined, 0)).toBe('notebook');
+    expect(resolveStage('text', 'groupchat', 0)).toBe('groupchat');
+    expect(resolveStage('single_choice', 'groupchat', 4)).toBe('tracklist');
   });
 });
 
@@ -298,6 +300,17 @@ describe.runIf(existsSync(BANK))('定稿题库', () => {
     for (const q of questions) {
       const visible = `${q.prompt}${(q.choices ?? []).join('')}`;
       for (const word of neverShow) expect(visible).not.toContain(word);
+    }
+  });
+
+  it('启用的题之间不互相泄露：填空答案的任何三个连续字都不出现在用户能看到的地方', async () => {
+    const { parseBank } = await import('@/src/frontend/lib/familiar');
+    const live = parseBank(raw).questions.filter((q) => q.status !== 'draft');
+    const visible = live.map((q) => `${q.prompt}${(q.choices ?? []).join('')}`).join('\n');
+    for (const q of live.filter((x) => x.kind === 'text')) {
+      for (const answer of q.answers) {
+        for (let i = 0; i + 3 <= answer.length; i++) expect(visible).not.toContain(answer.slice(i, i + 3));
+      }
     }
   });
 

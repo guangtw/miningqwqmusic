@@ -80,10 +80,64 @@ describe('题面道具', () => {
     expect(seen.at(-1)).toEqual({ kind: 'text', values: ['王'] });
   });
 
+  it('群聊：标题栏是唯一的输入框，聊天内容读屏跳过', () => {
+    const seen: SideAnswer[] = [];
+    const { container } = render(<Harness question={{ slot: 0, kind: 'text', prompt: '这个群叫什么？\n@stage groupchat' }} onChange={(a) => seen.push(a)} />);
+    fireEvent.change(screen.getByRole('textbox', { name: '这个群叫什么？' }), { target: { value: '某个群' } });
+    expect(seen.at(-1)).toEqual({ kind: 'text', values: ['某个群'] });
+    expect(container.querySelector('.chat-log')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('旧题没有 kind 和展示设置也能答', () => {
     render(<Harness question={{ slot: 0, prompt: '一道老题' }} />);
     expect(screen.getByRole('heading').textContent).toBe('一道老题');
     expect(screen.getByRole('textbox')).toBeTruthy();
+  });
+});
+
+// ---------------- 申请页 ----------------
+
+describe('申请页的天数提示', () => {
+  beforeEach(() => vi.resetModules());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const show = async (extra: Record<string, unknown>) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (String(url).endsWith('/membership/familiar')) return new Response(JSON.stringify({ code: 404, message: 'x' }), { status: 404 });
+        return new Response(JSON.stringify({ code: 0, message: 'ok', traceId: 't', data: { serverTime: new Date().toISOString(), applicationsOpen: true, dispatchEnabled: true, emailLoginEnabled: true, emailVerifiedAt: '2026-11-05T00:00:00.000Z', canApply: true, reason: null, application: null, ...extra } }));
+      }),
+    );
+    const { authStore } = await import('@/src/frontend/lib/account');
+    authStore.set({ status: 'authenticated', token: 'tok', user: { id: 'me', email: 'me@example.test' } as never });
+    const { MemberApply } = await import('@/src/frontend/components/MemberApply');
+    render(<MemberApply />);
+  };
+
+  it('能申请和已经是会员时都看得到', async () => {
+    await show({});
+    expect(await screen.findByText(/大胆来微信私信我/)).toBeTruthy();
+    cleanup();
+    await show({ reason: 'already_member', canApply: false });
+    expect(await screen.findByText(/大胆来微信私信我/)).toBeTruthy();
+  });
+
+  it('申请受限、没开放或邮箱没确认时不出现', async () => {
+    await show({ reason: 'application_blocked', canApply: false });
+    await screen.findByText(/申请受到限制/);
+    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
+    cleanup();
+    await show({ applicationsOpen: false, canApply: false });
+    await screen.findByText(/暂时没有开放/);
+    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
+    cleanup();
+    await show({ emailVerifiedAt: null, reason: 'email_verification_required', canApply: false });
+    await screen.findByRole('button', { name: /发送验证码/ });
+    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
   });
 });
 

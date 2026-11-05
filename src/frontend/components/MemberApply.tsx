@@ -113,7 +113,22 @@ export function MemberApply() {
   );
 }
 
+/** 名额是按系统发的，天数不够的话找本人 */
+function MoreDays() {
+  return <p className="apply-more">觉得天数不够用？大胆来微信私信我。</p>;
+}
+
 function Body({ s, email }: { s: MembershipStatusResponse; email: string }) {
+  const blocked = s.reason === 'application_blocked' || s.application?.status === 'blocked';
+  return (
+    <>
+      <Stage s={s} email={email} />
+      {!blocked && s.applicationsOpen !== false && s.emailVerifiedAt && <MoreDays />}
+    </>
+  );
+}
+
+function Stage({ s, email }: { s: MembershipStatusResponse; email: string }) {
   const app = s.application;
   if (s.reason === 'already_member') {
     return <p className="muted small">你已经是会员了，申请码不能叠加时长。限时会员到期后，可以回到这里重新申请。</p>;

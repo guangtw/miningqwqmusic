@@ -169,6 +169,43 @@ describe('挑战恢复', () => {
   });
 });
 
+describe('盲猜通过率', () => {
+  const choice = (n: number) => ({ kind: 'single_choice' as const, choices: Array.from({ length: n }, (_, i) => ({ id: String(i), label: String(i) })) });
+  const text = { kind: 'text' as const, choices: [] };
+
+  it('any 两面各试各的，2 选 1 三次必中', async () => {
+    const { pairGuessRate } = await import('@/src/frontend/lib/familiar');
+    expect(pairGuessRate('any', choice(2), text)).toBe(1);
+    expect(pairGuessRate('any', choice(4), choice(6))).toBeCloseTo(0.875);
+    expect(pairGuessRate('any', choice(4), text)).toBeCloseTo(0.75);
+    expect(pairGuessRate('any', text, text)).toBe(0);
+  });
+
+  it('all 要同一次两面都中，带填空就猜不中', async () => {
+    const { pairGuessRate } = await import('@/src/frontend/lib/familiar');
+    expect(pairGuessRate('all', choice(4), choice(6))).toBeCloseTo(0.125);
+    expect(pairGuessRate('all', choice(2), choice(2))).toBeCloseTo(0.75);
+    expect(pairGuessRate('all', choice(9), text)).toBe(0);
+  });
+
+  it('随机抽题取所有组合的平均，不够两题返回 null', async () => {
+    const { poolGuessRate } = await import('@/src/frontend/lib/familiar');
+    expect(poolGuessRate('any', [choice(6), text, choice(4), choice(2)])).toBeCloseTo(5.125 / 6);
+    expect(poolGuessRate('any', [choice(6)])).toBeNull();
+    expect(poolGuessRate('any', [])).toBeNull();
+  });
+
+  it('固定两题算这两题，随机时期排除别的时期的必答题，只有一道定向题时补通用题', async () => {
+    const { periodGuessRate } = await import('@/src/frontend/lib/familiar');
+    const q = (questionId: string, base: ReturnType<typeof choice> | typeof text, periodIds: string[]) => ({ ...base, questionId, periodIds }) as never;
+    const active = [q('a', choice(9), ['p']), q('b', text, ['p']), q('c', choice(2), ['r']), q('d', choice(4), [])];
+    expect(periodGuessRate({ id: 'p', passRule: 'all', requiredQuestionIds: ['a', 'b'] }, active, new Set(['a', 'b']))).toBe(0);
+    expect(periodGuessRate({ id: 'p', passRule: 'all', requiredQuestionIds: ['a', 'x'] }, active, new Set())).toBeNull();
+    expect(periodGuessRate({ id: 'r', passRule: 'any', requiredQuestionIds: [] }, active, new Set())).toBe(1);
+    expect(periodGuessRate({ id: 'p', passRule: 'any', requiredQuestionIds: [] }, active, new Set(['a', 'b']))).toBeNull();
+  });
+});
+
 describe('题库导入', () => {
   it('先建停用的时期、再存题、最后用保存返回的 id 配必答并启用', async () => {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
@@ -205,6 +242,7 @@ describe('题库导入', () => {
     expect(() => parseBank('{"periods":[]}')).toThrow();
     expect(() => parseBank(JSON.stringify({ periods: [], questions: [{ key: 'a', period: 'x' }] }))).toThrow(/不存在的时期/);
     expect(() => parseBank(JSON.stringify({ periods: [{ key: 'u', required: ['q'] }], questions: [] }))).toThrow(/必答题/);
+    expect(() => parseBank(JSON.stringify({ periods: [{ key: 'u', required: ['q'] }], questions: [{ key: 'q', status: 'draft' }] }))).toThrow(/草稿/);
   });
 });
 
@@ -237,8 +275,22 @@ describe.runIf(existsSync(BANK))('定稿题库', () => {
     const bank = parseBank(raw);
     for (const p of bank.periods.filter((x) => x.passRule === 'all')) {
       expect(p.required).toHaveLength(2);
-      expect(bank.questions.filter((q) => q.period === p.key).map((q) => q.key).sort()).toEqual([...p.required!].sort());
+      const live = bank.questions.filter((q) => q.period === p.key && q.status !== 'draft');
+      expect(live.map((q) => q.key).sort()).toEqual([...p.required!].sort());
     }
+  });
+
+  it('没有哪个入口能靠盲猜轻松通过', async () => {
+    const { GUESS_WARN, pairGuessRate, parseBank, poolGuessRate } = await import('@/src/frontend/lib/familiar');
+    const bank = parseBank(raw);
+    const view = (q: (typeof bank.questions)[number]) => ({ kind: q.kind, choices: (q.choices ?? []).map((label) => ({ id: label, label })) });
+    for (const p of bank.periods) {
+      const [a, b] = p.required!.map((k) => bank.questions.find((q) => q.key === k)!);
+      expect(pairGuessRate(p.passRule!, view(a), view(b))).toBeLessThan(GUESS_WARN);
+    }
+    const strict = new Set(bank.periods.flatMap((p) => p.required ?? []));
+    const rest = bank.questions.filter((q) => q.status !== 'draft' && !strict.has(q.key)).map(view);
+    expect(poolGuessRate('any', rest) ?? 0).toBeLessThan(GUESS_WARN);
   });
 
   it('用户能看到的内容里不写 neverShow 列出的词（能搜到人或学校的原名）', () => {

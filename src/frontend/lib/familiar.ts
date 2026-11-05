@@ -5,6 +5,7 @@ import type {
   FamiliarAdminPeriod,
   FamiliarChallengeView,
   FamiliarPeriodInput,
+  FamiliarPeriodView,
   FamiliarQuestionInput,
   FamiliarQuestionView,
   FamiliarSlotAnswer,
@@ -158,6 +159,45 @@ export function resolveStage(kind: 'text' | 'single_choice', stage: StageName | 
   return stage;
 }
 
+// ---------------- 盲猜通过率 ----------------
+// 三次机会里单选可以靠排除法试，这里算完全不认识的人最多能靠猜过的概率。填空按猜不中算。
+
+const ATTEMPTS = 3;
+type Guessable = Pick<FamiliarQuestionView, 'kind' | 'choices'>;
+const guessChance = (q: Guessable) => (q.kind === 'text' ? 0 : Math.min(1, ATTEMPTS / Math.max(1, q.choices.length)));
+
+/** any 两面各试各的；all 要同一次两面都中，三次只能试三种组合 */
+export function pairGuessRate(rule: 'any' | 'all', a: Guessable, b: Guessable) {
+  if (rule === 'any') return 1 - (1 - guessChance(a)) * (1 - guessChance(b));
+  if (a.kind === 'text' || b.kind === 'text') return 0;
+  return Math.min(1, ATTEMPTS / (a.choices.length * b.choices.length));
+}
+
+/** 随机抽两题时，所有可能的组合取平均。题不够两道返回 null */
+export function poolGuessRate(rule: 'any' | 'all', pool: Guessable[]) {
+  const rates: number[] = [];
+  pool.forEach((a, i) => pool.slice(i + 1).forEach((b) => rates.push(pairGuessRate(rule, a, b))));
+  return rates.length ? rates.reduce((x, y) => x + y, 0) / rates.length : null;
+}
+
+/** 这个时期的盲猜通过率：固定两题就算这两题，否则按抽题规则（优先定向，只有一道时才补通用题） */
+export function periodGuessRate(period: Pick<FamiliarPeriodView, 'id' | 'passRule' | 'requiredQuestionIds'>, active: FamiliarQuestionView[], strictIds: Set<string>) {
+  if (period.requiredQuestionIds.length === 2) {
+    const [a, b] = period.requiredQuestionIds.map((id) => active.find((q) => q.questionId === id));
+    return a && b ? pairGuessRate(period.passRule, a, b) : null;
+  }
+  const open = active.filter((q) => !strictIds.has(q.questionId));
+  const targeted = open.filter((q) => q.periodIds?.includes(period.id));
+  if (targeted.length >= 2) return poolGuessRate(period.passRule, targeted);
+  const general = open.filter((q) => !q.periodIds?.length);
+  if (targeted.length !== 1 || !general.length) return null;
+  const rates = general.map((g) => pairGuessRate(period.passRule, targeted[0], g));
+  return rates.reduce((x, y) => x + y, 0) / rates.length;
+}
+
+/** 超过这个比例，后台标红提醒 */
+export const GUESS_WARN = 0.25;
+
 // ---------------- 管理员 ----------------
 
 export const adminAdmission = () => authed<MembershipAdmissionAdminState>(p.adminMembership);
@@ -219,6 +259,7 @@ export function parseBank(raw: string): BankFile {
   }
   for (const x of bank.periods) {
     if (x.required?.some((k) => !questionKeys.has(k))) throw new Error(`时期 ${x.key} 的必答题不在题目列表里。`);
+    if (x.required?.some((k) => bank.questions.find((q) => q.key === k)?.status === 'draft')) throw new Error(`时期 ${x.key} 的必答题还是草稿。`);
   }
   return bank;
 }

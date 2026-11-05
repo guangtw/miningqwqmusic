@@ -1858,6 +1858,10 @@
 .fadmin-lead {
   margin-bottom: 12px;
 }
+.fadmin-risk {
+  color: #c8452b;
+  font-weight: 600;
+}
 .fadmin-switches {
   margin-top: 12px;
 }

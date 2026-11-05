@@ -20,9 +20,12 @@ import {
   allQuestionVersions,
   composePrompt,
   disableQuestion,
+  GUESS_WARN,
   importBank,
   parseBank,
   parsePrompt,
+  periodGuessRate,
+  poolGuessRate,
   resolveStage,
   savePeriod,
   saveQuestion,
@@ -223,6 +226,12 @@ function Limit({ label, value, max, onSave }: { label: string; value: number; ma
 
 // ---------------- 时期 ----------------
 
+function GuessRate({ rate }: { rate: number | null }) {
+  if (rate === null) return <span>盲猜率 —</span>;
+  const text = rate < 0.01 ? '不到 1%' : `约 ${Math.round(rate * 100)}%`;
+  return <span className={rate >= GUESS_WARN ? 'fadmin-risk' : ''}>盲猜{text}</span>;
+}
+
 function latestByQuestion(versions: FamiliarQuestionView[]) {
   const groups = new Map<string, FamiliarQuestionView[]>();
   for (const v of versions) groups.set(v.questionId, [...(groups.get(v.questionId) ?? []), v]);
@@ -263,6 +272,9 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
 
   const edit = (p: FamiliarAdminPeriod) => setDraft({ id: p.id, label: p.label, sortOrder: String(p.sortOrder), enabled: p.enabled, passRule: p.passRule, required: [p.requiredQuestionIds[0] ?? '', p.requiredQuestionIds[1] ?? ''] });
   const titleOf = (id: string) => logical.find((q) => q.questionId === id)?.title ?? '未知题目';
+  const active = versions.filter((v) => v.status === 'active');
+  const strictIds = new Set(periods.filter((p) => p.passRule === 'all').flatMap((p) => p.requiredQuestionIds));
+  const randomRate = poolGuessRate('any', active.filter((q) => !strictIds.has(q.questionId)));
 
   return (
     <section className="madmin-sec reveal" style={{ '--i': 1 } as React.CSSProperties}>
@@ -272,7 +284,11 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
           新增时期
         </button>
       </div>
-      <p className="muted small fadmin-lead">标签是公开的，用户自己选，不代表真的核实过。没配齐题目的时期不会出现在门口。</p>
+      <p className="muted small fadmin-lead">
+        标签是公开的，用户自己选，不代表真的核实过。没配齐题目的时期不会出现在门口。盲猜率是完全不认识的人靠排除法试满三次能过的概率。
+        <br />
+        「记不清了」入口：{randomRate === null ? '已关闭，随机池不够两题' : <GuessRate rate={randomRate} />}
+      </p>
       {draft && (
         <form className="fadmin-form" onSubmit={save}>
           <label className="fadmin-field">
@@ -341,6 +357,8 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
               <span className={`madmin-status ${p.available ? 's-redeemed' : p.enabled ? 's-blocked' : 's-cancelled'}`}>{p.available ? '门口可选' : p.enabled ? '题没配齐' : '已停用'}</span>
               <span className="madmin-when mono">
                 定向 {p.targetedQuestions} · 通用 {p.generalQuestions} · 排序 {p.sortOrder}
+                {' · '}
+                <GuessRate rate={periodGuessRate(p, active, strictIds)} />
               </span>
               <span className="madmin-acts">
                 <button className="text-btn" onClick={() => edit(p)}>

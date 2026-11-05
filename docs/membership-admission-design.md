@@ -1,6 +1,6 @@
 # 会员申请调度与运维设计（membership-v1）
 
-> 熟人优先扩展已实现但默认关闭。本文FIFO与全队列预算描述适用于`admissionMode=legacy`；`familiar-first`改用分队候选和独立预算，普通仅使用保护空位以外的正常区。容量公式、15硬顶、软区条件、邮件和兑换协议不变。接口、切换及回滚见[熟人暗号交接](handoffs/backend-familiar-membership-handoff.md)。
+> 熟人优先扩展已实现但默认关闭。本文FIFO与全队列预算描述适用于`admissionMode=legacy`；`familiar-first`改用分队候选和独立预算，普通仅使用保护空位以外的正常区。容量公式、15硬顶、软区条件、邮件和兑换协议不变。接口、切换及回滚见[后端契约](familiar-backend-contract.md)。
 
 ## 已确认边界
 

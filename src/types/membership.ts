@@ -63,28 +63,38 @@ export type FamiliarStatus = FamiliarRecognitionView & {
   serverTime: string; canVerify: boolean;
   reason: "verified" | "unavailable" | "email_verification_required" | null; nextChallengeAt: string | null;
   periodOptions?: FamiliarPeriodOption[];
+  canUseRandom?: boolean;
 };
 export type FamiliarPeriodOption = {id: string; label: string};
-export type FamiliarPeriodInput = {id?: string; label: string; sortOrder: number; enabled: boolean};
-export type FamiliarPeriodView = FamiliarPeriodOption & {sortOrder: number; enabled: boolean; createdAt: string; updatedAt: string};
+export type FamiliarPassRule = "any" | "all";
+export type FamiliarPeriodInput = {id?: string; label: string; sortOrder: number; enabled: boolean;
+  passRule?: FamiliarPassRule; requiredQuestionIds?: string[]};
+export type FamiliarPeriodView = FamiliarPeriodOption & {sortOrder: number; enabled: boolean; createdAt: string; updatedAt: string;
+  passRule: FamiliarPassRule; requiredQuestionIds: string[]};
 export type FamiliarAdminPeriod = FamiliarPeriodView & {targetedQuestions: number; generalQuestions: number; available: boolean};
 export type FamiliarChallengeRequest = {periodId?: string | null};
 export type FamiliarChallengeView = {
   challengeId: string; serverTime: string; expiresAt: string; nextChallengeAt: string;
-  available: boolean; attemptsRemaining: number; questions: {slot: number; prompt: string}[];
+  available: boolean; attemptsRemaining: number; questions: {slot: number; prompt: string;
+    kind?: "text" | "single_choice"; options?: FamiliarChoice[]}[];
+  passRule?: FamiliarPassRule; requiredCorrectCount?: number;
   period?: FamiliarPeriodOption | null;
 };
-export type FamiliarVerifyRequest = {challengeId: string; answers: [string, string]};
+export type FamiliarChoice = {id: string; label: string};
+export type FamiliarSlotAnswer = string | string[];
+export type FamiliarVerifyRequest = {challengeId: string; answers: [FamiliarSlotAnswer, FamiliarSlotAnswer]};
 export type FamiliarVerifyResult = {passed: false; serverTime: string; attemptsRemaining: number; nextChallengeAt: string} |
   ({passed: true} & FamiliarStatus);
 export type FamiliarQuestionInput = {
   questionId?: string; title: string; group: string; prompt: string; notes?: string;
   status: "draft" | "active"; answers: string[];
+  kind?: "text" | "single_choice"; choices?: string[];
   /** Empty = general-purpose; omitted on revision preserves its previous targeting. */
   periodIds?: string[];
 };
-export type FamiliarQuestionView = Omit<FamiliarQuestionInput, "answers" | "questionId" | "status"> & {
+export type FamiliarQuestionView = Omit<FamiliarQuestionInput, "answers" | "choices" | "questionId" | "status" | "kind"> & {
   id: string; questionId: string; version: number; status: "draft" | "active" | "retired" | "disabled";
+  kind: "text" | "single_choice"; choices: FamiliarChoice[];
   answerCount: number; normalizationVersion: number; createdAt: string;
 };
 export type FamiliarAdminAction = {userId: string; action: "grant" | "revoke" | "unblock"; reason: string};
@@ -97,13 +107,15 @@ export type FamiliarAdminEvidence = {
   id: string; userId: string; source: "manual" | "challenge"; challengeId: string | null; questionVersionIds: string[];
   actorUserId: string | null; reason: string | null; createdAt: string;
   periodId: string | null; periodLabel: string | null;
+  passRule: FamiliarPassRule;
   matchedQuestions: Pick<FamiliarQuestionView, "id" | "questionId" | "version" | "title" | "prompt" | "status">[];
 };
 export type FamiliarAdminDetail = {
   user: {id: string; email: string; nickname: string | null}; recognition: FamiliarAdminRecognition | null;
   evidence: FamiliarAdminEvidence[];
   recentChallenges: {id: string; attempts: number; createdAt: string; expiresAt: string; consumedAt: string | null;
-    invalidatedAt: string | null; lastAttemptAt: string | null; ipHash: string; periodId: string | null; periodLabel: string | null}[];
+    invalidatedAt: string | null; lastAttemptAt: string | null; ipHash: string; periodId: string | null; periodLabel: string | null;
+    passRule: FamiliarPassRule}[];
 };
 export type MembershipAdminMail = {
   id: string; userId: string | null; applicationId: string | null; toAddress: string; kind: string; status: MailDeliveryStatus;

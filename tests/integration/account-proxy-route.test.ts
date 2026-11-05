@@ -118,6 +118,26 @@ describe("account proxy route", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("forwards familiar verification with canonical identity and preserves its cooldown without caching", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    vi.stubEnv("ACCOUNT_TRUST_PROXY_HEADERS", "1");
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({code: 5910, retryAfterSeconds: 120},
+      {status: 429, headers: {"retry-after": "120"}}));
+    const body = JSON.stringify({challengeId: "synthetic-challenge", answers: ["synthetic answer", ""]});
+    const response = await POST(new NextRequest("http://localhost/api/account/membership/familiar/verify", {
+      method: "POST", headers: {authorization: "Bearer account-token", "content-type": "application/json",
+        "x-real-ip": "192.0.2.1", "x-forwarded-for": "203.0.113.99"}, body
+    }), createContext(["membership", "familiar", "verify"]));
+    const [target, init] = fetchMock.mock.calls[0];
+    expect(String(target)).toBe("http://127.0.0.1:3002/api/account/membership/familiar/verify");
+    expect(new TextDecoder().decode(init?.body as ArrayBuffer)).toBe(body);
+    expect((init?.headers as Headers).get("authorization")).toBe("Bearer account-token");
+    expect((init?.headers as Headers).get("x-forwarded-for")).toBe("192.0.2.1");
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("120");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("keeps the SSE abort signal alive after headers and cancels upstream on reader cancellation", async () => {
     process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
     const cancel = vi.fn();

@@ -113,9 +113,9 @@ export function MemberApply() {
   );
 }
 
-/** 名额是按系统发的，天数不够的话找本人 */
+/** 系统只发 3 天或 7 天；更长的会员卡是本人给微信好友的，不走申请 */
 function MoreDays() {
-  return <p className="apply-more">觉得天数不够用？大胆来微信私信我。</p>;
+  return <p className="apply-more">3 天、7 天不够用？有我微信的朋友大胆来私信，一个月甚至更长的会员卡都有。</p>;
 }
 
 function Body({ s, email }: { s: MembershipStatusResponse; email: string }) {

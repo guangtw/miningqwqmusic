@@ -165,6 +165,7 @@ export function resolveStage(kind: 'text' | 'single_choice', stage: StageName | 
 
 const ATTEMPTS = 3;
 type Guessable = Pick<FamiliarQuestionView, 'kind' | 'choices'>;
+type Drawable = Guessable & Pick<FamiliarQuestionView, 'group'>;
 const guessChance = (q: Guessable) => (q.kind === 'text' ? 0 : Math.min(1, ATTEMPTS / Math.max(1, q.choices.length)));
 
 /** any 两面各试各的；all 要同一次两面都中，三次只能试三种组合 */
@@ -181,11 +182,24 @@ export function poolGuessRate(rule: 'any' | 'all', pool: Guessable[]) {
   return rates.length ? rates.reduce((x, y) => x + y, 0) / rates.length : null;
 }
 
-/** 这个时期的盲猜通过率：固定两题就算这两题，否则按抽题规则（优先定向，只有一道时才补通用题） */
+/** 必答题多于两道时可能抽到的组合：和后端一样，有别的分组就只跨组搭配 */
+export function drawnPairs<T extends Drawable>(list: T[]): [T, T][] {
+  const pairs: [T, T][] = [];
+  list.forEach((a, i) => {
+    list.slice(i + 1).forEach((b) => {
+      const crossGroupExists = list.some((x) => x.group !== a.group) || list.some((x) => x.group !== b.group);
+      if (a.group !== b.group || !crossGroupExists) pairs.push([a, b]);
+    });
+  });
+  return pairs;
+}
+
+/** 这个时期的盲猜通过率。必答题按最弱的组合算（换个账号就能重抽）；否则按抽题规则（优先定向，只有一道时才补通用题） */
 export function periodGuessRate(period: Pick<FamiliarPeriodView, 'id' | 'passRule' | 'requiredQuestionIds'>, active: FamiliarQuestionView[], strictIds: Set<string>) {
-  if (period.requiredQuestionIds.length === 2) {
-    const [a, b] = period.requiredQuestionIds.map((id) => active.find((q) => q.questionId === id));
-    return a && b ? pairGuessRate(period.passRule, a, b) : null;
+  if (period.requiredQuestionIds.length >= 2) {
+    const live = period.requiredQuestionIds.flatMap((id) => active.filter((q) => q.questionId === id));
+    const pairs = drawnPairs(live);
+    return pairs.length ? Math.max(...pairs.map(([a, b]) => pairGuessRate(period.passRule, a, b))) : null;
   }
   const open = active.filter((q) => !strictIds.has(q.questionId));
   const targeted = open.filter((q) => q.periodIds?.includes(period.id));

@@ -244,7 +244,7 @@ interface PeriodDraft {
   sortOrder: string;
   enabled: boolean;
   passRule: FamiliarPassRule;
-  required: [string, string];
+  required: string[];
 }
 
 function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod[]; versions: FamiliarQuestionView[]; onChange: () => void }) {
@@ -255,8 +255,8 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!draft || busy) return;
-    const required = draft.required.filter(Boolean);
-    if (required.length === 1 || (required.length === 2 && required[0] === required[1])) return toast('固定必答题要选两道不同的题，或者都不选。');
+    const { required } = draft;
+    if (required.length === 1) return toast('必答题至少选两道，或者都不选。');
     setBusy(true);
     try {
       await savePeriod({ ...(draft.id ? { id: draft.id } : {}), label: draft.label.trim(), sortOrder: Number(draft.sortOrder) || 0, enabled: draft.enabled, passRule: draft.passRule, requiredQuestionIds: required });
@@ -270,7 +270,7 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
     }
   };
 
-  const edit = (p: FamiliarAdminPeriod) => setDraft({ id: p.id, label: p.label, sortOrder: String(p.sortOrder), enabled: p.enabled, passRule: p.passRule, required: [p.requiredQuestionIds[0] ?? '', p.requiredQuestionIds[1] ?? ''] });
+  const edit = (p: FamiliarAdminPeriod) => setDraft({ id: p.id, label: p.label, sortOrder: String(p.sortOrder), enabled: p.enabled, passRule: p.passRule, required: p.requiredQuestionIds });
   const titleOf = (id: string) => logical.find((q) => q.questionId === id)?.title ?? '未知题目';
   const active = versions.filter((v) => v.status === 'active');
   const strictIds = new Set(periods.filter((p) => p.passRule === 'all').flatMap((p) => p.requiredQuestionIds));
@@ -280,12 +280,12 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
     <section className="madmin-sec reveal" style={{ '--i': 1 } as React.CSSProperties}>
       <div className="section-head">
         <h2>认识时期</h2>
-        <button className="btn sm" onClick={() => setDraft({ label: '', sortOrder: String((periods.at(-1)?.sortOrder ?? 0) + 10), enabled: false, passRule: 'any', required: ['', ''] })}>
+        <button className="btn sm" onClick={() => setDraft({ label: '', sortOrder: String((periods.at(-1)?.sortOrder ?? 0) + 10), enabled: false, passRule: 'any', required: [] })}>
           新增时期
         </button>
       </div>
       <p className="muted small fadmin-lead">
-        标签是公开的，用户自己选，不代表真的核实过。没配齐题目的时期不会出现在门口。盲猜率是完全不认识的人靠排除法试满三次能过的概率。
+        标签是公开的，用户自己选，不代表真的核实过。没配齐题目的时期不会出现在门口。盲猜率是完全不认识的人靠排除法试满三次能过的概率，轮换时按最弱的组合算。
         <br />
         「记不清了」入口：{randomRate === null ? '已关闭，随机池不够两题' : <GuessRate rate={randomRate} />}
       </p>
@@ -310,27 +310,19 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
             <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} />
             <small>启用</small>
           </label>
-          {[0, 1].map((i) => (
-            <label key={i} className="fadmin-field">
-              <small>固定必答题 {i + 1}{draft.passRule === 'all' ? '（必选）' : '（可不选）'}</small>
-              <select
-                className="member-input"
-                value={draft.required[i]}
-                onChange={(e) => {
-                  const required: [string, string] = [...draft.required];
-                  required[i] = e.target.value;
-                  setDraft({ ...draft, required });
-                }}
-              >
-                <option value="">不固定</option>
-                {logical.map((q) => (
-                  <option key={q.questionId} value={q.questionId}>
-                    {q.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+          <fieldset className="fadmin-field wide fadmin-periods">
+            <small>必答题{draft.passRule === 'all' ? '（至少两道）' : '（可不选）'}：选两道就固定考这两道，选更多就每次抽两道。内部分组不同的题优先搭配，把强题单独放一组，它就每次都考。</small>
+            {logical.filter((q) => q.status !== 'disabled').map((q) => (
+              <label key={q.questionId}>
+                <input
+                  type="checkbox"
+                  checked={draft.required.includes(q.questionId)}
+                  onChange={(e) => setDraft({ ...draft, required: e.target.checked ? [...draft.required, q.questionId] : draft.required.filter((x) => x !== q.questionId) })}
+                />
+                {q.title}
+              </label>
+            ))}
+          </fieldset>
           <div className="field-inline fadmin-submit">
             <button className="btn solid sm" disabled={busy}>
               {busy ? '保存中…' : '保存时期'}
@@ -351,7 +343,7 @@ function Periods({ periods, versions, onChange }: { periods: FamiliarAdminPeriod
                 <span className="t">{p.label}</span>
                 <span className="a">
                   {p.passRule === 'all' ? '两题全对' : '任一题对'}
-                  {p.requiredQuestionIds.length > 0 && ` · 固定：${p.requiredQuestionIds.map(titleOf).join('、')}`}
+                  {p.requiredQuestionIds.length > 0 && ` · ${p.requiredQuestionIds.length > 2 ? '轮换' : '固定'}：${p.requiredQuestionIds.map(titleOf).join('、')}`}
                 </span>
               </span>
               <span className={`madmin-status ${p.available ? 's-redeemed' : p.enabled ? 's-blocked' : 's-cancelled'}`}>{p.available ? '门口可选' : p.enabled ? '题没配齐' : '已停用'}</span>

@@ -120,24 +120,24 @@ describe('申请页的天数提示', () => {
 
   it('能申请和已经是会员时都看得到', async () => {
     await show({});
-    expect(await screen.findByText(/大胆来微信私信我/)).toBeTruthy();
+    expect(await screen.findByText(/有我微信的朋友大胆来私信/)).toBeTruthy();
     cleanup();
     await show({ reason: 'already_member', canApply: false });
-    expect(await screen.findByText(/大胆来微信私信我/)).toBeTruthy();
+    expect(await screen.findByText(/有我微信的朋友大胆来私信/)).toBeTruthy();
   });
 
   it('申请受限、没开放或邮箱没确认时不出现', async () => {
     await show({ reason: 'application_blocked', canApply: false });
     await screen.findByText(/申请受到限制/);
-    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
+    expect(screen.queryByText(/有我微信的朋友大胆来私信/)).toBeNull();
     cleanup();
     await show({ applicationsOpen: false, canApply: false });
     await screen.findByText(/暂时没有开放/);
-    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
+    expect(screen.queryByText(/有我微信的朋友大胆来私信/)).toBeNull();
     cleanup();
     await show({ emailVerifiedAt: null, reason: 'email_verification_required', canApply: false });
     await screen.findByRole('button', { name: /发送验证码/ });
-    expect(screen.queryByText(/大胆来微信私信我/)).toBeNull();
+    expect(screen.queryByText(/有我微信的朋友大胆来私信/)).toBeNull();
   });
 });
 

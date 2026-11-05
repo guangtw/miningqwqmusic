@@ -208,6 +208,33 @@ describe('盲猜通过率', () => {
   });
 });
 
+describe('轮换组合', () => {
+  const q = (id: string, group: string, n = 0) => ({ id, group, kind: n ? ('single_choice' as const) : ('text' as const), choices: Array.from({ length: n }, (_, i) => ({ id: String(i), label: String(i) })) });
+
+  it('同一组时所有组合都可能抽到', async () => {
+    const { drawnPairs } = await import('@/src/frontend/lib/familiar');
+    const pairs = drawnPairs([q('a', 'g'), q('b', 'g'), q('c', 'g')]);
+    expect(pairs.map(([x, y]) => x.id + y.id)).toEqual(['ab', 'ac', 'bc']);
+  });
+
+  it('把强题单独放一组，每个组合都带它', async () => {
+    const { drawnPairs } = await import('@/src/frontend/lib/familiar');
+    const pairs = drawnPairs([q('hard', 'strong'), q('b', 'rest'), q('c', 'rest')]);
+    expect(pairs.map(([x, y]) => x.id + y.id)).toEqual(['hardb', 'hardc']);
+  });
+
+  it('必答题按最弱组合算盲猜率，停用后在剩下的题里算', async () => {
+    const { periodGuessRate } = await import('@/src/frontend/lib/familiar');
+    const v = (questionId: string, group: string, n: number) => ({ ...q(questionId, group, n), questionId, periodIds: ['p'] }) as never;
+    const period = { id: 'p', passRule: 'all' as const, requiredQuestionIds: ['a', 'b', 'c'] };
+    // 同组：两道单选可能凑成一对，3 / (4 × 2)
+    expect(periodGuessRate(period, [v('a', 'g', 4), v('b', 'g', 2), v('c', 'g', 0)], new Set())).toBeCloseTo(0.375);
+    // 填空单独一组：单选永远不会互相搭配
+    expect(periodGuessRate(period, [v('a', 'x', 4), v('b', 'x', 2), v('c', 'y', 0)], new Set())).toBe(0);
+    expect(periodGuessRate(period, [v('a', 'x', 4)], new Set())).toBeNull();
+  });
+});
+
 describe('题库导入', () => {
   it('先建停用的时期、再存题、最后用保存返回的 id 配必答并启用', async () => {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
@@ -272,23 +299,24 @@ describe.runIf(existsSync(BANK))('定稿题库', () => {
     }
   });
 
-  it('全对的时期固定两题，必答题都属于这个时期', async () => {
+  it('全对的时期至少两道必答题，启用的题都在必答集合里', async () => {
     const { parseBank } = await import('@/src/frontend/lib/familiar');
     const bank = parseBank(raw);
     for (const p of bank.periods.filter((x) => x.passRule === 'all')) {
-      expect(p.required).toHaveLength(2);
+      expect(p.required!.length).toBeGreaterThanOrEqual(2);
       const live = bank.questions.filter((q) => q.period === p.key && q.status !== 'draft');
       expect(live.map((q) => q.key).sort()).toEqual([...p.required!].sort());
     }
   });
 
   it('没有哪个入口能靠盲猜轻松通过', async () => {
-    const { GUESS_WARN, pairGuessRate, parseBank, poolGuessRate } = await import('@/src/frontend/lib/familiar');
+    const { drawnPairs, GUESS_WARN, pairGuessRate, parseBank, poolGuessRate } = await import('@/src/frontend/lib/familiar');
     const bank = parseBank(raw);
     const view = (q: (typeof bank.questions)[number]) => ({ kind: q.kind, choices: (q.choices ?? []).map((label) => ({ id: label, label })) });
     for (const p of bank.periods) {
-      const [a, b] = p.required!.map((k) => bank.questions.find((q) => q.key === k)!);
-      expect(pairGuessRate(p.passRule!, view(a), view(b))).toBeLessThan(GUESS_WARN);
+      const live = p.required!.map((k) => bank.questions.find((q) => q.key === k)!).map((q) => ({ ...view(q), group: q.group }));
+      expect(drawnPairs(live).length).toBeGreaterThan(0);
+      for (const [a, b] of drawnPairs(live)) expect(pairGuessRate(p.passRule!, a, b)).toBeLessThan(GUESS_WARN);
     }
     const strict = new Set(bank.periods.flatMap((p) => p.required ?? []));
     const rest = bank.questions.filter((q) => q.status !== 'draft' && !strict.has(q.key)).map(view);

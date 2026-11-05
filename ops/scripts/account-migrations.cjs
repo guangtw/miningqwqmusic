@@ -7,7 +7,8 @@ const approved = [
   ['20261103120000_direct_messages', 'scripts/migrate-direct-messages.mjs'],
   ['20261103160000_rich_direct_messages', 'scripts/migrate-rich-direct-messages.mjs'],
   ['20261104120000_membership_applications', 'scripts/migrate-membership-applications.mjs'],
-  ['20261105120000_familiar_membership', 'scripts/migrate-familiar-membership.mjs']
+  ['20261105120000_familiar_membership', 'scripts/migrate-familiar-membership.mjs'],
+  ['20261105130000_familiar_periods', 'scripts/migrate-familiar-periods.mjs']
 ];
 
 /** Exact, ordered migration chain. Unknown schemas/SQL fail closed. No database work here. */

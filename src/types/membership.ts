@@ -62,10 +62,17 @@ export type FamiliarRecognitionView = {verified: boolean; verifiedAt: string | n
 export type FamiliarStatus = FamiliarRecognitionView & {
   serverTime: string; canVerify: boolean;
   reason: "verified" | "unavailable" | "email_verification_required" | null; nextChallengeAt: string | null;
+  periodOptions?: FamiliarPeriodOption[];
 };
+export type FamiliarPeriodOption = {id: string; label: string};
+export type FamiliarPeriodInput = {id?: string; label: string; sortOrder: number; enabled: boolean};
+export type FamiliarPeriodView = FamiliarPeriodOption & {sortOrder: number; enabled: boolean; createdAt: string; updatedAt: string};
+export type FamiliarAdminPeriod = FamiliarPeriodView & {targetedQuestions: number; generalQuestions: number; available: boolean};
+export type FamiliarChallengeRequest = {periodId?: string | null};
 export type FamiliarChallengeView = {
   challengeId: string; serverTime: string; expiresAt: string; nextChallengeAt: string;
   available: boolean; attemptsRemaining: number; questions: {slot: number; prompt: string}[];
+  period?: FamiliarPeriodOption | null;
 };
 export type FamiliarVerifyRequest = {challengeId: string; answers: [string, string]};
 export type FamiliarVerifyResult = {passed: false; serverTime: string; attemptsRemaining: number; nextChallengeAt: string} |
@@ -73,6 +80,8 @@ export type FamiliarVerifyResult = {passed: false; serverTime: string; attemptsR
 export type FamiliarQuestionInput = {
   questionId?: string; title: string; group: string; prompt: string; notes?: string;
   status: "draft" | "active"; answers: string[];
+  /** Empty = general-purpose; omitted on revision preserves its previous targeting. */
+  periodIds?: string[];
 };
 export type FamiliarQuestionView = Omit<FamiliarQuestionInput, "answers" | "questionId" | "status"> & {
   id: string; questionId: string; version: number; status: "draft" | "active" | "retired" | "disabled";
@@ -87,13 +96,14 @@ export type FamiliarAdminAccount = FamiliarAdminRecognition & {user: {id: string
 export type FamiliarAdminEvidence = {
   id: string; userId: string; source: "manual" | "challenge"; challengeId: string | null; questionVersionIds: string[];
   actorUserId: string | null; reason: string | null; createdAt: string;
+  periodId: string | null; periodLabel: string | null;
   matchedQuestions: Pick<FamiliarQuestionView, "id" | "questionId" | "version" | "title" | "prompt" | "status">[];
 };
 export type FamiliarAdminDetail = {
   user: {id: string; email: string; nickname: string | null}; recognition: FamiliarAdminRecognition | null;
   evidence: FamiliarAdminEvidence[];
   recentChallenges: {id: string; attempts: number; createdAt: string; expiresAt: string; consumedAt: string | null;
-    invalidatedAt: string | null; lastAttemptAt: string | null; ipHash: string}[];
+    invalidatedAt: string | null; lastAttemptAt: string | null; ipHash: string; periodId: string | null; periodLabel: string | null}[];
 };
 export type MembershipAdminMail = {
   id: string; userId: string | null; applicationId: string | null; toAddress: string; kind: string; status: MailDeliveryStatus;

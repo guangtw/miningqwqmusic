@@ -30,7 +30,7 @@ npm run deploy:echo -- --push
 
 ## 会员申请与邮箱辅助登录发布
 
-熟人暗号扩展新增精确迁移`20261105120000_familiar_membership`，沿用原库在线备份及有序SHA256白名单。新验证默认关闭、调度默认legacy、普通保护空位默认为null。先完成Claude前端联调，再由管理员配置题库、保护空位并开启；GitHub源码推送不会自动切换线上策略。回退到未识别熟人策略的旧Worker之前必须暂停自动发码，保留全部新增表和用户新数据。完整约定见[熟人暗号交接](backend-familiar-membership-handoff.md)。
+熟人暗号扩展新增精确迁移`20261105120000_familiar_membership`及其后续`20261105130000_familiar_periods`（用户自选认识时期定向抽题），沿用原库在线备份及有序SHA256白名单，不改已发布的上一份迁移。新验证默认关闭、调度默认legacy、普通保护空位默认为null。先完成Claude前端联调，再由管理员配置时期、题库、保护空位并开启；GitHub源码推送不会自动切换线上策略。回退到未识别熟人策略的旧Worker之前必须暂停自动发码，保留全部新增表和用户新数据。完整约定见[熟人暗号交接](backend-familiar-membership-handoff.md)。
 
 音乐 BFF 使用可信部署配置 `ACCOUNT_PUBLIC_ORIGIN=https://echo.miningqwq.cn` 校验验证码请求来源，避免 Next 内部 localhost/HTTP 地址造成误拦；候选服务单独配置其回环地址。开发环境无此配置时，只兼容同一 HTTP 端口的 localhost/127.0.0.1/IPv6 回环别名。候选与正式验收都使用真实 Origin，并检查跨站来源被拒绝；不信任客户端的 Host 或转发头来放宽来源。
 

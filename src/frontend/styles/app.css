@@ -4252,6 +4252,22 @@ mark.hl {
 .acct-pw .field-inline {
   margin-top: 6px;
 }
+.acct-pw-way {
+  justify-self: start;
+  margin-bottom: 4px;
+}
+/* 换验证方式时，换上来的那块弹一下 */
+.acct-pw-swap {
+  animation: pop-in 0.4s var(--ease-spring) both;
+}
+.acct-pw-code {
+  display: grid;
+  gap: 10px;
+}
+.acct-pw-send {
+  justify-self: start;
+  font-variant-numeric: tabular-nums;
+}
 .pw-rules {
   display: flex;
   flex-wrap: wrap;

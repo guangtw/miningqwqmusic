@@ -3,10 +3,12 @@ import { Avatar } from '../components/Avatar';
 import { Icon } from '../components/Icon';
 import { MemberCard } from '../components/MemberCard';
 import { MemberApply } from '../components/MemberApply';
+import { OtpInput, useSecondsLeft } from '../components/OtpInput';
 import { PasswordRules } from '../components/PasswordRules';
 import { Empty, Loading } from '../components/States';
 import { ApiError } from '../api';
-import { authStore, changePassword, displayName, logout, logoutAll } from '../lib/account';
+import { waitLabel } from '../api/http';
+import { authStore, changePassword, changePasswordWithCode, displayName, logout, logoutAll, requestPasswordCode } from '../lib/account';
 import { navigate, href, useRoute } from '../lib/router';
 import { avatarProblem, passwordProblem, removeAvatar, updateNickname, uploadAvatar } from '../lib/profile';
 import { socialStore } from '../lib/friends';
@@ -143,29 +145,116 @@ function NicknameField() {
   );
 }
 
+const PW_WAYS = [
+  { key: 'old', label: '现在的密码' },
+  { key: 'email', label: '邮箱验证码' },
+] as const;
+const PW_CODE_LENGTH = 6;
+
+type PwError = { field?: 'old' | 'new' | 'again' | 'send' | 'code'; text: string; timed?: boolean };
+
+/** 邮箱改密的失败怎么说。限流和繁忙带服务端给的等待时间，文案里的秒数由界面走 */
+function emailPwError(err: unknown, field: 'send' | 'code'): PwError {
+  const e = err instanceof ApiError ? err : null;
+  // 5905 不区分错误、过期和错太多次
+  if (e?.code === 5905) return { field: 'code', text: '验证码不对或已经失效。核对一下，不行就重新发一个。' };
+  if (e?.code === 5900) return { field, text: '邮件服务暂时不可用，稍后再试，也可以先用现在的密码来改。' };
+  if (e?.retryAfterSeconds && (e.status === 429 || e.code === 5910)) return { field, text: '尝试太频繁了。', timed: true };
+  if (e?.retryAfterSeconds && e.code === 5914) return { field, text: '账户服务正忙。', timed: true };
+  return { field: field === 'send' ? 'send' : undefined, text: (err as Error).message };
+}
+
 function PasswordField() {
+  const email = useStore(authStore, (s) => s.user?.email);
   const [open, setOpen] = useState(false);
+  const [way, setWay] = useState<'old' | 'email'>('old');
   const [oldPw, setOld] = useState('');
   const [newPw, setNew] = useState('');
   const [again, setAgain] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ field?: 'old' | 'new' | 'again'; text: string } | null>(null);
+  const [code, setCode] = useState('');
+  // 收起表单时密码和验证码都清掉，这条记录留着：邮件里的码还能用，发送冷却也不能靠收起绕过
+  const [challenge, setChallenge] = useState<{ id: string; resendAt: number; expiresAt: number; minutes: number } | null>(null);
+  const [busy, setBusy] = useState<'send' | 'submit' | null>(null);
+  const [error, setError] = useState<PwError | null>(null);
+  const [blockedUntil, setBlockedUntil] = useState<{ send: number | null; submit: number | null }>({ send: null, submit: null });
+  const resendIn = useSecondsLeft(challenge?.resendAt ?? null);
+  const sendBlocked = useSecondsLeft(blockedUntil.send);
+  const submitBlocked = useSecondsLeft(blockedUntil.submit);
 
   const reset = () => {
     setOld('');
     setNew('');
     setAgain('');
+    setCode('');
     setError(null);
+  };
+
+  const fail = (err: unknown, field: 'send' | 'code') => {
+    const problem = emailPwError(err, field);
+    if (problem.timed && err instanceof ApiError) {
+      const until = Date.now() + err.retryAfterSeconds! * 1000;
+      setBlockedUntil((b) => (field === 'send' ? { ...b, send: until } : { ...b, submit: until }));
+    }
+    setError(problem);
+  };
+
+  // 按钮还灰着的时候，得留着说明为什么灰
+  const keepTimedError = () => setError((e) => (e?.timed ? e : null));
+
+  const errorText = (e: PwError) => {
+    if (!e.timed) return e.text;
+    const left = e.field === 'send' ? sendBlocked : submitBlocked;
+    return left > 0 ? `${e.text}请在 ${waitLabel(left)}后再试。` : '现在可以再试一次了。';
+  };
+
+  const send = async () => {
+    if (busy || sendBlocked > 0 || resendIn > 0) return;
+    setBusy('send');
+    setError(null);
+    try {
+      const r = await requestPasswordCode();
+      // 服务端时间和本机可能差几秒：按服务端给的间隔换算成本机时间点
+      const skew = Date.now() - Date.parse(r.serverTime);
+      const expiresAt = Date.parse(r.expiresAt);
+      setChallenge({ id: r.challengeId, resendAt: Date.parse(r.resendAfter) + skew, expiresAt: expiresAt + skew, minutes: Math.round((expiresAt - Date.parse(r.serverTime)) / 60_000) });
+      setCode('');
+    } catch (err) {
+      fail(err, 'send');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const submitWithCode = async () => {
+    if (!challenge) return setError({ field: 'send', text: '先发一个验证码。' });
+    if (code.length !== PW_CODE_LENGTH) return setError({ field: 'code', text: `验证码是 ${PW_CODE_LENGTH} 位数字。` });
+    if (Date.now() > challenge.expiresAt) return setError({ field: 'code', text: '验证码已经过期了，重新发一个。' });
+    const problem = passwordProblem(newPw);
+    if (problem) return setError({ field: 'new', text: problem });
+    if (again !== newPw) return setError({ field: 'again', text: '两次输入的新密码不一样。' });
+    setBusy('submit');
+    setError(null);
+    try {
+      await changePasswordWithCode(challenge.id, code, newPw);
+      toast('密码已修改，请用新密码重新登录。');
+      uiStore.set({ login: true });
+    } catch (err) {
+      fail(err, 'code');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
+    if (way === 'email') return void submitWithCode();
     if (!oldPw) return setError({ field: 'old', text: '填一下现在的密码。' });
     const problem = passwordProblem(newPw);
     if (problem) return setError({ field: 'new', text: problem });
     if (newPw === oldPw) return setError({ field: 'new', text: '新密码和现在的一样。' });
     if (again !== newPw) return setError({ field: 'again', text: '两次输入的新密码不一样。' });
-    setBusy(true);
+    setBusy('submit');
     setError(null);
     try {
       const r = await changePassword(oldPw, newPw);
@@ -180,7 +269,7 @@ function PasswordField() {
         code === 5202 ? { field: 'old', text: '现在的密码不对。' } : code === 5101 ? { field: 'old', text: '现在的密码格式不对，确认一下。' } : { text: (err as Error).message },
       );
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -190,18 +279,63 @@ function PasswordField() {
         <button className="btn sm" onClick={() => setOpen(true)}>
           修改密码
         </button>
-        <p className="help">改完以后其他设备上的登录都会失效，这台设备会自动用新密码登录。</p>
+        <p className="help">改完以后其他设备上的登录都会失效。忘了现在的密码，也可以用邮箱验证码来改。</p>
       </div>
     );
   }
 
   return (
     <form className="acct-pw" onSubmit={submit} noValidate>
-      <label className="float">
-        <input type="password" autoComplete="current-password" value={oldPw} onChange={(e) => setOld(e.target.value)} placeholder=" " aria-invalid={error?.field === 'old'} autoFocus />
-        <span>现在的密码</span>
-      </label>
-      {error?.field === 'old' && <p className="field-error">{error.text}</p>}
+      <div className="seg seg-sm acct-pw-way" role="radiogroup" aria-label="验证方式">
+        {PW_WAYS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            role="radio"
+            aria-checked={way === o.key}
+            className={way === o.key ? 'on' : ''}
+            disabled={busy === 'submit'}
+            onClick={() => {
+              setWay(o.key);
+              keepTimedError();
+            }}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      {way === 'old' ? (
+        <>
+          <label className="float acct-pw-swap">
+            <input type="password" autoComplete="current-password" value={oldPw} onChange={(e) => setOld(e.target.value)} placeholder=" " aria-invalid={error?.field === 'old'} autoFocus />
+            <span>现在的密码</span>
+          </label>
+          {error?.field === 'old' && <p className="field-error">{error.text}</p>}
+        </>
+      ) : (
+        <div className="acct-pw-code acct-pw-swap">
+          <p className="login-code-note">
+            <Icon name="mail" size={15} />
+            {challenge ? (
+              <span>
+                验证码发往 {email} 了，可能要等一会儿，{challenge.minutes} 分钟内有效。 <span className="faint">没收到的话看看垃圾邮件；重发后旧的验证码就作废了。</span>
+              </span>
+            ) : (
+              <span>验证码只会发到这个账号的邮箱：{email}</span>
+            )}
+          </p>
+          <button type="button" className="btn sm acct-pw-send" onClick={() => void send()} disabled={!!busy || sendBlocked > 0 || resendIn > 0}>
+            {busy === 'send' ? '发送中…' : resendIn > 0 ? `${resendIn} 秒后可重发` : challenge ? '重新发送' : '发送验证码'}
+          </button>
+          {error?.field === 'send' && <p className="field-error" role="alert">{errorText(error)}</p>}
+          {challenge && (
+            <div className="login-code-step">
+              <OtpInput value={code} onChange={(v) => (setCode(v), keepTimedError())} length={PW_CODE_LENGTH} invalid={error?.field === 'code'} autoFocus />
+              {error?.field === 'code' && <p className="field-error" role="alert">{errorText(error)}</p>}
+            </div>
+          )}
+        </div>
+      )}
       <label className="float">
         <input type="password" autoComplete="new-password" value={newPw} onChange={(e) => setNew(e.target.value)} placeholder=" " aria-invalid={error?.field === 'new'} />
         <span>新密码</span>
@@ -213,14 +347,16 @@ function PasswordField() {
         <span>再输一次新密码</span>
       </label>
       {error?.field === 'again' && <p className="field-error">{error.text}</p>}
-      {error && !error.field && <p className="field-error">{error.text}</p>}
+      {error && !error.field && <p className="field-error" role="alert">{errorText(error)}</p>}
+      <p className="help">{way === 'email' ? '改完这台设备要用新密码重新登录，其他设备上的登录也会陆续失效。' : '改完这台设备会自动用新密码登录，其他设备上的登录都会失效。'}</p>
       <div className="field-inline">
-        <button className="btn solid sm" disabled={busy}>
-          {busy ? '修改中…' : '确认修改'}
+        <button className="btn solid sm" disabled={busy === 'submit' || (way === 'email' && submitBlocked > 0)}>
+          {busy === 'submit' ? '修改中…' : '确认修改'}
         </button>
         <button
           type="button"
           className="text-btn"
+          disabled={busy === 'submit'}
           onClick={() => {
             reset();
             setOpen(false);

@@ -62,6 +62,15 @@ function publishAuth(type: 'login' | 'logout') {
   writeJSON(AUTH_EVENT, { type, at: Date.now(), nonce: Math.random() });
 }
 
+/** 清掉这个标签页的登录态；要带上其他标签页时另外 publishAuth('logout') */
+function clearSession() {
+  ++authGeneration;
+  refreshError = null;
+  clearTimeout(recoveryTimer);
+  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  lastPull = 0;
+}
+
 function apply(data: AuthTokenData | AuthPayload) {
   authStore.set((s) => ({
     token: data.accessToken ?? s.token,
@@ -207,25 +216,17 @@ export async function loginWithCode(challengeId: string, code: string) {
 }
 
 export async function logout() {
-  ++authGeneration;
-  refreshError = null;
-  clearTimeout(recoveryTimer);
   const token = authStore.get().token;
-  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  clearSession();
   await sessionLock(() => request(p.authLogout, { method: 'POST', token })).catch(() => undefined);
   publishAuth('logout');
-  lastPull = 0;
 }
 
 /** 退出所有设备：撤销这个账号的全部会话（包括这台），其他标签页跟着退出 */
 export async function logoutAll() {
   await sessionLock(() => authed(p.authLogoutAll, { method: 'POST' }));
-  ++authGeneration;
-  refreshError = null;
-  clearTimeout(recoveryTimer);
-  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  clearSession();
   publishAuth('logout');
-  lastPull = 0;
 }
 
 /**
@@ -244,11 +245,34 @@ export async function changePassword(oldPassword: string, newPassword: string): 
       /* 重新登录失败就当退出了 */
     }
   }
-  ++authGeneration;
-  clearTimeout(recoveryTimer);
-  authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+  clearSession();
   publishAuth('logout');
   return 'signed-out';
+}
+
+/** 验证码只发到当前账号的邮箱，接口只收空对象。每次重发都会让旧验证码作废 */
+export const requestPasswordCode = () => authed<OtpChallengeResponse>(p.authEmailPasswordRequest, { method: 'POST', body: {} });
+
+/**
+ * 用邮箱验证码改密码。账户服务改完会清掉刷新 Cookie，这台也要重新登录，所以不像 changePassword 那样自动登录。
+ * 确认和清状态放在同一把锁里，排在后面的刷新看到 authGeneration 变了就不会再写回登录态。
+ * 锁里不能用 authed：它可能要刷新 token，而刷新要等这把锁，所以 token 在锁外备好，401 时也出锁刷新后再试。
+ */
+export async function changePasswordWithCode(challengeId: string, code: string, newPassword: string) {
+  const send = (token: string | null) =>
+    sessionLock(async () => {
+      await request<{ ok: true; requiresLogin: true }>(p.authEmailPasswordConfirm, { method: 'POST', body: { challengeId, code, newPassword }, token });
+      clearSession();
+      publishAuth('logout');
+    });
+  const sent = await accessToken();
+  try {
+    await send(sent);
+  } catch (e) {
+    if (!(e instanceof ApiError) || e.status !== 401) throw e;
+    if (sent === authStore.get().token && !(await refresh())) throw refreshError ?? e;
+    await send(authStore.get().token);
+  }
 }
 
 /** 资料改动（昵称、头像）后，用账户服务返回的新资料替换当前用户 */
@@ -268,10 +292,7 @@ export function watchSessionRecovery() {
     try {
       const { type } = JSON.parse(event.newValue);
       if (type === 'logout') {
-        ++authGeneration;
-        clearTimeout(recoveryTimer);
-        refreshError = null;
-        authStore.set({ status: 'guest', user: null, token: null, playbackAuthorization: null });
+        clearSession();
       } else if (type === 'login') {
         ++authGeneration;
         const pending = refreshing;

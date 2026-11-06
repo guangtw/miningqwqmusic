@@ -71,6 +71,8 @@ export const api = {
     authEmail: '/api/account/auth/email',
     authEmailRequest: '/api/account/auth/email/request',
     authEmailVerify: '/api/account/auth/email/verify',
+    authEmailPasswordRequest: '/api/account/auth/email/password/request',
+    authEmailPasswordConfirm: '/api/account/auth/email/password/confirm',
     membershipEmailRequest: '/api/account/membership/email/request',
     membershipEmailVerify: '/api/account/membership/email/verify',
     membershipApplication: '/api/account/membership/application',

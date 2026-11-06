@@ -8,7 +8,7 @@ if (!Number.isInteger(workers) || workers < 1 || workers > 4) throw new Error('I
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["record-store.spec.ts", "site-shell.spec.ts", "session-recovery.spec.ts", "familiar.spec.ts"],
+  testMatch: ["record-store.spec.ts", "site-shell.spec.ts", "session-recovery.spec.ts", "familiar.spec.ts", "email-password.spec.ts"],
   workers,
   fullyParallel: true,
   retries: 0,

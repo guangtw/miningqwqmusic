@@ -3952,6 +3952,38 @@ mark.hl {
   padding-left: 1.1em;
   list-style: '— ';
 }
+/* 声明：印章压下去一下，鼠标移上来再晃一晃 */
+.member-free {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+.member-free b {
+  flex: none;
+  padding: 2px 8px;
+  border: 1.5px solid var(--accent);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  transform: rotate(-3deg);
+  transition: transform 0.45s var(--ease-spring);
+  animation: member-free-press 0.55s var(--ease-spring) 0.35s backwards;
+}
+.member-free:hover b {
+  transform: rotate(2deg) scale(1.06);
+}
+@keyframes member-free-press {
+  from {
+    opacity: 0;
+    transform: rotate(-12deg) scale(1.7);
+  }
+}
 .member-form {
   display: flex;
   gap: 8px;

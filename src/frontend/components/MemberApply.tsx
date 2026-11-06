@@ -241,6 +241,7 @@ function Apply({ s, email }: { s: MembershipStatusResponse; email: string }) {
       {prev === 'cancelled' && <p className="apply-lead">申请已经撤回了，想要的话可以重新申请。</p>}
       {prev === 'redeemed' && <p className="apply-lead">上一期会员已经结束了，可以重新申请。</p>}
       <ul className="apply-rules">
+        <li>本站会员永久免费，限名额只是为了限流。</li>
         <li>申请不占名额。获批时，兑换码会发到 {email}，收到后 24 小时内兑换。</li>
         <li>会员时长是 3 天或 7 天，看当时的名额；从兑换成功那一刻开始算。</li>
         <li>名额有限，申请不保证一定获批；到期后不会自动续期，可以再来申请。</li>

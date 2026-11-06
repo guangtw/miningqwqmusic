@@ -203,6 +203,7 @@ export function LoginDialog() {
               <span>会员邀请码（可选）</span>
             </label>
           )}
+          {mode === 'register' && <p className="muted small">本站会员永久免费，设置会员只是限流的手段。</p>}
           {error?.field === 'password' && <p className="field-error">{error.text}</p>}
           {error && !error.field && <p className="field-error" role="alert">{error.timed
             ? remaining > 0 ? `${error.locked ? '密码连续输错，登录已暂时保护。' : '尝试太频繁了。'}请在 ${waitLabel(remaining)}后再试。` : '现在可以再试一次了。'

@@ -131,6 +131,13 @@ test("刷新后恢复原题，全对规则下答一面不能落针；浏览器�
   await expect(page).toHaveURL(/#\/account/);
 });
 
+test("会员卡和申请规则都写明永久免费", async ({ page }) => {
+  await setup(page);
+  await expect(page.locator(".member-free")).toContainText("永久免费");
+  await expect(page.locator(".member-free")).toContainText("限流");
+  await expect(page.locator(".apply-rules")).toContainText("本站会员永久免费");
+});
+
 test("三次用完显示打烊和倒计时，能走普通申请，横向不溢出", async ({ page }) => {
   await setup(page, { attempts: 1 });
   await page.getByRole("button", { name: "敲门", exact: true }).click();

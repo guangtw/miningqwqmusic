@@ -245,6 +245,10 @@ export function MemberCard() {
           <li>原平台放不了的歌（灰色、只有试听片段），会尝试换其他音源放完整版</li>
           <li>音质按你选的档位走，音源不够时自动降档</li>
         </ul>
+        <p className="member-free">
+          <b>永久免费</b>
+          <span>本站会员不收一分钱，设置会员只是限流的手段。</span>
+        </p>
         {!signedIn ? (
           status === 'guest' ? (
             <button className="btn sm" onClick={() => uiStore.set({ login: true })}>

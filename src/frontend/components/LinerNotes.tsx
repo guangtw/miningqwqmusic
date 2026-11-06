@@ -84,7 +84,7 @@ export function LinerNotes({ track, insight, loading, onChorus }: { track: Track
 
       {insight?.playable === false && !authorized && (
         <p className="notes-warn">
-          原平台把这首标成了不能完整播放。开通会员后，会尝试换其他音源放完整版。
+          原平台把这首标成了不能完整播放。开通会员（永久免费）后，会尝试换其他音源放完整版。
           <a className="text-btn" href={href.account()}>
             {' '}
             填会员邀请码 →

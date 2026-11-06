@@ -4,7 +4,7 @@
 - 部署前先读 `docs/release-workflow.md`。提交确定的源码后，使用 `npm run deploy:echo -- --push` 完成测试、传包、候选验证、正式发布、GitHub 推送和完整前后端 Release 包上传；不要临时发明浏览器分块传包流程。
 - 账户服务源码位于相邻 `C:\MiningQwQLogin`（可用 `ECHO_LOGIN_REPO` 指定），仓库为 `guangtw/miningqwqlogin`。保留该目录里用户未提交的数据库、环境文件及其他修改；仅提交本任务拥有的文件。
 - 生产站点为 `https://echo.miningqwq.cn`，SSH 别名为 `aliyun-ai`，账号 `aiops`。用户已明确授权部署并保留免密 sudo，后续不要重复索要已有权限或撤销它。私钥、环境文件、Cookie 和数据库不得上传 GitHub。
-- SSH 出问题先做 8 秒连接预检，核对服务器的 `/32` 直连路由及云防火墙当前单 IP 白名单。不要把出口变化误判为 sudo 丢失，不要关闭主机密钥校验或放开 SSH 全网访问。Windows 路由修复入口为 `ops/scripts/repair-echo-route.ps1`。
+- SSH 出问题先做 8 秒连接预检，核对服务器的 `/32` 直连路由及云防火墙来源范围。用户已授权将 TCP 22 来源设为校园出口池 `221.213.61.0/24`，服务端通过 `Match Address` 对该网段强制 `AuthenticationMethods publickey`，禁用密码及交互式认证；网段内出口变化无需改规则，不要重新收窄为每日单 IP。不要把出口变化误判为 sudo 丢失，不要关闭主机密钥校验或放开 SSH 全网访问。Windows 路由修复入口为 `ops/scripts/repair-echo-route.ps1`。
 - 原账户数据库 `/www/wwwroot/miningqwqlogin/prisma/dev.db` 和头像目录必须继续复用；任何 schema 变化需另外制定迁移与回滚方案，不能发布空库或清空会话。
 - 只有脚本输出 `PRODUCTION_VERIFIED`，且 `/__deployment.json` 对应本次两个源码提交，才可报告上线成功。GitHub 推送与生产上线分别核验，失败要明确报告具体阶段。
 

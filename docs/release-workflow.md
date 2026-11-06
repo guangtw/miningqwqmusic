@@ -40,7 +40,9 @@ npm run deploy:echo -- --push
 
 ## 网络检查
 
-服务器保持现有密钥认证、严格主机密钥校验、单 IP 白名单和已授权的 sudo。校园网公网出口会变化，持久化 sudo 不会使旧 IP 白名单自动匹配新出口。
+服务器保持现有密钥认证、严格主机密钥校验和已授权的 sudo。2026-11-06 经用户授权，TCP 22 的云防火墙来源已由每日单 IP 改为校园出口池 `221.213.61.0/24`；该范围内出口变化无需重复修改白名单，不对全网开放。
+
+服务端 `/etc/ssh/sshd_config` 对 `Match Address 221.213.61.0/24` 强制 `AuthenticationMethods publickey`、`PasswordAuthentication no` 和 `KbdInteractiveAuthentication no`，配置检查、重载及新密钥连接均已验证。修改前配置备份位于服务器 root 私有目录；不上传备份、环境或密钥。检查该网段的有效规则应使用 `sshd -T -C user=aiops,addr=<当前出口IP>,host=echo.miningqwq.cn`，不能只看不带连接条件的全局输出。
 
 Windows 的 VPN 劫持路由时，可执行一次：
 
@@ -49,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ops/scripts/repair-echo-rout
 ssh aliyun-ai 'sudo -n true && echo READY'
 ```
 
-路由脚本仅为服务器 `47.122.113.9/32` 设置 WLAN 网关的持久化直连。切换到不同网络网关时先核对并更新这条路由；不要关闭整个 VPN 或放开 SSH 全网访问。路由正确但连接仍超时，需要核对当前公网出口与云防火墙单 IP 规则。
+路由脚本仅为服务器 `47.122.113.9/32` 设置 WLAN 网关的持久化直连。切换到不同网络网关时先核对并更新这条路由；不要关闭整个 VPN 或放开 SSH 全网访问。路由正确但连接仍超时，需要核对当前公网出口是否仍在已授权网段，以及服务端的有效认证规则。换到其他网络时再评估来源范围，不自动扩大网段。
 
 ## 失败后检查
 

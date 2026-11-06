@@ -158,7 +158,7 @@ try {
   }
 } catch (error) {
   console.error('RELEASE_FAILED [' + phase + ']:', error.message);
-  if (phase === 'transport') console.error('Check the server /32 route and current single-IP firewall rule. Do not change sudo or disable host-key verification.');
+  if (phase === 'transport') console.error('Check the server /32 route and authorized SSH source range. Do not change sudo or disable host-key verification.');
   else if (['source', 'tests', 'package', 'upload'].includes(phase)) console.error('This release has not changed production or pushed source.');
   else if (phase === 'github') console.error('Production was verified. Complete the GitHub step using the same commits/package; do not redeploy.');
   else console.error('Inspect the server job/result before starting another release. Only PRODUCTION_VERIFIED confirms a completed deployment.');

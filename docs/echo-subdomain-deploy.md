@@ -1,5 +1,30 @@
 # `echo.miningqwq.cn` 子域上线手册（阿里云 DNS + 宝塔/Nginx）
 
+## 2026-11-06 服务器配置检查与上线准备
+
+当前运行发布为 `echo-20261106092211-d07b7260`（音乐 `d07b726`，账户 `8eb2424`）。本次仅调整基础设施配置，应用源码及数据库 schema 不变。
+
+- 首页上游封面仍含 HTTP 地址，浏览器曾报告混合内容。Nginx 站点的 `extension/www.echo.miningqwq.cn/echo-https-safety.conf` 已加入 `Content-Security-Policy: upgrade-insecure-requests`，参考 [HTTPS 资源策略](../ops/nginx/echo-https-safety.conf)。此 include 与现有 HSTS 共同生效；不能只在 location 内新增 header 导致上级 HSTS 丢失。复查首页混合内容警告为零。资源必须支持 HTTPS，不允许回落到 HTTP。
+- TLS 仅允许 1.2/1.3，继续强制 HTTP 跳转 HTTPS；现有证书与每日续期 timer 保留。
+- `pm2-root.service` 已启动并保持开机启用，接管时既有业务 PID 未变化；PM2 进程列表已保存。
+- 经用户确认上游 API 仅供唱片行使用，将 `ncm-api` 的 `HOST` 固定为 `127.0.0.1`，并移除 firewalld 运行态及永久配置的 `3000/tcp`。音乐和账户服务继续仅监听回环 3001/3002。SSH 校园出口池授权及免密 sudo 保留。
+- 原库所在目录收紧为 700，数据库及 WAL/SHM 收紧为 600，原文件属主保留。没有移动数据库或清空会话。PM2 保存文件权限收紧为 600。
+- 新增 [备份服务](../ops/systemd/echo-state-backup.service)、[每日 timer](../ops/systemd/echo-state-backup.timer) 与 [在线备份脚本](../ops/scripts/backup-echo-state.py)。安装位置为 `/usr/local/sbin/backup-echo-state.py`，由 systemd 在服务器本地时间每日 03:30–03:40 运行，含错过时间补跑，保留 14 天已完成备份。
+- 备份保存在 `/var/backups/echo/<UTC时间>/`（目录 700、文件 600），包含 SQLite 在线快照（含已提交 WAL）、头像归档、私有配置、PM2 快照和部署清单；产物只留服务器私有目录，禁止上传 GitHub。首次备份已通过完整性、外键、文件哈希与头像归档校验。此处是本机备份，尚未配置异地副本。
+
+检查命令：
+
+```bash
+sudo systemctl is-active nginx pm2-root echo-state-backup.timer
+sudo systemctl list-timers echo-state-backup.timer echo-certificate-renew.timer
+sudo systemctl start echo-state-backup.service
+sudo journalctl -u echo-state-backup.service -n 10
+```
+
+配置调整前的回滚材料保存在服务器 root 私有 `shared/deploy-backups/readiness-20261106192817`。恢复数据库必须先停账户写入和 Worker、备份当前库，并制定明确恢复点；不能把旧快照直接覆盖在线数据库，也不能用应用回滚替代数据恢复决策。
+
+资源检查：2 vCPU、约 1.8 GiB 内存，检查时可用约 1.1 GiB；系统盘剩余约 18 GiB、inode 使用约 20%。两个已有系统失败单元 `ecs_mq` 和 `kdump` 从 7 月开机时即失败，分别涉及网卡多队列及未预留 crash kernel 内存；本次未改内核、未重启服务器。原有宝塔/FTP 服务属于其他管理用途，未擅自关闭。
+
 ## 当前生产部署（2026-10-31 验收）
 
 - 站点：`https://echo.miningqwq.cn`，前端为唱片行原版视觉。

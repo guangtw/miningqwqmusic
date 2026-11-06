@@ -87,6 +87,10 @@
 
 答案写入后取不回，编辑要重新填完整集合，修改生成新版本。发现外传时用「停用整题」。
 
+## 样式
+
+`familiar.css` 是全局引入的，类名一律带 `fq-` 或 `fadmin-` 前缀，否则会打到全站同名元素上（`.sleeve`、`.tracks` 就这样弄坏过封面和歌曲列表）。`tests/unit/frontend-familiar-css.test.ts` 会卡住没带前缀的选择器和重名动画。
+
 ## 字体
 
 黑板、田字格用 Long Cang，题面用 Noto Serif CJK SC，都是子集（`src/frontend/assets/fonts/familiar-*.woff2`），只在打开对暗号时下载。题面或界面加了新字要重新子集化，命令见 `src/frontend/styles/familiar.css` 文件头；没收进去的字会落到系统字体。

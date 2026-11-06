@@ -39,25 +39,25 @@ describe('题面道具', () => {
 
   it('两栋楼：选中才开店，另一栋不受影响', () => {
     const { container } = render(<Harness question={{ slot: 0, kind: 'single_choice', prompt: '题\n@stage dorms\n@kicker 小卖部', options: options('东楼', '西楼') }} />);
-    expect(container.querySelector('.dorm-shop')).toBeNull();
+    expect(container.querySelector('.fq-dorm-shop')).toBeNull();
     fireEvent.click(screen.getAllByRole('radio')[1]);
-    const dorms = container.querySelectorAll('.dorm');
-    expect(dorms[0].querySelector('.dorm-shop')).toBeNull();
-    expect(dorms[1].querySelector('.dorm-shop')?.textContent).toContain('小卖部');
+    const dorms = container.querySelectorAll('.fq-dorm');
+    expect(dorms[0].querySelector('.fq-dorm-shop')).toBeNull();
+    expect(dorms[1].querySelector('.fq-dorm-shop')?.textContent).toContain('小卖部');
   });
 
   it('两栋楼的窗户左右对称，外观不暗示答案', () => {
     const { container } = render(<Harness question={{ slot: 0, kind: 'single_choice', prompt: '题\n@stage dorms', options: options('东楼', '西楼') }} />);
-    const [a, b] = [...container.querySelectorAll('.dorm-face')].map((f) => [...f.children].map((w) => w.classList.contains('lit')));
+    const [a, b] = [...container.querySelectorAll('.fq-dorm-face')].map((f) => [...f.children].map((w) => w.classList.contains('lit')));
     const mirrored = b.map((_, i) => b[i - (i % 4) + 3 - (i % 4)]);
     expect(mirrored).toEqual(a);
   });
 
   it('翻牌招牌：没选时是问号，选了显示选项，旧名字划掉', () => {
     const { container } = render(<Harness question={{ slot: 0, kind: 'single_choice', prompt: '题\n@stage signboard\n@was 老名字', options: options('新一', '新二') }} />);
-    const flaps = () => [...container.querySelectorAll('.flap')].map((x) => x.textContent);
+    const flaps = () => [...container.querySelectorAll('.fq-flap')].map((x) => x.textContent);
     expect(flaps()).toEqual(['?', '?']);
-    expect(container.querySelector('.sign-was s')?.textContent).toBe('老名字');
+    expect(container.querySelector('.fq-sign-was s')?.textContent).toBe('老名字');
     fireEvent.click(screen.getAllByRole('radio')[1]);
     expect(flaps()).toEqual(['新', '二']);
   });
@@ -85,7 +85,7 @@ describe('题面道具', () => {
     const { container } = render(<Harness question={{ slot: 0, kind: 'text', prompt: '这个群叫什么？\n@stage groupchat' }} onChange={(a) => seen.push(a)} />);
     fireEvent.change(screen.getByRole('textbox', { name: '这个群叫什么？' }), { target: { value: '某个群' } });
     expect(seen.at(-1)).toEqual({ kind: 'text', values: ['某个群'] });
-    expect(container.querySelector('.chat-log')?.getAttribute('aria-hidden')).toBe('true');
+    expect(container.querySelector('.fq-chat-log')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('旧题没有 kind 和展示设置也能答', () => {
@@ -225,11 +225,11 @@ describe('对暗号流程', () => {
       return undefined;
     });
     fireEvent.click(await screen.findByRole('button', { name: '敲门' }));
-    await waitFor(() => expect(document.querySelector('.sleeve')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('.fq-sleeve')).not.toBeNull());
     expect(calls.some((c) => c.path.endsWith('/challenge'))).toBe(false);
-    expect(document.querySelectorAll('.sleeve')).toHaveLength(2);
+    expect(document.querySelectorAll('.fq-sleeve')).toHaveLength(2);
 
-    fireEvent.click(document.querySelector('.sleeve')!);
+    fireEvent.click(document.querySelector('.fq-sleeve')!);
     await screen.findByRole('radio', { name: '左' });
     expect(calls.find((c) => c.path.endsWith('/challenge'))?.body).toEqual({ periodId: 'p' });
 
@@ -249,7 +249,7 @@ describe('对暗号流程', () => {
     fireEvent.change(await screen.findByRole('textbox'), { target: { value: '对' } });
     fireEvent.click(screen.getByRole('button', { name: '落针' }));
     await screen.findByText('是你啊。进来坐。');
-    expect(document.querySelector('.regular-title')?.textContent).toBe('熟客');
+    expect(document.querySelector('.fq-regular-title')?.textContent).toBe('熟客');
     expect(document.body.textContent).toContain('某时期');
   });
 
@@ -261,7 +261,7 @@ describe('对暗号流程', () => {
     });
     fireEvent.click(await screen.findByRole('button', { name: '接着答' }));
     await screen.findByRole('radio', { name: '左' });
-    expect(document.querySelector('.sleeve')).toBeNull();
+    expect(document.querySelector('.fq-sleeve')).toBeNull();
     expect(calls.find((c) => c.path.endsWith('/challenge'))?.body).toEqual({});
     expect(document.querySelector('.fq-chances')?.getAttribute('aria-label')).toContain('2');
   });

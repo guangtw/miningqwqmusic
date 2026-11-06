@@ -22,11 +22,11 @@ function Radio({ name, id, label, answer, onAnswer }: { name: string; id: string
 }
 
 function Prompt({ spec, className = '' }: { spec: StagePrompt; className?: string }) {
-  return <h3 className={`st-prompt ${className}`}>{spec.text}</h3>;
+  return <h3 className={`fq-st-prompt ${className}`}>{spec.text}</h3>;
 }
 
 function Hint({ spec }: { spec: StagePrompt }) {
-  return spec.hint ? <p className="st-hint">{spec.hint}</p> : null;
+  return spec.hint ? <p className="fq-st-hint">{spec.hint}</p> : null;
 }
 
 // ---------------- 黑板：用粉笔把答案圈出来 ----------------
@@ -37,19 +37,19 @@ const CHALK_RING = 'M16 30C12 13 40 5 66 6c26 1 49 9 47 25-2 15-27 23-55 22C30 5
 
 function Chalk({ question, spec, answer, onAnswer, name }: StageProps) {
   return (
-    <div className="st st-chalk">
-      <div className="chalk-board">
-        <div className="chalk-head">
+    <div className="fq-st st-chalk">
+      <div className="fq-chalk-board">
+        <div className="fq-chalk-head">
           <span>{spec.kicker || '后黑板'}</span>
           <span aria-hidden="true">值日生：你</span>
         </div>
         <Prompt spec={spec} className="hand" />
         <Hint spec={spec} />
-        <div className="chalk-words" role="radiogroup" aria-label={spec.text}>
+        <div className="fq-chalk-words" role="radiogroup" aria-label={spec.text}>
           {question.options?.map((o, i) => {
             const on = chosen(answer) === o.id;
             return (
-              <label key={o.id} className={`chalk-word ${on ? 'on' : ''}`} style={{ '--tilt': `${TILT[i % TILT.length]}deg` } as React.CSSProperties}>
+              <label key={o.id} className={`fq-chalk-word ${on ? 'on' : ''}`} style={{ '--tilt': `${TILT[i % TILT.length]}deg` } as React.CSSProperties}>
                 <Radio name={name} id={o.id} label={o.label} answer={answer} onAnswer={onAnswer} />
                 <span className="hand">{o.label}</span>
                 {on && (
@@ -61,10 +61,10 @@ function Chalk({ question, spec, answer, onAnswer, name }: StageProps) {
             );
           })}
         </div>
-        <div className="chalk-tray" aria-hidden="true">
-          <i className="chalk-stick" />
-          <i className="chalk-stick b" />
-          <i className="chalk-eraser" />
+        <div className="fq-chalk-tray" aria-hidden="true">
+          <i className="fq-chalk-stick" />
+          <i className="fq-chalk-stick b" />
+          <i className="fq-chalk-eraser" />
         </div>
       </div>
     </div>
@@ -80,20 +80,20 @@ function Roster({ spec, answer, onAnswer }: StageProps) {
     onAnswer({ kind: 'text', values });
   };
   return (
-    <div className="st st-roster">
-      <div className="roster-paper">
-        <div className="roster-head hand">
+    <div className="fq-st st-roster">
+      <div className="fq-roster-paper">
+        <div className="fq-roster-head hand">
           <span>{spec.kicker || '点名册'}</span>
-          <span className="roster-tick" aria-hidden="true">
+          <span className="fq-roster-tick" aria-hidden="true">
             到
           </span>
         </div>
         <Prompt spec={spec} />
-        <div className="roster-cells">
+        <div className="fq-roster-cells">
           {fields.map((f, i) => (
-            <label key={f || i} className="roster-cell">
-              {f && <span className="roster-clue hand">{f}</span>}
-              <span className="tian">
+            <label key={f || i} className="fq-roster-cell">
+              {f && <span className="fq-roster-clue hand">{f}</span>}
+              <span className="fq-tian">
                 <input
                   value={textAt(answer, i)}
                   onChange={(e) => write(i, e.target.value)}
@@ -120,19 +120,19 @@ function Roster({ spec, answer, onAnswer }: StageProps) {
 function Plaque({ spec, answer, onAnswer }: StageProps) {
   const value = textAt(answer, 0);
   return (
-    <div className="st st-plaque">
-      <div className="plaque-note">
+    <div className="fq-st st-plaque">
+      <div className="fq-plaque-note">
         <Prompt spec={spec} />
         <Hint spec={spec} />
       </div>
-      <div className="plaque-door">
-        <div className="plaque-plate">
-          <i className="screw a" aria-hidden="true" />
-          <i className="screw b" aria-hidden="true" />
-          <i className="screw c" aria-hidden="true" />
-          <i className="screw d" aria-hidden="true" />
-          {spec.kicker && <span className="plaque-kicker">{spec.kicker}</span>}
-          <label className="plaque-line">
+      <div className="fq-plaque-door">
+        <div className="fq-plaque-plate">
+          <i className="fq-screw a" aria-hidden="true" />
+          <i className="fq-screw b" aria-hidden="true" />
+          <i className="fq-screw c" aria-hidden="true" />
+          <i className="fq-screw d" aria-hidden="true" />
+          {spec.kicker && <span className="fq-plaque-kicker">{spec.kicker}</span>}
+          <label className="fq-plaque-line">
             <input
               value={value}
               onChange={(e) => onAnswer({ kind: 'text', values: [e.target.value] })}
@@ -147,7 +147,7 @@ function Plaque({ spec, answer, onAnswer }: StageProps) {
             {spec.suffix && <span>{spec.suffix}</span>}
           </label>
         </div>
-        <i className="plaque-handle" aria-hidden="true" />
+        <i className="fq-plaque-handle" aria-hidden="true" />
       </div>
     </div>
   );
@@ -161,26 +161,26 @@ function Signboard({ question, spec, answer, onAnswer, name }: StageProps) {
   const width = Math.max(2, ...options.map((o) => [...o.label].length));
   const cells = Array.from({ length: width }, (_, i) => (picked ? ([...picked.label][i] ?? '') : '?'));
   return (
-    <div className="st st-sign">
+    <div className="fq-st st-sign">
       <Prompt spec={spec} />
       <Hint spec={spec} />
-      <div className="sign-board">
+      <div className="fq-sign-board">
         {spec.was && (
-          <span className="sign-was">
+          <span className="fq-sign-was">
             <s>{spec.was}</s>
           </span>
         )}
-        <div className="sign-flaps" aria-hidden="true">
+        <div className="fq-sign-flaps" aria-hidden="true">
           {cells.map((c, i) => (
-            <span key={i} className="flap" style={{ '--i': i } as React.CSSProperties}>
+            <span key={i} className="fq-flap" style={{ '--i': i } as React.CSSProperties}>
               <b key={`${picked?.id ?? 'none'}-${i}`}>{c}</b>
             </span>
           ))}
         </div>
       </div>
-      <div className="sign-keys" role="radiogroup" aria-label={spec.text}>
+      <div className="fq-sign-keys" role="radiogroup" aria-label={spec.text}>
         {options.map((o) => (
-          <label key={o.id} className={`sign-key ${chosen(answer) === o.id ? 'on' : ''}`}>
+          <label key={o.id} className={`fq-sign-key ${chosen(answer) === o.id ? 'on' : ''}`}>
             <Radio name={name} id={o.id} label={o.label} answer={answer} onAnswer={onAnswer} />
             <span>{o.label}</span>
           </label>
@@ -197,33 +197,33 @@ const LIT = [0, 5, 6, 11];
 
 function Dorms({ question, spec, answer, onAnswer, name }: StageProps) {
   return (
-    <div className="st st-dorms">
+    <div className="fq-st st-dorms">
       <Prompt spec={spec} />
       <Hint spec={spec} />
-      <div className="dorms-scene" role="radiogroup" aria-label={spec.text}>
-        <i className="dorms-moon" aria-hidden="true" />
+      <div className="fq-dorms-scene" role="radiogroup" aria-label={spec.text}>
+        <i className="fq-dorms-moon" aria-hidden="true" />
         {question.options?.map((o, side) => {
           const on = chosen(answer) === o.id;
           return (
-            <label key={o.id} className={`dorm ${on ? 'on' : ''}`}>
+            <label key={o.id} className={`fq-dorm ${on ? 'on' : ''}`}>
               <Radio name={name} id={o.id} label={o.label} answer={answer} onAnswer={onAnswer} />
-              <span className="dorm-sign">{o.label}</span>
-              <span className="dorm-face" aria-hidden="true">
+              <span className="fq-dorm-sign">{o.label}</span>
+              <span className="fq-dorm-face" aria-hidden="true">
                 {Array.from({ length: 12 }, (_, i) => {
                   // 第二栋把每层左右镜像
                   const at = side ? i - i % 4 + 3 - i % 4 : i;
                   return <i key={i} className={LIT.includes(at) ? 'lit' : ''} style={{ '--i': i } as React.CSSProperties} />;
                 })}
               </span>
-              <span className="dorm-ground" aria-hidden="true">
-                <span className="dorm-door" />
+              <span className="fq-dorm-ground" aria-hidden="true">
+                <span className="fq-dorm-door" />
                 {on && (
-                  <span className="dorm-shop">
-                    <i className="awning" />
+                  <span className="fq-dorm-shop">
+                    <i className="fq-awning" />
                     <b>{spec.kicker || '在这儿'}</b>
-                    <i className="steam a" />
-                    <i className="steam b" />
-                    <i className="steam c" />
+                    <i className="fq-steam a" />
+                    <i className="fq-steam b" />
+                    <i className="fq-steam c" />
                   </span>
                 )}
               </span>
@@ -239,33 +239,33 @@ function Dorms({ question, spec, answer, onAnswer, name }: StageProps) {
 
 function IdCard({ question, spec, answer, onAnswer, name }: StageProps) {
   return (
-    <div className="st st-idcard">
+    <div className="fq-st st-idcard">
       <Prompt spec={spec} />
       <Hint spec={spec} />
-      <div className="idcard">
-        <div className="idcard-head">
-          <span className="idcard-crest" aria-hidden="true" />
+      <div className="fq-idcard">
+        <div className="fq-idcard-head">
+          <span className="fq-idcard-crest" aria-hidden="true" />
           <b>学 生 证</b>
           <small className="mono">STUDENT ID</small>
         </div>
-        <div className="idcard-body">
-          <div className="idcard-photo" aria-hidden="true">
+        <div className="fq-idcard-body">
+          <div className="fq-idcard-photo" aria-hidden="true">
             <svg viewBox="0 0 60 76">
               <circle cx="30" cy="27" r="13" />
               <path d="M6 76c1-20 11-30 24-30s23 10 24 30z" />
             </svg>
-            <i className="idcard-seal" />
+            <i className="fq-idcard-seal" />
           </div>
-          <div className="idcard-fields" role="radiogroup" aria-label={spec.text}>
-            <span className="idcard-label">{spec.kicker || '专业'}</span>
+          <div className="fq-idcard-fields" role="radiogroup" aria-label={spec.text}>
+            <span className="fq-idcard-label">{spec.kicker || '专业'}</span>
             {question.options?.map((o) => {
               const on = chosen(answer) === o.id;
               return (
-                <label key={o.id} className={`idcard-row ${on ? 'on' : ''}`}>
+                <label key={o.id} className={`fq-idcard-row ${on ? 'on' : ''}`}>
                   <Radio name={name} id={o.id} label={o.label} answer={answer} onAnswer={onAnswer} />
                   <span>{o.label}</span>
                   {on && (
-                    <i className="idcard-stamp" aria-hidden="true">
+                    <i className="fq-idcard-stamp" aria-hidden="true">
                       <b className="hand">是它</b>
                     </i>
                   )}
@@ -291,12 +291,12 @@ const CHATTER: { text: string; mine?: boolean; tone: number }[] = [
 
 function GroupChat({ spec, answer, onAnswer }: StageProps) {
   return (
-    <div className="st st-chat">
+    <div className="fq-st st-chat">
       <Prompt spec={spec} />
       <Hint spec={spec} />
-      <div className="chat-window">
-        <div className="chat-bar">
-          <i className="chat-back" aria-hidden="true" />
+      <div className="fq-chat-window">
+        <div className="fq-chat-bar">
+          <i className="fq-chat-back" aria-hidden="true" />
           <input
             value={textAt(answer, 0)}
             onChange={(e) => onAnswer({ kind: 'text', values: [e.target.value] })}
@@ -306,12 +306,12 @@ function GroupChat({ spec, answer, onAnswer }: StageProps) {
             aria-label={spec.text}
             placeholder="这里本来有个群名"
           />
-          <i className="chat-more" aria-hidden="true" />
+          <i className="fq-chat-more" aria-hidden="true" />
         </div>
-        <div className="chat-log" aria-hidden="true">
+        <div className="fq-chat-log" aria-hidden="true">
           {CHATTER.map((m, i) => (
-            <div key={i} className={`chat-line ${m.mine ? 'mine' : ''}`} style={{ '--i': i } as React.CSSProperties}>
-              <i className={`chat-avatar t${m.tone}`} />
+            <div key={i} className={`fq-chat-line ${m.mine ? 'mine' : ''}`} style={{ '--i': i } as React.CSSProperties}>
+              <i className={`fq-chat-avatar t${m.tone}`} />
               <span>{m.text}</span>
             </div>
           ))}
@@ -325,19 +325,19 @@ function GroupChat({ spec, answer, onAnswer }: StageProps) {
 
 function Tracklist({ question, spec, answer, onAnswer, name }: StageProps) {
   return (
-    <div className="st st-tracks">
+    <div className="fq-st st-tracks">
       <Prompt spec={spec} />
       <Hint spec={spec} />
-      <ol className="tracks" role="radiogroup" aria-label={spec.text}>
+      <ol className="fq-tracks" role="radiogroup" aria-label={spec.text}>
         {question.options?.map((o, i) => {
           const on = chosen(answer) === o.id;
           return (
             <li key={o.id}>
-              <label className={`track-row ${on ? 'on' : ''}`}>
+              <label className={`fq-track-row ${on ? 'on' : ''}`}>
                 <Radio name={name} id={o.id} label={o.label} answer={answer} onAnswer={onAnswer} />
                 <span className="mono">{String(i + 1).padStart(2, '0')}</span>
-                <span className="track-name">{o.label}</span>
-                <i className="track-disc" aria-hidden="true" />
+                <span className="fq-track-name">{o.label}</span>
+                <i className="fq-track-disc" aria-hidden="true" />
               </label>
             </li>
           );
@@ -350,11 +350,11 @@ function Tracklist({ question, spec, answer, onAnswer, name }: StageProps) {
 function Notebook({ spec, answer, onAnswer }: StageProps) {
   const fields = spec.fields.length ? spec.fields : [''];
   return (
-    <div className="st st-note">
-      <div className="note-paper">
+    <div className="fq-st st-note">
+      <div className="fq-note-paper">
         <Prompt spec={spec} />
         {fields.map((f, i) => (
-          <label key={f || i} className="note-line">
+          <label key={f || i} className="fq-note-line">
             {f && <span className="hand">{f}</span>}
             <input
               className="hand"

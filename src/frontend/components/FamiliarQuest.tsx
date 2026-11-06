@@ -71,23 +71,23 @@ export function Hatch({ mood = 'idle', small = false }: { mood?: Mood; small?: b
     };
   }, [small]);
   return (
-    <div ref={ref} className={`hatch ${small ? 'small' : ''}`} data-mood={mood} aria-hidden="true">
-      <i className="hatch-rivet a" />
-      <i className="hatch-rivet b" />
-      <i className="hatch-rivet c" />
-      <i className="hatch-rivet d" />
-      <div className="hatch-window">
+    <div ref={ref} className={`fq-hatch ${small ? 'small' : ''}`} data-mood={mood} aria-hidden="true">
+      <i className="fq-hatch-rivet a" />
+      <i className="fq-hatch-rivet b" />
+      <i className="fq-hatch-rivet c" />
+      <i className="fq-hatch-rivet d" />
+      <div className="fq-hatch-window">
         {[0, 1].map((n) => (
-          <div key={n} className="hatch-eye">
-            <i className="brow" />
-            <div className="ball">
-              <i className="pupil" />
-              <i className="lid top" />
-              <i className="lid bottom" />
+          <div key={n} className="fq-hatch-eye">
+            <i className="fq-brow" />
+            <div className="fq-ball">
+              <i className="fq-pupil" />
+              <i className="fq-lid top" />
+              <i className="fq-lid bottom" />
             </div>
           </div>
         ))}
-        <i className="hatch-shutter" />
+        <i className="fq-hatch-shutter" />
       </div>
     </div>
   );
@@ -141,18 +141,18 @@ function Crate({
     <div className="fq-crate-wrap">
       <div className="fq-crate" role="group" aria-label="什么时候认识的">
         {periods.map((x, i) => (
-          <button key={x.id} type="button" className={`sleeve art-${SLEEVES[i % SLEEVES.length]} ${busy === x.id ? 'pulled' : ''}`} disabled={!!busy} onClick={() => onPick(x.id)} style={{ '--i': i } as React.CSSProperties}>
-            <i className="sleeve-disc" aria-hidden="true" />
-            <span className="sleeve-face">
+          <button key={x.id} type="button" className={`fq-sleeve fq-art-${SLEEVES[i % SLEEVES.length]} ${busy === x.id ? 'pulled' : ''}`} disabled={!!busy} onClick={() => onPick(x.id)} style={{ '--i': i } as React.CSSProperties}>
+            <i className="fq-sleeve-disc" aria-hidden="true" />
+            <span className="fq-sleeve-face">
               <small className="mono">45 RPM · A/B</small>
               <b>{x.label}</b>
             </span>
           </button>
         ))}
         {canRandom && (
-          <button type="button" className={`sleeve art-white ${busy === 'random' ? 'pulled' : ''}`} disabled={!!busy} onClick={() => onPick(null)} style={{ '--i': periods.length } as React.CSSProperties}>
-            <i className="sleeve-disc" aria-hidden="true" />
-            <span className="sleeve-face">
+          <button type="button" className={`fq-sleeve fq-art-white ${busy === 'random' ? 'pulled' : ''}`} disabled={!!busy} onClick={() => onPick(null)} style={{ '--i': periods.length } as React.CSSProperties}>
+            <i className="fq-sleeve-disc" aria-hidden="true" />
+            <span className="fq-sleeve-face">
               <small className="mono">WHITE LABEL</small>
               <b>记不清了</b>
               <em>随便抽一张</em>
@@ -285,9 +285,9 @@ function Deck({ state }: { state: 'spin' | 'pass' | 'fail' }) {
 
 function RegularCard({ period, verifiedAt }: { period: string | null | undefined; verifiedAt: string | null | undefined }) {
   return (
-    <div className="regular-card">
-      <span className="regular-script">the Regular</span>
-      <b className="regular-title">熟客</b>
+    <div className="fq-regular-card">
+      <span className="fq-regular-script">the Regular</span>
+      <b className="fq-regular-title">熟客</b>
       <dl>
         {period && (
           <div>
@@ -300,10 +300,10 @@ function RegularCard({ period, verifiedAt }: { period: string | null | undefined
           <dd>{dateOf(verifiedAt)}</dd>
         </div>
       </dl>
-      <i className="regular-stamp" aria-hidden="true">
+      <i className="fq-regular-stamp" aria-hidden="true">
         <b>对上了</b>
       </i>
-      <i className="regular-disc" aria-hidden="true" />
+      <i className="fq-regular-disc" aria-hidden="true" />
     </div>
   );
 }

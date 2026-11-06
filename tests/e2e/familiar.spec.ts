@@ -82,7 +82,7 @@ test("抽单曲、答错保留答案、再答对开门，全程不说错在哪�
   await expect(dialog).not.toContainText("@stage");
   await expect(dialog).toContainText("后黑板");
 
-  await dialog.locator(".chalk-word", { hasText: "甲壳虫" }).click();
+  await dialog.locator(".fq-chalk-word", { hasText: "甲壳虫" }).click();
   await dialog.getByRole("button", { name: "翻到 B 面" }).click();
   await dialog.getByLabel("门牌上空着什么？").fill("李");
   await dialog.getByRole("button", { name: "落针" }).click();
@@ -119,9 +119,9 @@ test("刷新后恢复原题，全对规则下答一面不能落针；浏览器�
   await page.reload();
   await page.getByRole("button", { name: "接着答" }).click();
   await expect(dialog.getByRole("heading", { name: "黑板上写的是哪个？" })).toBeVisible();
-  await expect(dialog.locator(".sleeve")).toHaveCount(0);
+  await expect(dialog.locator(".fq-sleeve")).toHaveCount(0);
 
-  await dialog.locator(".chalk-word", { hasText: "乙字号" }).click();
+  await dialog.locator(".fq-chalk-word", { hasText: "乙字号" }).click();
   await expect(dialog.getByRole("button", { name: "留白，直接落针" })).toHaveCount(0);
   await dialog.getByRole("button", { name: "翻到 B 面" }).click();
   await expect(dialog.getByRole("button", { name: "落针" })).toBeDisabled();
@@ -136,7 +136,7 @@ test("三次用完显示打烊和倒计时，能走普通申请，横向不溢�
   await page.getByRole("button", { name: "敲门", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "对暗号" });
   await dialog.getByRole("button", { name: /某个时期/ }).click();
-  await dialog.locator(".chalk-word", { hasText: "甲壳虫" }).click();
+  await dialog.locator(".fq-chalk-word", { hasText: "甲壳虫" }).click();
   await dialog.getByRole("button", { name: "留白，直接落针" }).click();
   await expect(dialog.getByText("今日打烊")).toBeVisible({ timeout: 8000 });
   await expect(dialog).toContainText("后再敲门");

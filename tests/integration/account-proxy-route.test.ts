@@ -105,6 +105,33 @@ describe("account proxy route", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each(["request", "confirm"])("rejects cross-site email password %s requests before forwarding", async endpoint => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const response = await POST(new NextRequest("http://localhost/api/account/auth/email/password/" + endpoint, {
+      method: "POST", headers: {origin: "https://evil.example.test", authorization: "Bearer token"}, body: "{}"
+    }), createContext(["auth", "email", "password", endpoint]));
+    expect(response.status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("forwards email password confirmation, cookie deletion and rate-limit hints without caching", async () => {
+    process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
+    vi.stubEnv("ACCOUNT_PUBLIC_ORIGIN", "https://echo.miningqwq.cn");
+    const body = JSON.stringify({challengeId: "synthetic", code: "123456", newPassword: "Synthetic-123!"});
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({code: 0, data: {ok: true, requiresLogin: true}}, {
+      headers: {"set-cookie": "mqm_refresh_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly"}
+    }));
+    const response = await POST(new NextRequest("http://localhost/api/account/auth/email/password/confirm", {
+      method: "POST", headers: {origin: "https://echo.miningqwq.cn", authorization: "Bearer token", "content-type": "application/json"}, body
+    }), createContext(["auth", "email", "password", "confirm"]));
+    expect(String(fetchMock.mock.calls[0][0])).toBe("http://127.0.0.1:3002/api/account/auth/email/password/confirm");
+    expect(new TextDecoder().decode(fetchMock.mock.calls[0][1]?.body as ArrayBuffer)).toBe(body);
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("authorization")).toBe("Bearer token");
+    expect(response.headers.get("set-cookie")).toContain("1970");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("preserves account event resumption and message rate-limit hints", async () => {
     process.env.ACCOUNT_SERVICE_BASE_URL = "http://127.0.0.1:3002";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({

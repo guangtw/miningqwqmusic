@@ -152,8 +152,9 @@ try {
       if (read('git', ['ls-remote', 'origin', 'refs/heads/main'], repo).split(/\s/)[0] !== expected) throw Error('GitHub branch verification failed');
     }
     const notes = path.join(stage, 'release-notes.md');
-    fs.writeFileSync(notes, `Verified production: ${origin}\n\nMusic/frontend: ${musicCommit}\nAccount service: ${loginCommit}\nArchive SHA-256: ${digest}\n\nThe source archive contains both services and their deployment manifest. Production environment files, uploads, credentials and SQLite databases are excluded.\n`);
-    run('gh', ['release', 'create', id, '--repo', 'guangtw/miningqwqmusic', '--target', musicCommit, '--title', id, '--notes-file', notes, archive]);
+    const releaseDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date(manifest.createdAt));
+    fs.writeFileSync(notes, `网站版本已通过候选与正式环境验收。\n\n[打开唱片行](${origin}) · [Windows / Android 客户端下载](${origin}/#/download)\n\n本附件是网站与账户服务的完整源码发布包，客户端安装包请使用上面的下载页。源码包不包含生产环境文件、数据库、头像或凭证。\n\n## 源码与校验\n\n- 发布编号：\`${id}\`\n- 音乐与前端：[\`${musicCommit.slice(0, 7)}\`](https://github.com/guangtw/miningqwqmusic/commit/${musicCommit})\n- 账户服务：[\`${loginCommit.slice(0, 7)}\`](https://github.com/guangtw/miningqwqlogin/commit/${loginCommit})\n- 发布包 SHA-256：\`${digest}\`\n`);
+    run('gh', ['release', 'create', id, '--repo', 'guangtw/miningqwqmusic', '--target', musicCommit, '--title', 'Mining唱片行 · 网站更新 ' + releaseDate, '--notes-file', notes, archive]);
     console.log('GITHUB_AND_PRODUCTION_VERIFIED');
   }
 } catch (error) {

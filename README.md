@@ -1,207 +1,124 @@
-# MiningQwQ Music Player
+<p align="center">
+  <img src="public/icons/icon-192.png" width="80" height="80" alt="Mining 唱片行图标" />
+</p>
 
-## Android 客户端
+<h1 align="center">Mining 唱片行</h1>
 
-独立 Android WebView 壳层，沿用正式站点、现有页面与提醒体系，关闭密码自动填充、浏览器弹窗、新窗口和外部浏览器跳转。源码与打包说明位于 [desktop/android](desktop/android/README.md)。
+<p align="center">把音乐放上唱机。一个杂志风格的音乐播放器，连接你的歌单、好友与日常。</p>
 
-[下载 Android APK](https://github.com/guangtw/miningqwqmusic/releases/tag/android-v1.0.3)
+<p align="center">
+  <a href="https://echo.miningqwq.cn">在线体验</a> ·
+  <a href="https://echo.miningqwq.cn/#/download">客户端下载</a> ·
+  <a href="docs/README.md">项目文档</a> ·
+  <a href="https://github.com/guangtw/miningqwqmusic/issues/new/choose">反馈问题</a>
+</p>
 
-## Windows 客户端
+<p align="center">
+  <a href="https://github.com/guangtw/miningqwqmusic/actions/workflows/ci.yml"><img src="https://github.com/guangtw/miningqwqmusic/actions/workflows/ci.yml/badge.svg" alt="Web CI" /></a>
+  <img src="https://img.shields.io/badge/Next.js-15-111111?logo=nextdotjs" alt="Next.js 15" />
+  <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript 5" />
+  <img src="https://img.shields.io/badge/Web_%C2%B7_Windows_%C2%B7_Android-a8553a" alt="Web、Windows 与 Android" />
+</p>
 
-原生窗口壳层、系统托盘、媒体按键与原设置页集成。网页内容随线上版本更新；客户端源码与打包说明位于 [desktop/windows](desktop/windows/README.md)。
+![Mining 唱片行网页版首页](docs/images/homepage.png)
 
-[下载 Windows 安装版和便携版](https://github.com/guangtw/miningqwqmusic/releases/tag/windows-v1.0.0)
+## 关于项目
 
-基于 `Next.js + TypeScript + BFF` 的音乐播放器网站，采用 [唱片行](https://github.com/guangtw/chang-pian-hang) 前端，面向“网易云风格”的私有音乐源 API。前端与 BFF 在同一个进程、同一个域名运行，无需再启动 Vite 或配置跨域代理。
+Mining 唱片行使用 Next.js、React 和 TypeScript 构建，前端沿用 [唱片行](https://github.com/guangtw/chang-pian-hang) 的杂志排版、黑胶唱机与视图过渡设计，在此基础上加入账户同步、社交和客户端能力。网页与 BFF 同源运行，音乐服务和账户服务通过服务端配置接入。
 
-## 功能概览
+### 可以做什么
 
-生产发布入口：`npm run deploy:echo -- --push`。完整流程、网络预检、日志和回滚说明见 [发布手册](docs/release-workflow.md)。
+- **发现与收听**：歌曲、歌单、专辑和歌手搜索，榜单、电台、同步歌词与播放队列。
+- **整理音乐库**：收藏、最近播放、自建与导入歌单，以及登录后的云端同步。
+- **和朋友听歌**：好友、私信、音乐卡片、歌单分享与一起听。
+- **管理账户**：昵称与头像、邮箱辅助登录、密码及邮箱验证码改密。
+- **跨设备使用**：响应式网页、可安装的 PWA，以及 Windows 和 Android 客户端。
 
-熟人暗号的前端流程、题面展示协议和录入顺序见 [熟人暗号文档](docs/familiar-verification.md)，接口与迁移见 [后端契约](docs/familiar-backend-contract.md)。其他接口：[会员申请](docs/membership-application.md)、[私信与评论](docs/social-and-messages.md)、[卡片与邀请](docs/message-cards.md)、[客户端下载](docs/client-downloads.md)。
+音乐、封面与可用音质来自所配置的上游服务，实际播放能力取决于音源和账户权限。PWA 提供离线提示页，不缓存歌曲供离线收听。
 
-音源偏好与提醒展示接口见 [音源偏好文档](docs/playback-source-preference.md)：主动升级后持久优先解灰、免费/VIP 分类，以及本曲临时切回官方的调用方式。提醒位置和样式由前端接入。
+## 使用与下载
 
-- 搜索歌曲、播放控制、播放队列（立即播放/下一首/队尾）
-- 歌词时间轴同步与滚动高亮
-- 收藏与最近播放（本地持久化）
-- 可选账号登录（不强制），登录后自动启用云端音乐库同步
-- 播放模式：顺序 / 列表循环 / 单曲循环 / 随机
-- 播放链接短时效续签（播放器中自动刷新播放 URL）
-- 基础 PWA：可安装、离线壳页面、静态资源缓存
-- BFF 代理与上游解耦（前端不直连私有音乐源）
+| 平台 | 入口 | 说明 |
+| --- | --- | --- |
+| Web | [打开唱片行](https://echo.miningqwq.cn) | 浏览器直接使用，也可安装为 PWA |
+| Windows | [下载安装包](https://echo.miningqwq.cn/api/downloads/windows) | x64 EXE 安装版，需 WebView2 Runtime；[客户端说明](desktop/windows/README.md) |
+| Android | [下载 APK](https://echo.miningqwq.cn/api/downloads/android) | 在线加载站点；[客户端说明](desktop/android/README.md) |
 
-## 技术架构
+版本和校验信息可在[客户端下载页](https://echo.miningqwq.cn/#/download)查看。GitHub 中的 `windows-*`、`android-*` Release 对应客户端，`echo-*` Release 是网站与账户服务的源码发布包。
 
-- 前端：原版唱片行 React SPA，保留全部组件、CSS、字体、唱机和视图过渡动效，由 Next.js 挂载
-- BFF：Next.js Route Handlers
-- 适配层：`MusicSourceAdapter` + `NeteaseLikeAdapter`
-- 稳定性：超时、重试、熔断、标准错误响应、traceId
+## 本地开发
 
-## 目录重点
-
-- `app/api/music/*`: 对前端暴露的统一音乐接口
-- `src/lib/music/adapter.ts`: 上游适配器抽象
-- `src/lib/music/providers/netease-like.ts`: 网易云风格 provider
-- `src/lib/music/service.ts`: 熔断包装后的音乐服务
-- `src/frontend/`: 唱片行前端；旧界面及其专用 hooks、store、样式已删除
-- `src/frontend/player/player.ts`: 音频控制、播放队列与 URL 续签
-- `src/frontend/lib/account.ts`: 同源登录、token 刷新和收藏同步
-- `src/frontend/lib/migrate-storage.ts`: 一次性迁移旧站设备上的收藏、历史、队列与偏好
-- `docs/frontend-integration.md`: 来源版本、接入方式与验证命令
-
-## 环境变量
-
-复制 `.env.example` 为 `.env.local`，可先用 mock 再切真实源：
+开发环境使用 Node.js 24 与 npm。先克隆仓库并安装锁定的依赖：
 
 ```bash
-MUSIC_SOURCE_BASE_URL=https://your-private-music-api.example.com
-ACCOUNT_SERVICE_BASE_URL=http://127.0.0.1:3002
-MUSIC_SOURCE_API_KEY=
-MUSIC_SOURCE_TIMEOUT_MS=6000
-MUSIC_SOURCE_RETRY_TIMES=2
-MUSIC_SOURCE_PLAY_LEVEL=standard
-MUSIC_SOURCE_VIP_PREVIEW_MAX_MS=60000
-MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK=/song/url/match
-MUSIC_SOURCE_UNBLOCK_SOURCE=
-MUSIC_SOURCE_UNBLOCK_SOURCES=unm,msls,qijieya
-MUSIC_SOURCE_MOCK_ENABLED=false
-MUSIC_SOURCE_MOCK_FALLBACK=false
-MUSIC_SOURCE_PATH_SEARCH=/search
-MUSIC_SOURCE_PATH_TRACK_DETAIL=/song/detail
-MUSIC_SOURCE_PATH_PLAY_URL=/song/url/v1
-MUSIC_SOURCE_PATH_LYRIC=/lyric
-MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
-```
-
-- 仅本地演示（不接私有 API）：可把 `MUSIC_SOURCE_MOCK_ENABLED=true`
-- 真实联调建议关闭 mock 兜底：`MUSIC_SOURCE_MOCK_FALLBACK=false`
-- 你的上游如果暂时无 API Key，可保持 `MUSIC_SOURCE_API_KEY=` 为空
-- `MUSIC_SOURCE_PLAY_LEVEL` 用于透传到 `/song/url/v1` 的 `level` 参数（例如 `standard`、`exhigh`）
-- `MUSIC_SOURCE_VIP_PREVIEW_MAX_MS`：判定试听直链阈值（默认 `60000`）
-- `MUSIC_SOURCE_PATH_PLAY_URL_UNBLOCK`：备用播放地址接口路径（默认 `/song/url/match`）；当默认播放地址被判定为试听链接时自动尝试该接口
-- `MUSIC_SOURCE_UNBLOCK_SOURCES`：可选，多个解灰 `source`（逗号分隔，默认 `unm,msls,qijieya`）；这是当前用于止血的优先级，优先避开会回落到 30 秒试听链的旧 source 组合
-- `MUSIC_SOURCE_UNBLOCK_SOURCE`：兼容旧配置的单 `source` 参数；若同时配置，优先使用 `MUSIC_SOURCE_UNBLOCK_SOURCES`
-- `ACCOUNT_SERVICE_BASE_URL`：可选，独立登录服务地址。配置后站内 `/api/account/*` 会代理到该服务，前端显示“登录同步”入口；未配置则保持纯游客模式。
-
-## 接口约定（站内 BFF）
-
-- `GET /api/music/search?q=&page=&pageSize=`
-- `GET /api/music/track/:id`
-- `GET /api/music/track/:id/play-url`
-- `GET /api/music/track/:id/lyric`
-- `GET /api/music/playlist/:id`
-- `ALL /api/account/*`（可选代理，转发到独立登录服务）
-
-统一返回：
-
-- 成功：`{ code: 0, data, message, traceId }`
-- 失败：`{ code, message, traceId, retryable }`
-
-## 本地运行
-
-```bash
-npm install
-npm run dev
-```
-
-## 未备案阶段联调部署（宝塔 + IP）
-
-适用场景：域名尚未备案，先用服务器公网 IP 临时联调前后端。
-
-### 1. 推荐网络形态
-
-- Next.js（前端+BFF）监听：`127.0.0.1:3001`
-- 私有 API 监听：`127.0.0.1:3000`
-- 安全组建议仅开放：`22`、`80`（临时联调），关闭 `3000/3001` 公网访问
-
-### 2. 服务器环境变量（前端项目）
-
-在项目根目录创建 `.env.production`：
-
-```bash
-MUSIC_SOURCE_BASE_URL=http://127.0.0.1:3000
-MUSIC_SOURCE_API_KEY=
-MUSIC_SOURCE_TIMEOUT_MS=8000
-MUSIC_SOURCE_RETRY_TIMES=1
-MUSIC_SOURCE_PLAY_LEVEL=standard
-MUSIC_SOURCE_MOCK_ENABLED=false
-MUSIC_SOURCE_MOCK_FALLBACK=false
-MUSIC_SOURCE_PATH_SEARCH=/search
-MUSIC_SOURCE_PATH_TRACK_DETAIL=/song/detail
-MUSIC_SOURCE_PATH_PLAY_URL=/song/url/v1
-MUSIC_SOURCE_PATH_LYRIC=/lyric
-MUSIC_SOURCE_PATH_PLAYLIST=/playlist/detail
-```
-
-> 联调阶段建议 `MUSIC_SOURCE_MOCK_FALLBACK=false`，避免真实上游报错被 mock 掩盖。
-
-### 3. 构建与启动（Node 18.18+）
-
-```bash
+git clone https://github.com/guangtw/miningqwqmusic.git
+cd miningqwqmusic
 npm ci
-npm run build
-PORT=3001 npm run start
+cp .env.example .env.local
 ```
 
-如果使用宝塔 Node 项目守护/PM2，请把启动命令设置为：
+不接入真实服务时，在 `.env.local` 中设置：
 
-```bash
-PORT=3001 npm run start
+```dotenv
+MUSIC_SOURCE_MOCK_ENABLED=true
+MUSIC_SOURCE_MOCK_FALLBACK=false
+ACCOUNT_SERVICE_BASE_URL=
 ```
 
-### 4. 宝塔反向代理
-
-
-- 反代目标：`http://127.0.0.1:3001`
-- 反代路径：`/`
-
-这样浏览器只访问你站点的 `/api/music/*`，不会直连私有 API，避免 CORS 与密钥暴露。
-
-### 5. 联调验证命令
-
-服务器本机验证上游：
-
 ```bash
-curl "http://127.0.0.1:3000/search?keywords=晴天&limit=2&offset=0"
-curl "http://127.0.0.1:3000/song/url/v1?id=347230&level=standard"
+npm run dev -- --hostname 127.0.0.1 --port 3010
 ```
 
-验证 BFF：
+打开 [localhost:3010](http://localhost:3010)。Mock 模式用于界面开发，不提供真实账号和完整线上音源能力。详细说明见[开发指南](docs/development.md)。
 
-```bash
-curl "http://127.0.0.1:3001/api/music/search?q=晴天&page=1&pageSize=5"
-curl "http://127.0.0.1:3001/api/music/track/347230/play-url"
+### 接入真实服务
+
+| 配置 | 用途 |
+| --- | --- |
+| `MUSIC_SOURCE_BASE_URL` | 网易云 API 风格的音乐服务地址 |
+| `MUSIC_SOURCE_API_KEY` | 上游要求的密钥，可为空；仅服务端使用 |
+| `MUSIC_SOURCE_MOCK_ENABLED` | 接真实服务时设为 `false` |
+| `ACCOUNT_SERVICE_BASE_URL` | 可选的独立[账户服务](https://github.com/guangtw/miningqwqlogin)地址 |
+
+全部配置见 [`.env.example`](.env.example)，上游协议见[接口约定](docs/upstream-contract.md)。生产环境需要自行配置服务、数据库和 HTTPS；本仓库的自动发布入口依赖维护者的部署环境。
+
+## 代码结构
+
+```text
+app/                 Next.js 页面与同源 API
+src/frontend/        React 界面、播放器与浏览器状态
+src/lib/music/       音源适配、请求调度与服务层
+src/types/           共享类型
+public/              PWA、图标与静态资源
+desktop/             Windows / Android 客户端
+tests/               单元、集成与浏览器测试
+docs/                开发、功能协议与维护文档
+ops/                 部署、备份与服务器配置
 ```
 
-预期：
+独立账户服务使用 Next.js、Prisma 和 SQLite，在 [miningqwqlogin](https://github.com/guangtw/miningqwqlogin) 中维护，不包含在本仓库运行进程内。
 
-- `search` 返回 `code:0` 且有 `data.items`
-- `play-url` 返回 `code:0`，`data.url` 存在
-- 你的上游若返回 `data[0].expi`，BFF 会映射为 `ttlSeconds`
-
-### 6. 常见排障
-
-- 前端 502：先看 Next 进程是否在 `3001` 存活，再看宝塔反代目标是否正确
-- BFF 返回错误码 `2004/2005`：上游超时或网络失败，优先检查 `127.0.0.1:3000` 是否可达
-- 能搜到但无法播放：检查 `/song/url/v1` 返回是否有 `url`，以及 `level` 是否可播（改 `MUSIC_SOURCE_PLAY_LEVEL`）
-
-## 备案完成后子域上线（`echo.miningqwq.cn`）
-
-适用场景：域名已备案，主域名不承载当前前端，仅用子域名访问本站前端。
-
-- 上线手册：`docs/echo-subdomain-deploy.md`
-- Nginx 参考配置：`ops/nginx/echo.miningqwq.cn.conf`
-- 验收脚本（Linux）：`ops/scripts/verify-echo-subdomain.sh`
-- 验收脚本（PowerShell）：`ops/scripts/verify-echo-subdomain.ps1`
-
-## 测试
+## 验证与贡献
 
 ```bash
+npx tsc --noEmit
 npm run test:run
+npm run build
 npm run test:e2e
 ```
 
-## 编码要求
+Web CI 自动执行类型检查、单元与集成测试和生产构建；浏览器测试及客户端构建有各自的环境要求，见[开发指南](docs/development.md)。
 
-- 所有代码与文档文件请使用 `UTF-8` 编码。
+欢迎通过 [Issue](https://github.com/guangtw/miningqwqmusic/issues/new/choose) 描述问题或建议，也可以提交范围清晰的 Pull Request。开始前请阅读[贡献指南](CONTRIBUTING.md)。安全问题请使用[私密报告渠道](SECURITY.md)。
+
+## 文档
+
+- [开发与本地配置](docs/development.md)
+- [文档导航：功能协议、客户端与维护](docs/README.md)
+- [一起听](docs/listen-together.md) · [私信与分享](docs/social-and-messages.md) · [客户端下载](docs/client-downloads.md)
+
+## 来源与许可证
+
+前端设计与基础实现来自 [guangtw/chang-pian-hang](https://github.com/guangtw/chang-pian-hang)，后续功能在本仓库继续维护。第三方依赖、字体与上游媒体保留各自的权利和许可说明。
+
+本仓库目前未指定开源许可证，因此不展示 MIT、Apache 等许可证标识。

@@ -2,11 +2,13 @@
 
 基于 [guangtw/miningqwqmusic](https://github.com/guangtw/miningqwqmusic) 的 WinUI 3 桌面客户端。保留唱片行原有的视觉、音乐库、账号和播放体验，正式服务地址为 `https://echo.miningqwq.cn/`。
 
-## 直接运行
+## 安装与运行
+
+普通用户请使用[官网提供的 Windows x64 EXE 安装包](https://echo.miningqwq.cn/api/downloads/windows)。官网不提供便携版入口；历史 GitHub Release 中仍可能保留 Portable.zip 资产。
 
 打开 `artifacts/MiningQwQMusic-win-x64/MiningQwQMusic.exe`。发行目录包含 .NET 与 Windows App SDK 运行时，不要求用户安装开发工具；请保留完整目录。需要系统中的 WebView2 Evergreen Runtime 和联网访问音乐服务。
 
-当前提供 Windows x64 便携版，采用 unpackaged 模型，无需旁加载证书。未签名、未提交 Microsoft Store。Windows 11 为当前实测环境，Windows 10 的兼容性尚未实机验证。
+从源码构建的发行目录采用 unpackaged 模型，无需旁加载证书。未签名、未提交 Microsoft Store。Windows 11 为当前实测环境，Windows 10 的兼容性尚未实机验证。
 
 ## Windows 适配
 

@@ -1,0 +1,52 @@
+name: 问题反馈
+description: 报告播放、界面、账户或客户端中的可复现问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有问题。不要粘贴密码、Cookie、验证码、令牌或完整签名播放链接。
+        安全漏洞请使用仓库 Security 页的私密报告入口。
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 使用平台
+      options:
+        - 网页 / PWA
+        - Windows 客户端
+        - Android 客户端
+        - 自托管 / 开发环境
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统与版本
+      placeholder: 例如 Windows 11 / Chrome 版本，或 Android 版本 / 客户端版本
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开页面开始，说明最短操作路径。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 可附脱敏截图、错误码及发生时间。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息
+      description: 自托管时可提供提交号及复现所需的非敏感配置名称。

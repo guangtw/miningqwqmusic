@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用与开发文档
+    url: https://github.com/guangtw/miningqwqmusic/blob/main/docs/README.md
+    about: 查看本地启动、功能协议和客户端说明
+  - name: 私密安全报告
+    url: https://github.com/guangtw/miningqwqmusic/security/advisories/new
+    about: 安全漏洞、账号数据或凭证泄露请使用此入口

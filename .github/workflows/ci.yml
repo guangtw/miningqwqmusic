@@ -34,3 +34,34 @@ jobs:
         run: npm run test:run -- --fileParallelism=false
       - name: Build web application
         run: npm run build
+
+  player-e2e:
+    name: Player network e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      PLAYWRIGHT_PRODUCTION: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build web application
+        run: npm run build
+      - name: Run player network scenarios
+        run: npx playwright test -c playwright.player.config.ts
+      - name: Upload report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: player-e2e-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -102,6 +102,7 @@ function fadeTo(to: number, ms: number): Promise<boolean> {
 
 /** 淡出后暂停；淡出途中又按了播放就作罢 */
 function softPause() {
+  clearStall();
   if (!audible()) return;
   if (!canFade) return audio.pause();
   pausing = true;
@@ -130,6 +131,8 @@ function softPlay(): Promise<void> {
 /** 当前 <audio> 里装的是哪首、地址何时过期 */
 let loaded: { id: string; expiresAt: number } | null = null;
 let loadToken = 0;
+/** 正在取地址的那次加载；这期间 <audio> 里还是旧地址，它报的错不算数 */
+let fetching = 0;
 /** 本次加载是否已经因为地址失效重取过一次 */
 let renewedOnce = false;
 let recentPushed = false;
@@ -196,17 +199,75 @@ playerStore.subscribe(() => {
   }
 });
 
+// 播到哪一秒另外存：安卓 WebView 在后台被系统收掉、重开后按播放要接着放，不能从头来（issue #7）
+const RESUME_KEY = 'cph.player.resume.v1';
+/** 离结尾不到这么多就算听完了，重开从头放 */
+const RESUME_TAIL_MS = 5000;
+const RESUME_EVERY_MS = 5000;
+let lastResumeWrite = 0;
+/** 重开页面后第一次按播放用的位置；换了歌就作废 */
+let resumeFor: { id: string; at: number } | null = null;
+{
+  const r = readJSON<{ id?: unknown; at?: unknown }>(RESUME_KEY, {});
+  const t = currentTrack();
+  const at = typeof r.at === 'number' && Number.isFinite(r.at) ? r.at : 0;
+  if (t && r.id === t.id && at > 0 && !(t.durationMs > 0 && at > t.durationMs - RESUME_TAIL_MS)) {
+    resumeFor = { id: t.id, at };
+    set({ position: at });
+  }
+}
+function saveResume() {
+  const t = currentTrack();
+  // 淡出中的上一首、试听片段都不记
+  if (!t || loaded?.id !== t.id || get().preview) return;
+  lastResumeWrite = Date.now();
+  writeJSON(RESUME_KEY, { id: t.id, at: Math.round(audio.currentTime * 1000) });
+}
+function takeResume(id: string) {
+  const r = resumeFor;
+  resumeFor = null;
+  return r?.id === id ? r.at : undefined;
+}
+/** 没放成：记住这首停在哪，下次按播放从这里接着放 */
+function rememberStop(id: string, at: number | undefined) {
+  if (!at) return;
+  resumeFor = { id, at };
+  writeJSON(RESUME_KEY, { id, at: Math.round(at) });
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveResume(); });
+window.addEventListener('pagehide', saveResume);
+
 // ---- <audio> 事件 ----
 /** 换歌时上一首还在淡出：它的进度和播完不能算到新歌头上 */
 const outgoing = () => !!loaded && loaded.id !== currentTrack()?.id;
-audio.addEventListener('timeupdate', () => { if (!outgoing()) set({ position: audio.currentTime * 1000 }); });
+audio.addEventListener('timeupdate', () => {
+  if (outgoing()) return;
+  set({ position: audio.currentTime * 1000 });
+  if (Date.now() - lastResumeWrite >= RESUME_EVERY_MS) saveResume();
+  // 重连后稳稳放过一段，重连次数重新算
+  if (stallRetries && audio.currentTime - recoveredAt > 30) stallRetries = 0;
+});
 audio.addEventListener('durationchange', () => {
   if (Number.isFinite(audio.duration)) set({ duration: audio.duration * 1000 });
 });
 audio.addEventListener('play', () => set({ playing: true }));
-audio.addEventListener('pause', () => set({ playing: false }));
-audio.addEventListener('waiting', () => set({ loading: true }));
+audio.addEventListener('pause', () => {
+  if (!audio.paused) return; // A queued pause may arrive after playback resumed.
+  // Browser pause events are asynchronous: an internal fade can finish after
+  // recovery has armed its retry timer. Do not cancel that recovery.
+  if (!(recovering && intendedPlaying)) clearStall();
+  set({ playing: false });
+  saveResume();
+});
+audio.addEventListener('waiting', () => {
+  set({ loading: true });
+  watchStall();
+});
+audio.addEventListener('stalled', watchStall);
+audio.addEventListener('progress', () => { lastProgress = Date.now(); });
 audio.addEventListener('playing', () => {
+  clearStall();
+  if (!outgoing()) { recovering = null; resumeFor = null; }
   set({ loading: false });
   const t = currentTrack();
   if (t && !recentPushed) {
@@ -219,29 +280,139 @@ function advanceOnEnd() {
   if (!canAutoAdvance()) { set({ playing: false }); return; }
   if (get().mode === 'one') {
     audio.currentTime = 0;
-    void softPlay().catch(() => set({ playing: false }));
+    void softPlay().catch(playRejected);
     emit('seek');
   } else next(true);
 }
 audio.addEventListener('ended', advanceOnEnd);
 audio.addEventListener('error', () => {
-  if (!audio.getAttribute('src')) return;
+  if (!audio.getAttribute('src') || fetching === loadToken || (recovering && !intendedPlaying)) return;
   const at = audio.currentTime * 1000;
   // 播放地址是短时效的：第一次出错先续签再接着放
   if (!renewedOnce) {
     renewedOnce = true;
-    void resolveAndPlay(get().index, { resumeAt: at, autoplay: intendedPlaying });
+    void resolveAndPlay(get().index, { resumeAt: at, autoplay: intendedPlaying, recover: intendedPlaying });
     return;
   }
-  set({ loading: false, playing: false });
-  toast('这首歌加载失败，稍后再试。');
+  // 续签过还断网：按卡住处理，有限次重连
+  if ((audio.error?.code === MEDIA_ERR_NETWORK || audio.error?.code === 4) && intendedPlaying) return reconnect();
+  giveUp('这首歌加载失败，稍后再试。');
   // Repeated media errors must not walk the entire queue requesting fresh URLs.
 });
+
+// ---- 卡住自救 ----
+// 缓冲停住（waiting）以后浏览器不会自己重连：断过网、地址失效都会一直静默挂着，没声也没提示（issue #7）
+const STALL_MS = 12_000;
+const STALL_RETRIES = 3;
+const MEDIA_ERR_NETWORK = 2;
+/** 等待中（卡住待查、断网待重连）的定时器；有它就说明网一回来该马上重连 */
+let stallTimer: ReturnType<typeof setTimeout> | undefined;
+let stallRetries = 0;
+/** 上次重连时放到的秒数 */
+let recoveredAt = 0;
+/** 最近一次收到音频数据的时间：慢但还在下，就不算卡死 */
+let lastProgress = 0;
+/** 正在重连的那首和要接着放的位置；重连取地址失败后 <audio> 里已没有它，只能靠这里记着 */
+let recovering: { id: string; at: number } | null = null;
+let offlineToastFor: { id: string; at: number } | null = null;
+function clearStall() {
+  clearTimeout(stallTimer);
+  stallTimer = undefined;
+}
+function watchStall() {
+  if (stallTimer || !intendedPlaying || audio.paused || outgoing()) return;
+  armStall(loadToken, audio.currentTime);
+}
+function armStall(token: number, at: number) {
+  stallTimer = setTimeout(() => {
+    stallTimer = undefined;
+    if (token !== loadToken || !intendedPlaying || pausing || audio.paused) return;
+    // 往前挪了一点、或者数据还在慢慢下：没死，接着盯（挪一下又卡住不能就此没人管）
+    if (audio.currentTime !== at || Date.now() - lastProgress < STALL_MS) return armStall(token, audio.currentTime);
+    reconnect();
+  }, STALL_MS);
+}
+/** 卡在哪：<audio> 里还是这首就读它，重连取地址失败后读记下的位置 */
+function stuckPosition() {
+  const t = currentTrack();
+  if (!t) return undefined;
+  if (loaded?.id === t.id) return audio.currentTime * 1000;
+  return recovering?.id === t.id ? recovering.at : undefined;
+}
+/** 重新取地址、从卡住的地方接着放；连着重连太多次就停下来告诉用户 */
+function reconnect() {
+  clearStall();
+  const t = currentTrack();
+  const at = stuckPosition();
+  // 用户已经按了暂停（含淡出途中）、或者正在取地址，都不再起一轮
+  if (!t || at === undefined || !intendedPlaying || pausing || fetching === loadToken) return;
+  // 明确断网时不白耗重连次数：等网回来（online）再连
+  if (navigator.onLine === false) return holdForNetwork(t.id, at);
+  if (stallRetries >= STALL_RETRIES) return giveUp('网络不太稳，播放停在这里了。点播放键接着放。');
+  stallRetries += 1;
+  recoveredAt = at / 1000;
+  recovering = { id: t.id, at };
+  void resolveAndPlay(get().index, { resumeAt: at, autoplay: true, recover: true });
+}
+/** 重连没取到地址：保持「要放」，网一回来或过一会儿再试；这期间按播放键可以作罢 */
+function holdForNetwork(id: string, at: number) {
+  recovering = { id, at };
+  rememberStop(id, at);
+  clearStall();
+  stallTimer = setTimeout(reconnect, STALL_MS);
+  set({ loading: true, playing: false });
+  if (offlineToastFor?.id !== id || offlineToastFor.at !== at) {
+    offlineToastFor = { id, at };
+    toast('暂时连不上，网络恢复后会自动接着放。');
+  }
+}
+/** 停下并提示；记住位置，下次按播放重新取地址从这里接着放 */
+function giveUp(message: string) {
+  const t = currentTrack();
+  if (t) rememberStop(t.id, stuckPosition());
+  recovering = null;
+  clearStall();
+  loadToken += 1;
+  intendedPlaying = false;
+  loaded = null;
+  audio.pause();
+  set({ loading: false, playing: false });
+  toast(message);
+}
+window.addEventListener('online', () => { if (stallTimer && intendedPlaying && !pausing) reconnect(); });
+
+let lastPlayToast = 0;
+/** play() 被拒：换源、暂停打断的不吭声，其余要让用户知道为什么没声 */
+function playRejected(e: unknown) {
+  set({ playing: false });
+  if ((e as Error)?.name === 'AbortError') return;
+  intendedPlaying = false;
+  if (Date.now() - lastPlayToast < 3000) return;
+  lastPlayToast = Date.now();
+  toast((e as Error)?.name === 'NotAllowedError'
+    ? '系统拦下了播放，点一下播放键继续。'
+    : '这首没能开始播放，点播放键再试一次。');
+}
 
 function expiryOf(src: { expiresAt?: string; ttlSeconds?: number }) {
   if (src.expiresAt && Number.isFinite(Date.parse(src.expiresAt))) return Date.parse(src.expiresAt);
   if (src.ttlSeconds) return Date.now() + src.ttlSeconds * 1000;
   return Infinity;
+}
+
+// 取地址的请求挂着不回（弱网里常见）也不能一直转圈：先提示慢，再超时按连不上处理
+// 40 秒是产品等待上限，不保证覆盖服务端多次排队和全部上游请求。
+const PLAY_URL_SLOW_MS = 12_000;
+const PLAY_URL_TIMEOUT_MS = 40_000;
+function withDeadline<T>(request: Promise<T>, abort: () => void, token: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const slow = setTimeout(() => { if (token === loadToken) toast('网络有点慢，还在加载。'); }, PLAY_URL_SLOW_MS);
+    const deadline = setTimeout(() => {
+      abort();
+      reject(new ApiError('取播放地址超时了，网络可能不太稳。', 5000, 0, undefined, true));
+    }, PLAY_URL_TIMEOUT_MS);
+    request.then(resolve, reject).finally(() => { clearTimeout(slow); clearTimeout(deadline); });
+  });
 }
 
 const expiringSoon = () => !!loaded && Date.now() > loaded.expiresAt - api.playUrlRenewLeadSeconds * 1000;
@@ -252,12 +423,13 @@ let stableSourceTrackId: string | null = null;
 /** 取播放地址并装进 <audio>；resumeAt 用于续签后从原位置继续 */
 async function resolveAndPlay(
   index: number,
-  opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean } = {},
+  opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean; recover?: boolean } = {},
 ): Promise<void> {
   const { queue } = get();
   const track = queue[index];
   if (!track) return;
   if (Date.now() < retryNotBefore) {
+    rememberStop(track.id, opts.resumeAt ?? opts.startAt);
     loadToken += 1;
     intendedPlaying = false;
     loaded = null;
@@ -273,6 +445,8 @@ async function resolveAndPlay(
   intendedPlaying = opts.autoplay !== false;
   const fresh = opts.resumeAt == null;
   const token = ++loadToken;
+  fetching = token;
+  clearStall();
   loadController?.abort();
   loadController = new AbortController();
   const signal = loadController.signal;
@@ -285,7 +459,10 @@ async function resolveAndPlay(
     lastQualityNotice = '';
     renewedOnce = false;
     recentPushed = false;
-    set({ index, position: 0, duration: track.durationMs, lyric: null, preview: false, level: null,
+    resumeFor = null;
+    recovering = null;
+    stallRetries = 0;
+    set({ index, position: opts.startAt ?? 0, duration: track.durationMs, lyric: null, preview: false, level: null,
       resolvedVia: null, access: null, canSwitchToStableSource: false });
     updateMediaSession(track);
   }
@@ -298,15 +475,19 @@ async function resolveAndPlay(
     await Promise.resolve();
     if (token !== loadToken || signal.aborted) return;
     const requestedQuality = getSettings().quality;
-    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, signal, unblockMode);
+    // 超时只掐取地址这一个请求，歌词照常
+    const request = new AbortController();
+    signal.addEventListener('abort', () => request.abort(), { once: true });
+    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, request.signal, unblockMode);
     if (fresh) loadLyric(track.id, token, signal);
-    const src = await source;
+    const src = await withDeadline(source, () => request.abort(), token);
     if (token !== loadToken) return;
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
     await silenced;
     if (token !== loadToken) return;
     loaded = { id: track.id, expiresAt: expiryOf(src) };
     audio.src = src.url;
+    fetching = 0;
     const alignRemote = () => {
       if (!remoteTarget || token !== loadToken) return;
       const target = remoteTarget;
@@ -333,17 +514,24 @@ async function resolveAndPlay(
     }
     lastQualityNotice = qualityNotice;
     if (remoteTarget) alignRemote();
-    if (intendedPlaying) await softPlay().catch(() => {
-      if (token === loadToken) set({ playing: false });
+    if (intendedPlaying) await softPlay().catch((e) => {
+      if (token === loadToken) playRejected(e);
     });
     if (token !== loadToken) return;
     if (remoteTarget) alignRemote();
     set({ loading: false, canSwitchToStableSource: src.resolvedVia === 'unblock' && src.access === 'free' && !src.preview });
   } catch (e) {
+    if (fetching === token) fetching = 0;
     if (token !== loadToken) return;
     if (signal.aborted || (e as Error).name === 'AbortError') return;
-    if (e instanceof ApiError && (e.code === 2002 || e.status === 429)) {
-      retryNotBefore = Date.now() + Math.max(1, e.retryAfterSeconds ?? 30) * 1000;
+    const limited = e instanceof ApiError && (e.code === 2002 || e.status === 429);
+    if (limited) retryNotBefore = Date.now() + Math.max(1, e.retryAfterSeconds ?? 30) * 1000;
+    // 重连时取地址连不上（断网、服务端暂时出错）：不算失败，等网回来接着重连
+    if (opts.recover && opts.resumeAt != null && intendedPlaying && !limited && e instanceof ApiError && e.retryable) {
+      loaded = null;
+      await silenced;
+      if (token !== loadToken) return;
+      return holdForNetwork(track.id, opts.resumeAt);
     }
     const skipped = (opts.skipped ?? 0) + 1;
     const songUnavailable = e instanceof ApiError && [3001, 3002].includes(e.code);
@@ -356,6 +544,9 @@ async function resolveAndPlay(
       emit('playback');
       return retry;
     }
+    // 续签、重连、换音质时失败：下次按播放从这里接着放，而不是从头
+    if (!fresh || opts.startAt) rememberStop(track.id, opts.resumeAt ?? opts.startAt);
+    recovering = null;
     intendedPlaying = false;
     loaded = null;
     set({ loading: false, playing: false });
@@ -434,23 +625,61 @@ export function jumpTo(i: number, startAt?: number) {
   emit('playback');
 }
 
+/** 不想放了（播放键、通知栏都走这里）；断网等着重连的先不等了，停住的位置留着，再按播放接着连 */
+function pauseIntent() {
+  intendedPlaying = false;
+  if (remoteTarget) remoteTarget.playing = false;
+  if (get().loading) {
+    const t = currentTrack();
+    const at = stuckPosition() ?? get().position;
+    if (t) rememberStop(t.id, at);
+    if (fetching === loadToken) {
+      loadToken += 1;
+      loadController?.abort();
+      fetching = 0;
+      loaded = null;
+    }
+    set({ loading: false });
+  }
+  softPause();
+}
+
+/** 等网重连时被暂停过、又要接着放：计时器已经停了，按记下的位置重新连（断着网就接着等） */
+function resumeRecovery() {
+  const t = currentTrack();
+  if (!t || recovering?.id !== t.id || !intendedPlaying || stallTimer || fetching === loadToken) return false;
+  set({ loading: true });
+  reconnect();
+  return true;
+}
+
 export function toggle() {
   const s = get();
   const track = currentTrack(s);
   if (!track) return;
   emit('playback');
-  if (s.loading && loaded?.id !== track.id) {
-    intendedPlaying = !intendedPlaying;
-    if (remoteTarget) remoteTarget.playing = intendedPlaying;
-    if (!intendedPlaying) softPause();
+  if (s.loading) {
+    if (intendedPlaying) return pauseIntent();
+    intendedPlaying = true;
+    if (remoteTarget) remoteTarget.playing = true;
+    resumeRecovery();
     return;
   }
-  if (loaded?.id !== track.id) return void resolveAndPlay(s.index);
+  if (recovering?.id === track.id) {
+    intendedPlaying = true;
+    if (resumeRecovery()) return;
+  }
+  if (loaded?.id !== track.id) {
+    intendedPlaying = true;
+    if (resumeRecovery()) return;
+    // 重开页面或放弃重连后：从记下的位置接着放
+    return void resolveAndPlay(s.index, { startAt: takeResume(track.id) });
+  }
   if (audible()) { intendedPlaying = false; return softPause(); }
   intendedPlaying = true;
   // 暂停太久地址可能过期，先续签
   if (expiringSoon()) return void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: true });
-  void softPlay().catch(() => set({ playing: false }));
+  void softPlay().catch(playRejected);
 }
 
 /** 上一首 / 下一首换到了哪一格、往哪个方向。唱机和播放台按方向换唱片；点列表、一起听同步算往后 */
@@ -519,9 +748,13 @@ export function applyRemote(r: { queue: Track[]; index: number; positionMs: numb
   }
   if (currentTrack(s)?.id === track.id && s.loading) {
     set({ index: r.index });
-    if (!r.playing) softPause();
+    if (!r.playing) {
+      if (recovering?.id === track.id) pauseIntent();
+      else softPause();
+    } else resumeRecovery();
     return;
   }
+  if (r.playing && currentTrack(s)?.id === track.id && recovering?.id === track.id && resumeRecovery()) return;
   // 房间里的队列只带当前这首前后一段，传来传去序号会挪：认歌不认序号，同一首就只改序号、不重新加载
   if (loaded?.id !== track.id || currentTrack(s)?.id !== track.id) {
     void resolveAndPlay(r.index, { startAt: r.positionMs, autoplay: r.playing, remote: true });
@@ -567,6 +800,7 @@ export function cycleMode() {
 function unload() {
   loadToken += 1;
   loadController?.abort();
+  clearStall();
   fadeId += 1;
   pausing = false;
   audio.pause();
@@ -611,10 +845,11 @@ function updateMediaSession(track: Track) {
 }
 
 if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('play', () => { if (!audible()) toggle(); });
+  // 加载、重连途中按通知栏的播放不能被当成「暂停」
+  navigator.mediaSession.setActionHandler('play', () => { if (!isPlaybackIntended()) toggle(); });
+  // 和播放键走同一套暂停：等网重连时按了暂停要把「加载中」一并收掉，不然再按播放会卡在加载里（二姐复验 #7）
   navigator.mediaSession.setActionHandler('pause', () => {
-    intendedPlaying = false;
-    softPause();
+    pauseIntent();
     emit('playback');
   });
   navigator.mediaSession.setActionHandler('previoustrack', prev);

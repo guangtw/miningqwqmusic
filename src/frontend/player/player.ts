@@ -252,7 +252,10 @@ audio.addEventListener('durationchange', () => {
 });
 audio.addEventListener('play', () => set({ playing: true }));
 audio.addEventListener('pause', () => {
-  clearStall();
+  if (!audio.paused) return; // A queued pause may arrive after playback resumed.
+  // Browser pause events are asynchronous: an internal fade can finish after
+  // recovery has armed its retry timer. Do not cancel that recovery.
+  if (!(recovering && intendedPlaying)) clearStall();
   set({ playing: false });
   saveResume();
 });
@@ -283,7 +286,7 @@ function advanceOnEnd() {
 }
 audio.addEventListener('ended', advanceOnEnd);
 audio.addEventListener('error', () => {
-  if (!audio.getAttribute('src') || fetching === loadToken) return;
+  if (!audio.getAttribute('src') || fetching === loadToken || (recovering && !intendedPlaying)) return;
   const at = audio.currentTime * 1000;
   // 播放地址是短时效的：第一次出错先续签再接着放
   if (!renewedOnce) {
@@ -292,7 +295,7 @@ audio.addEventListener('error', () => {
     return;
   }
   // 续签过还断网：按卡住处理，有限次重连
-  if (audio.error?.code === MEDIA_ERR_NETWORK && intendedPlaying) return reconnect();
+  if ((audio.error?.code === MEDIA_ERR_NETWORK || audio.error?.code === 4) && intendedPlaying) return reconnect();
   giveUp('这首歌加载失败，稍后再试。');
   // Repeated media errors must not walk the entire queue requesting fresh URLs.
 });
@@ -398,7 +401,7 @@ function expiryOf(src: { expiresAt?: string; ttlSeconds?: number }) {
 }
 
 // 取地址的请求挂着不回（弱网里常见）也不能一直转圈：先提示慢，再超时按连不上处理
-// 40 秒盖过服务端最长的正常等待：排队上限 30 秒（MUSIC_SOURCE_QUEUE_TIMEOUT_MS）+ 一次上游请求 8 秒
+// 40 秒是产品等待上限，不保证覆盖服务端多次排队和全部上游请求。
 const PLAY_URL_SLOW_MS = 12_000;
 const PLAY_URL_TIMEOUT_MS = 40_000;
 function withDeadline<T>(request: Promise<T>, abort: () => void, token: number): Promise<T> {
@@ -626,8 +629,19 @@ export function jumpTo(i: number, startAt?: number) {
 function pauseIntent() {
   intendedPlaying = false;
   if (remoteTarget) remoteTarget.playing = false;
+  if (get().loading) {
+    const t = currentTrack();
+    const at = stuckPosition() ?? get().position;
+    if (t) rememberStop(t.id, at);
+    if (fetching === loadToken) {
+      loadToken += 1;
+      loadController?.abort();
+      fetching = 0;
+      loaded = null;
+    }
+    set({ loading: false });
+  }
   softPause();
-  if (get().loading && fetching !== loadToken && loaded?.id !== currentTrack()?.id) set({ loading: false });
 }
 
 /** 等网重连时被暂停过、又要接着放：计时器已经停了，按记下的位置重新连（断着网就接着等） */
@@ -644,12 +658,16 @@ export function toggle() {
   const track = currentTrack(s);
   if (!track) return;
   emit('playback');
-  if (s.loading && loaded?.id !== track.id) {
+  if (s.loading) {
     if (intendedPlaying) return pauseIntent();
     intendedPlaying = true;
     if (remoteTarget) remoteTarget.playing = true;
     resumeRecovery();
     return;
+  }
+  if (recovering?.id === track.id) {
+    intendedPlaying = true;
+    if (resumeRecovery()) return;
   }
   if (loaded?.id !== track.id) {
     intendedPlaying = true;
@@ -730,10 +748,13 @@ export function applyRemote(r: { queue: Track[]; index: number; positionMs: numb
   }
   if (currentTrack(s)?.id === track.id && s.loading) {
     set({ index: r.index });
-    if (!r.playing) softPause();
-    else resumeRecovery();
+    if (!r.playing) {
+      if (recovering?.id === track.id) pauseIntent();
+      else softPause();
+    } else resumeRecovery();
     return;
   }
+  if (r.playing && currentTrack(s)?.id === track.id && recovering?.id === track.id && resumeRecovery()) return;
   // 房间里的队列只带当前这首前后一段，传来传去序号会挪：认歌不认序号，同一首就只改序号、不重新加载
   if (loaded?.id !== track.id || currentTrack(s)?.id !== track.id) {
     void resolveAndPlay(r.index, { startAt: r.positionMs, autoplay: r.playing, remote: true });

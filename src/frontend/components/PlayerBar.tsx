@@ -5,7 +5,7 @@ import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { snap, transition } from '../lib/motion';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
-import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume, swapDirection, toggle, toggleMute } from '../player/player';
+import { currentTrack, cycleMode, isPlaybackIntended, MODE_LABEL, next, playerStore, prev, setVolume, swapDirection, toggle, toggleMute } from '../player/player';
 import { uiStore } from '../player/ui';
 import { listenStore } from '../lib/listen';
 import { HeartButton } from './HeartButton';
@@ -63,6 +63,7 @@ export function PlayerBar() {
   const track = useStore(playerStore, (s) => currentTrack(s));
   const playing = useStore(playerStore, (s) => s.playing);
   const loading = useStore(playerStore, (s) => s.loading);
+  const buttonPlaying = loading ? isPlaybackIntended() : playing;
   const volume = useStore(playerStore, (s) => s.volume);
   const muted = useStore(playerStore, (s) => s.muted);
   const mode = useStore(playerStore, (s) => s.mode);
@@ -136,9 +137,9 @@ export function PlayerBar() {
             <Icon name="prev" />
           </button>
           <button
-            className={`play-btn ${playing ? 'is-playing' : ''} ${loading ? 'is-loading' : ''}`}
+            className={`play-btn ${buttonPlaying ? 'is-playing' : ''} ${loading ? 'is-loading' : ''}`}
             onClick={toggle}
-            aria-label={playing ? '暂停' : '播放'}
+            aria-label={buttonPlaying ? '暂停' : '播放'}
           >
             <span className="pp pp-play">
               <Icon name="play" />

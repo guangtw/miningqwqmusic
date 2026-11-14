@@ -18,11 +18,12 @@ vi.mock('@/src/frontend/lib/account', () => ({
 vi.mock('@/src/frontend/lib/toast', () => ({ toast: f.toast }));
 class FakeAudio extends EventTarget {
   static last: FakeAudio;
+  static asyncPause = false;
   paused = true; currentTime = 0; duration = 180; volume = 1; muted = false; preload = ''; src = '';
   error: { code: number } | null = null;
   constructor() { super(); FakeAudio.last = this; }
   play = vi.fn(async () => { if (this.paused) { this.paused = false; this.dispatchEvent(new Event('play')); } });
-  pause() { if (!this.paused) { this.paused = true; this.dispatchEvent(new Event('pause')); } }
+  pause() { if (!this.paused) { this.paused = true; FakeAudio.asyncPause ? setTimeout(() => this.dispatchEvent(new Event('pause')), 10) : this.dispatchEvent(new Event('pause')); } }
   load() {}
   removeAttribute() { this.src = ''; }
   getAttribute() { return this.src; }
@@ -30,6 +31,7 @@ class FakeAudio extends EventTarget {
 const track = { id: 'one', name: 'One', artists: [{ id: 'a', name: 'Artist' }], durationMs: 180000 };
 const RESUME_KEY = 'cph.player.resume.v1';
 beforeEach(() => {
+  FakeAudio.asyncPause = false;
   vi.resetModules(); localStorage.clear(); f.toast.mockReset(); vi.stubGlobal('Audio', FakeAudio);
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance', 'Date'] });
   f.source.mockReset();
@@ -367,4 +369,69 @@ it('system media controls pause then play while waiting for the network still re
     delete (navigator as { mediaSession?: unknown }).mediaSession;
     delete (navigator as { onLine?: unknown }).onLine;
   }
+});
+
+// Real browsers queue pause events; these regressions deliberately use delayed delivery.
+it('round4 delayed internal pause does not erase network recovery', async () => {
+  FakeAudio.asyncPause = true;
+  const { audio } = await stuckAt(95);
+  f.source.mockRejectedValueOnce(offline());
+  await vi.advanceTimersByTimeAsync(13_000);
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(audio.paused).toBe(false);
+});
+
+it('round4 old source error after media pause preserves offline recovery', async () => {
+  FakeAudio.asyncPause = true;
+  const handlers: Record<string, () => void> = {};
+  vi.stubGlobal('MediaMetadata', class {});
+  Object.defineProperty(navigator, 'mediaSession', { configurable: true, value: { metadata: null, setActionHandler: (k: string, fn: () => void) => { handlers[k] = fn; } } });
+  let online = true;
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+  try {
+    const { player, audio } = await stuckAt(95);
+    f.source.mockRejectedValueOnce(offline());
+    await vi.advanceTimersByTimeAsync(13_000);
+    online = false;
+    handlers.pause();
+    audio.error = { code: 2 }; audio.dispatchEvent(new Event('error'));
+    await vi.advanceTimersByTimeAsync(1000);
+    handlers.play();
+    expect(player.isPlaybackIntended()).toBe(true);
+    expect(player.playerStore.get().loading).toBe(true);
+    expect(f.source).toHaveBeenCalledTimes(2);
+    online = true; window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(audio.paused).toBe(false);
+    expect(audio.currentTime).toBe(95);
+  } finally { delete (navigator as { mediaSession?: unknown }).mediaSession; delete (navigator as { onLine?: unknown }).onLine; }
+});
+
+it('round4 button cancels pending same-track reconnect', async () => {
+  FakeAudio.asyncPause = true;
+  const { player, audio } = await stuckAt(95);
+  let release!: (x: {url: string; preview: boolean}) => void;
+  f.source.mockImplementationOnce(() => new Promise(r => { release = r; }));
+  await vi.advanceTimersByTimeAsync(13_000);
+  player.toggle(); await vi.advanceTimersByTimeAsync(500);
+  expect.soft(player.isPlaybackIntended()).toBe(false);
+  expect.soft(audio.paused).toBe(true);
+  release({url: 'https://example.test/refreshed', preview: false});
+  await vi.advanceTimersByTimeAsync(1000);
+  expect.soft(audio.paused).toBe(true);
+  expect.soft(player.playerStore.get().playing).toBe(false);
+});
+
+it('round4 code 4 on a refreshed stream uses bounded network recovery', async () => {
+  FakeAudio.asyncPause = true;
+  const { audio } = await playing();
+  audio.currentTime = 95;
+  audio.error = { code: 2 }; audio.dispatchEvent(new Event('error'));
+  await vi.advanceTimersByTimeAsync(1000);
+  audio.error = { code: 4 }; audio.dispatchEvent(new Event('error'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(f.toast).not.toHaveBeenCalledWith('这首歌加载失败，稍后再试。');
 });

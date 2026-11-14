@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 // issue #7：安卓上听着听着没声、重开后从头放
-const f = vi.hoisted(() => ({ source: vi.fn(), toast: vi.fn() }));
+const f = vi.hoisted(() => ({
+  source: vi.fn(), toast: vi.fn(),
+  ApiError: class extends Error {
+    constructor(message: string, readonly code = 0, readonly status = 0, readonly traceId?: string, readonly retryable = false) {
+      super(message);
+    }
+  },
+}));
 vi.mock('@/src/frontend/api', () => ({
-  ApiError: class extends Error {}, coverOf: () => '',
+  ApiError: f.ApiError, coverOf: () => '',
   music: { playUrl: f.source, lyric: async () => ({ lines: [] }) }
 }));
 vi.mock('@/src/frontend/lib/account', () => ({
@@ -188,4 +195,106 @@ it('stays quiet when play() is merely interrupted', async () => {
   player.toggle();
   await vi.advanceTimersByTimeAsync(0);
   expect(f.toast).not.toHaveBeenCalled();
+});
+
+// ---- 二姐评审补出来的场景 ----
+const offline = () => new f.ApiError('连不上服务，检查一下网络。', 5000, 0, undefined, true);
+
+async function stuckAt(seconds: number) {
+  const ctx = await playing();
+  ctx.audio.currentTime = seconds;
+  ctx.audio.dispatchEvent(new Event('waiting'));
+  return ctx;
+}
+
+it('if fetching a new URL fails while reconnecting, it waits and reconnects once the network is back', async () => {
+  const { player, audio } = await stuckAt(95);
+  f.source.mockRejectedValueOnce(offline());
+  await vi.advanceTimersByTimeAsync(13_000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+  expect(player.isPlaybackIntended()).toBe(true);
+  expect(player.playerStore.get().loading).toBe(true);
+
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(audio.currentTime).toBe(95);
+  expect(audio.paused).toBe(false);
+});
+
+it('a manual retry after a failed reconnect continues from where it stopped', async () => {
+  // 取地址直接失败（不可重试）：停下提示，按播放从 95 秒接着放
+  let { player, audio } = await stuckAt(95);
+  f.source.mockRejectedValueOnce(new f.ApiError('服务出错了', 5000, 500));
+  await vi.advanceTimersByTimeAsync(13_000);
+  expect(player.playerStore.get().playing).toBe(false);
+  expect(player.playerStore.get().loading).toBe(false);
+  player.toggle();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(audio.currentTime).toBe(95);
+  expect(audio.paused).toBe(false);
+
+  // 断网等着重连时用户先按暂停、再按播放：同样接着放
+  vi.resetModules(); f.source.mockClear();
+  ({ player, audio } = await stuckAt(140));
+  f.source.mockRejectedValueOnce(offline());
+  await vi.advanceTimersByTimeAsync(13_000);
+  player.toggle();
+  expect(player.isPlaybackIntended()).toBe(false);
+  expect(player.playerStore.get().loading).toBe(false);
+  player.toggle();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(audio.currentTime).toBe(140);
+  expect(audio.paused).toBe(false);
+});
+
+it('pausing while stuck is not undone when the network comes back mid-fade', async () => {
+  const { player, audio } = await stuckAt(30);
+  player.toggle(); // 正在淡出
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(20_000);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  expect(audio.paused).toBe(true);
+  expect(player.playerStore.get().playing).toBe(false);
+});
+
+it('keeps watching when playback inches forward and then sticks again', async () => {
+  const { audio } = await stuckAt(95);
+  await vi.advanceTimersByTimeAsync(5000);
+  audio.currentTime = 96; // 挪了一秒，没有新的 waiting
+  await vi.advanceTimersByTimeAsync(8000);
+  expect(f.source).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(13_000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+  expect(audio.currentTime).toBe(96);
+});
+
+it('does not reconnect a slow stream that is still downloading', async () => {
+  const { audio } = await stuckAt(50);
+  for (let i = 0; i < 30; i++) {
+    audio.dispatchEvent(new Event('progress'));
+    await vi.advanceTimersByTimeAsync(1000);
+  }
+  expect(f.source).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(25_000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+});
+
+it('an error from the old source while a new URL is being fetched does not start a second request', async () => {
+  const { audio } = await stuckAt(70);
+  let release!: () => void;
+  f.source.mockImplementationOnce((id: string) => new Promise((r) => { release = () => r({ url: `https://example.test/${id}?2`, preview: false }); }));
+  await vi.advanceTimersByTimeAsync(13_000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+  audio.error = { code: 2 };
+  audio.dispatchEvent(new Event('error'));
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(2);
+  release();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(audio.src).toBe('https://example.test/one?2');
+  expect(audio.currentTime).toBe(70);
+  expect(audio.paused).toBe(false);
 });

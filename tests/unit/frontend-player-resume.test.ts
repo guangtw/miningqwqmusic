@@ -298,3 +298,73 @@ it('an error from the old source while a new URL is being fetched does not start
   expect(audio.currentTime).toBe(70);
   expect(audio.paused).toBe(false);
 });
+
+// ---- 二姐第二轮复验补出来的场景 ----
+const hangs = () => (_id: string, _q: unknown, _t: unknown, signal: AbortSignal) => new Promise((_, reject) => {
+  signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+});
+
+it('a URL request that never answers times out, says so and keeps trying', async () => {
+  const { player, audio } = await stuckAt(95);
+  f.source.mockImplementationOnce(hangs());
+  await vi.advanceTimersByTimeAsync(13_000); // 卡住 12 秒，开始重连，取地址一直不回
+  expect(f.source).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(12_000);
+  expect(f.toast).toHaveBeenCalledWith('网络有点慢，还在加载。');
+  await vi.advanceTimersByTimeAsync(30_000); // 超时后等网：提示过、仍然想放
+  expect(f.toast).toHaveBeenCalledWith('暂时连不上，网络恢复后会自动接着放。');
+  expect(player.isPlaybackIntended()).toBe(true);
+  window.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(f.source).toHaveBeenCalledTimes(3);
+  expect(audio.currentTime).toBe(95);
+  expect(audio.paused).toBe(false);
+  expect(player.playerStore.get().loading).toBe(false);
+});
+
+it('a fresh tap whose URL request never answers stops loading and tells the user', async () => {
+  const player = await reopen(73_000);
+  f.source.mockImplementationOnce(hangs());
+  player.toggle();
+  await vi.advanceTimersByTimeAsync(41_000);
+  expect(player.playerStore.get().loading).toBe(false);
+  expect(f.toast).toHaveBeenLastCalledWith('取播放地址超时了，网络可能不太稳。');
+  player.toggle();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(FakeAudio.last.currentTime).toBe(73);
+  expect(FakeAudio.last.paused).toBe(false);
+});
+
+it('system media controls pause then play while waiting for the network still reconnect', async () => {
+  const handlers: Record<string, () => void> = {};
+  vi.stubGlobal('MediaMetadata', class {});
+  Object.defineProperty(navigator, 'mediaSession', {
+    configurable: true, value: { metadata: null, setActionHandler: (k: string, fn: () => void) => { handlers[k] = fn; } },
+  });
+  let online = true;
+  Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => online });
+  try {
+    const { player, audio } = await stuckAt(140);
+    f.source.mockRejectedValueOnce(offline());
+    await vi.advanceTimersByTimeAsync(13_000);
+    online = false;
+    handlers.pause();
+    expect(player.isPlaybackIntended()).toBe(false);
+    expect(player.playerStore.get().loading).toBe(false);
+    handlers.play(); // 还断着网：接着等，不白发请求
+    expect(player.isPlaybackIntended()).toBe(true);
+    expect(player.playerStore.get().loading).toBe(true);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(f.source).toHaveBeenCalledTimes(2);
+    online = true;
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(f.source).toHaveBeenCalledTimes(3);
+    expect(audio.currentTime).toBe(140);
+    expect(audio.paused).toBe(false);
+    expect(player.playerStore.get().loading).toBe(false);
+  } finally {
+    delete (navigator as { mediaSession?: unknown }).mediaSession;
+    delete (navigator as { onLine?: unknown }).onLine;
+  }
+});

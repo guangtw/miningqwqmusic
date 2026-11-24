@@ -107,13 +107,13 @@ test('the bottom dock is one capsule of pages plus one circle for the mini playe
   await expect(page.locator('.player')).toBeHidden();
   const pill = (await page.locator('.dock-pill').boundingBox())!;
   expect(pill.width).toBeGreaterThan(width(page) - 40);
-  expect(await current(page)).toBe('home');
+  await expect.poll(() => current(page)).toBe('home');
 
   await search.tap();
   await expect.poll(() => hash(page)).toBe('#/search');
   const input = page.getByRole('combobox');
   await expect(input).toBeFocused();
-  expect(await current(page)).toBe('search');
+  await expect.poll(() => current(page)).toBe('search');
   await expect.poll(() => lens(page)).toBe(true);
   await input.fill('晨光');
   await input.press('Enter');
@@ -124,7 +124,7 @@ test('the bottom dock is one capsule of pages plus one circle for the mini playe
   await expect.poll(() => hash(page)).toBe('#/search');
   await page.goBack();
   await expect.poll(() => hash(page)).toBe('#/');
-  expect(await current(page)).toBe('home');
+  await expect.poll(() => current(page)).toBe('home');
 });
 
 test('scrolling down swaps the capsule and the circle: pages fold into a circle, the mini player opens up', async ({ page }) => {
@@ -184,7 +184,7 @@ test('scrolling down swaps the capsule and the circle: pages fold into a circle,
 
 test('swiping the main area moves between neighbouring top-level pages', async ({ page }) => {
   await page.goto('/#/');
-  expect(await current(page)).toBe('home');
+  await expect.poll(() => current(page)).toBe('home');
 
   // 首页往右划：没有上一页，原地弹回
   await swipeRight(page);
@@ -193,7 +193,7 @@ test('swiping the main area moves between neighbouring top-level pages', async (
 
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/charts');
-  expect(await current(page)).toBe('charts');
+  await expect.poll(() => current(page)).toBe('charts');
   // 镜片跟着滑到「榜单」
   await expect.poll(() => lens(page)).toBe(true);
 
@@ -201,11 +201,11 @@ test('swiping the main area moves between neighbouring top-level pages', async (
   await expect.poll(() => hash(page)).toBe('#/radio');
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/library');
-  expect(await current(page)).toBe('library');
+  await expect.poll(() => current(page)).toBe('library');
   // 底栏最后是搜索
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/search');
-  expect(await current(page)).toBe('search');
+  await expect.poll(() => current(page)).toBe('search');
   // 最后一页往左划：拉不动
   await swipeLeft(page, 600);
   expect(await hash(page)).toBe('#/search');

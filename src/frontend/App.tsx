@@ -9,6 +9,7 @@ import { ImportDialog, PlaylistDialog } from './components/PlaylistDialogs';
 import { PlayerBar, toggleNowPlaying } from './components/PlayerBar';
 import { QueueDrawer } from './components/QueueDrawer';
 import { Sidebar } from './components/Sidebar';
+import { TabBar } from './components/TabBar';
 import { Empty } from './components/States';
 import { Toast } from './components/Toast';
 import { RECORD_LAND_MS } from './components/Turntable';
@@ -20,6 +21,7 @@ import { watchListen } from './lib/listen';
 import { applyGlobalTint, DEFAULT_TINT, tintOf, type Tint } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
 import { getSettings, motionEnabled, subscribeSettings } from './lib/settings';
+import { useSwipeNav } from './lib/swipeNav';
 import { useStore } from './lib/store';
 import { currentTrack, next, playerStore, prev, seek, toggle } from './player/player';
 import { uiStore } from './player/ui';
@@ -163,6 +165,7 @@ export function App() {
   const mainRef = useRef<HTMLElement>(null);
 
   useShortcuts();
+  useSwipeNav(mainRef, route.path);
 
   useEffect(() => {
     const stop = watchSessionRecovery();
@@ -194,6 +197,7 @@ export function App() {
       <main className="main" ref={mainRef}>
         <View route={route} />
       </main>
+      <TabBar />
       <PlayerBar />
       <NowPlaying />
       <QueueDrawer />

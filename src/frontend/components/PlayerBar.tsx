@@ -74,7 +74,7 @@ export function PlayerBar() {
   const listeners = useStore(listenStore, (s) => s.room?.members.length ?? 0);
 
   return (
-    <footer className={`player ${npOpen ? 'np-open' : ''}`} aria-label="播放控制">
+    <footer className={`player ${npOpen ? 'np-open' : ''} ${track ? '' : 'is-empty'}`} aria-label="播放控制">
       <SeekBar compact />
       <div className="np">
         {track ? (

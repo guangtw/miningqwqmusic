@@ -1,0 +1,492 @@
+/* 唱片行 · 2026 冬季视觉升级
+   放在所有样式之后，按区域覆盖：
+   1. 手机导航：主导航挪到底部（拇指区），顶栏只留站标、私信、头像
+   2. 正在播放 / 歌词：歌词占满一整栏，当前句逐字点亮，署名单独成行，背后铺一层虚化的封面
+   改动只用 transform / opacity / 少量静态滤镜，不在动画里改布局 */
+
+:root {
+  --np-art-a: 0.22;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='paper']) {
+    --np-art-a: 0.46;
+  }
+}
+:root[data-theme='night'] {
+  --np-art-a: 0.46;
+}
+
+/* ============ 1. 手机导航：Apple Music 式底栏 ============
+   整条底栏只有一个胶囊和一个圆，排成一行（TabBar.tsx）：
+   平时  [ 本期 榜单 电台 唱片架 搜索 ]( 唱片 )   右边的圆是缩起来的迷你播放台
+   下翻  ( 当前页 )[ 唱片 歌名 歌手   ▶ ⏭ ]       两者左右换个个儿
+   没在放歌时没有圆，胶囊占满一行 */
+.dock {
+  display: none;
+}
+@media (max-width: 860px) {
+  :root {
+    --dock-h: 62px;
+    --dock-gap: 10px;
+    --dock-side: 12px;
+    --dock-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    /* 底栏整块占的高度，页面底部要留出来 */
+    --dock-full: calc(var(--dock-bottom) + var(--dock-h));
+    --dock-ease: cubic-bezier(0.3, 1.25, 0.4, 1);
+  }
+
+  /* 顶栏：站标 ·（空）· 私信 头像。导航整排挪到底部 */
+  .side {
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+  .side .nav {
+    display: none;
+  }
+  .side .brand-name {
+    display: grid;
+  }
+  .side .side-foot {
+    margin-left: auto;
+  }
+
+  .dock {
+    position: fixed;
+    left: var(--dock-side);
+    right: var(--dock-side);
+    bottom: var(--dock-bottom);
+    /* 在正在播放页（30）之下：打开唱机时被整页盖住；在播放台（40）之下 */
+    z-index: 29;
+    display: block;
+    height: var(--dock-h);
+    pointer-events: none;
+  }
+  .dock-pill {
+    position: relative;
+    display: flex;
+    width: calc(100% - var(--dock-h) - var(--dock-gap));
+    height: 100%;
+    padding: 4px;
+    border-radius: calc(var(--dock-h) / 2);
+    overflow: hidden;
+    contain: layout paint;
+    pointer-events: auto;
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.7);
+    backdrop-filter: blur(24px) saturate(1.7);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-2), inset 0 1px 0 var(--q-sheen);
+    transition: width 0.6s var(--dock-ease);
+  }
+  .dock.solo .dock-pill {
+    width: 100%;
+  }
+  .dock-pill a {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    border-radius: calc(var(--dock-h) / 2 - 4px);
+    color: var(--ink-2);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.2s, flex-grow 0.55s var(--dock-ease), opacity 0.3s;
+  }
+  .dock svg {
+    flex: none;
+    width: 23px;
+    height: 23px;
+    transition: transform 0.35s var(--ease-spring);
+  }
+  .dock a:active svg {
+    transform: scale(0.86);
+  }
+  .dock-pill a.cur {
+    color: var(--ink);
+  }
+  .dock-pill a.cur svg {
+    color: var(--accent);
+    stroke-width: 2;
+  }
+  /* 选中项底下的镜片：一块更亮的小胶囊，换页时滑过去 */
+  .dock-lens {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    left: 0;
+    border-radius: calc(var(--dock-h) / 2 - 4px);
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    transition: transform 0.5s var(--ease-spring), width 0.4s var(--ease-out), opacity 0.25s;
+  }
+  .dock-label {
+    transition: opacity 0.2s;
+  }
+
+  /* 下翻：胶囊缩成一颗圆，只露当前页的图标 */
+  .dock.min .dock-pill {
+    width: var(--dock-h);
+  }
+  .dock.min .dock-pill a:not(.cur) {
+    flex-grow: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .dock.min .dock-lens {
+    opacity: 0;
+  }
+  /* 字收起来不占地方，图标落在圆的正中（不然字隐了还占着一行，图标被顶到上半边） */
+  .dock.min .dock-pill a {
+    gap: 0;
+  }
+  .dock.min .dock-label {
+    height: 0;
+    overflow: hidden;
+    opacity: 0;
+  }
+  .dock.min .dock-pill a:not(.cur) {
+    overflow: hidden;
+  }
+
+  /* ---- 迷你播放台：平时缩成右边那颗圆，只露一张转着的小唱片 ---- */
+  .player:not(.np-open) {
+    left: calc(100% - var(--dock-side) - var(--dock-h));
+    right: var(--dock-side);
+    bottom: var(--dock-bottom);
+    height: var(--dock-h);
+    border-radius: calc(var(--dock-h) / 2);
+    padding: 0 7px;
+    box-shadow: var(--shadow-2), inset 0 1px 0 var(--q-sheen);
+  }
+  html:not([data-dock='min']) .player:not(.np-open) {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0;
+  }
+  html:not([data-dock='min']) .player:not(.np-open) :is(.np-text, .transport, .mini-progress) {
+    display: none !important;
+  }
+  html:not([data-dock='min']) .player:not(.np-open) .np-swap {
+    justify-content: center;
+  }
+  .player.is-empty:not(.np-open) {
+    display: none;
+  }
+  /* 下翻：右边的圆展开成完整的播放台，占掉胶囊让出来的地方 */
+  html[data-dock='min'] .player:not(.np-open) {
+    left: calc(var(--dock-side) + var(--dock-h) + var(--dock-gap));
+  }
+  html[data-dock='min'] .player:not(.np-open) :is(.np-text, .transport) {
+    animation: fade-in 0.35s var(--ease-out) 0.12s both;
+  }
+  /* 视图过渡（换页、开合唱机）期间不另外过渡，免得和快照动画叠在一起走两遍 */
+  html:not([data-vt]) .player:not(.np-open) {
+    transition: left 0.6s var(--dock-ease), background-color 0.35s var(--ease-soft);
+  }
+  .page {
+    padding-bottom: calc(var(--dock-full) + 48px);
+  }
+}
+
+/* ============ 2. 正在播放 / 歌词 ============ */
+
+/* 虚化的封面：比两团光斑颜色更饱满，整页都染上这张唱片的颜色 */
+.np-art {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  pointer-events: none;
+  background: center / cover no-repeat;
+  filter: blur(72px) saturate(1.6);
+  opacity: var(--np-art-a);
+  animation: fade-in 1.2s var(--ease-soft) both;
+}
+.nowplaying:not(.open) .np-art,
+html[data-device='iphone'] .np-art {
+  display: none;
+}
+
+/* 署名：作词、作曲……从歌词里拆出来，排成歌手下面一行小字 */
+.np-credits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.np-credits .mono {
+  margin-right: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* 歌词：不再整屏粗体、当前句换颜色。没唱到的句子退到背景里，
+   当前句按演唱进度从左往右点亮（--p 由 NowPlaying 每帧写入），换行时接着亮下一行 */
+.lyric-line {
+  padding: 10px 0;
+  font-size: clamp(24px, 2.2vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
+  color: var(--ink);
+  opacity: calc(0.36 - var(--d, 3) * 0.04);
+  filter: blur(calc(max(0, var(--d, 3) - 2) * 0.6px));
+  transform: scale(0.97);
+}
+.lyric-line.past {
+  opacity: 0.2;
+}
+.lyric-line span {
+  display: inline;
+}
+.lyric-line.active {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+.lyric-line.active span {
+  color: transparent;
+  background: linear-gradient(90deg, var(--ink) var(--p, 0%), color-mix(in srgb, var(--ink) 34%, transparent) calc(var(--p, 0%) + 7%));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+.lyric-line small {
+  margin-top: 6px;
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink);
+  opacity: 0.72;
+}
+.lyric-line:hover {
+  opacity: 0.62;
+  filter: none;
+}
+.lyric-line.active:hover {
+  opacity: 1;
+}
+.lyrics.unsynced .lyric-line {
+  opacity: 0.8;
+  font-weight: 600;
+}
+.lyrics.unsynced .lyric-line span {
+  color: var(--ink);
+  background: none;
+}
+.lyrics-empty {
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.np-chip > span {
+  display: inline;
+}
+
+/* ---- 宽屏：左边唱机 + 歌名，右边整栏歌词 ---- */
+@media (min-width: 861px) {
+  .np-body {
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas: 'deck words' 'titles words';
+    column-gap: clamp(48px, 6vw, 150px);
+    row-gap: 26px;
+    padding-top: 0;
+  }
+  /* 右栏原来是「歌名 + 歌词」上下排；拆开，歌名去唱机下面，歌词独占整栏高度 */
+  .np-info-col {
+    display: contents;
+  }
+  .np-deck-col {
+    grid-area: deck;
+    place-items: end start;
+    min-height: 0;
+    container-type: size;
+  }
+  .np-deck-col .deck {
+    width: min(100%, 100cqh, 620px);
+  }
+  .np-titles {
+    grid-area: titles;
+    max-width: 620px;
+  }
+  .np-info-col > :not(.np-titles) {
+    grid-area: words;
+    min-height: 0;
+  }
+  .np-name {
+    font-size: clamp(28px, 2.6vw, 52px);
+  }
+  .np-actions {
+    margin-top: 16px;
+  }
+  .lyrics {
+    margin-top: 0;
+    padding: 34vh 0 44vh;
+    -webkit-mask: linear-gradient(transparent, #000 18%, #000 72%, transparent);
+    mask: linear-gradient(transparent, #000 18%, #000 72%, transparent);
+  }
+  .lyrics-empty {
+    align-self: center;
+    margin-top: 0;
+  }
+  .np-info-col > .notes,
+  .np-info-col > .comments {
+    overflow-y: auto;
+    padding-top: 6vh;
+  }
+}
+
+/* ---- 手机 ---- */
+@media (max-width: 860px) {
+  /* 顶栏：左边「收起」，右边第几首 */
+  .np-head > .btn {
+    order: -1;
+    margin-left: -10px;
+  }
+  /* 全屏歌词：左上角已经有「返回唱机」，不再另放一个收起 */
+  .np-focus .np-head > .btn {
+    display: none;
+  }
+  @supports (height: 1cqh) {
+    .np-deck-col .deck {
+      width: min(76vw, 38svh, calc(100cqh - 46px));
+    }
+  }
+
+  /* 平时：唱机下面露三行歌词，每行固定高度、一行写不下就省略，不会被拦腰截断 */
+  .nowplaying:not(.np-focus) .lyrics,
+  .nowplaying:not(.np-focus) .lyrics-empty {
+    height: 96px;
+    margin-top: 14px;
+  }
+  .nowplaying:not(.np-focus) .lyrics {
+    -webkit-mask: linear-gradient(#000 60%, transparent);
+    mask: linear-gradient(#000 60%, transparent);
+  }
+  .nowplaying:not(.np-focus) .lyric-line {
+    height: 32px;
+    padding: 0;
+    font-size: 17px;
+    line-height: 32px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    filter: none;
+    transform: none;
+    opacity: 0.4;
+  }
+  .nowplaying:not(.np-focus) .lyric-line.active {
+    opacity: 1;
+  }
+  .np-credits {
+    flex-wrap: nowrap;
+    overflow: hidden;
+    white-space: nowrap;
+    -webkit-mask: linear-gradient(90deg, #000 85%, transparent);
+    mask: linear-gradient(90deg, #000 85%, transparent);
+  }
+
+  /* 全屏歌词 */
+  .np-focus .lyrics {
+    padding: 22vh 0 40vh;
+  }
+  .np-focus .lyric-line {
+    padding: 11px 0;
+    font-size: 27px;
+  }
+}
+
+/* ============ 3. 手机上的详情页（歌单、榜单、专辑、艺人） ============
+   原来封套占满第一屏、四五个按钮折成三行，歌曲要翻到第二屏才看得见。
+   现在封套缩到左边，标题、作者排在它右边；简介和按钮在下面占满一行：
+   「放上唱机」是唯一带字的按钮，其余收成一排圆形图标钮（读屏照样念出按钮上的字） */
+@media (max-width: 860px) {
+  .detail-head {
+    grid-template-columns: 138px minmax(0, 1fr);
+    grid-template-areas: 'art kicker' 'art title' 'art byline' 'rest rest';
+    grid-template-rows: auto auto 1fr;
+    column-gap: 16px;
+    row-gap: 0;
+    align-items: start;
+    padding-top: 18px;
+    padding-bottom: 24px;
+  }
+  .detail-text {
+    display: contents;
+  }
+  .detail-art {
+    grid-area: art;
+    width: 138px;
+  }
+  .detail-art.round {
+    width: 120px;
+  }
+  .detail-head .kicker {
+    grid-area: kicker;
+    align-self: end;
+    margin-top: 6px;
+  }
+  .detail-title {
+    grid-area: title;
+    margin: 6px 0 6px;
+    font-size: clamp(24px, 7vw, 32px);
+    line-height: 1.12;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .detail-head .byline {
+    grid-area: byline;
+    font-size: 14px;
+  }
+  .detail-rest {
+    grid-area: rest;
+    min-width: 0;
+    margin-top: 16px;
+  }
+  .detail-rest .desc {
+    margin-top: 0;
+    font-size: 13.5px;
+  }
+  .detail-head .actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-top: 18px;
+  }
+  .detail-head .actions .btn {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 0;
+    gap: 0;
+  }
+  .detail-head .actions .btn svg {
+    width: 20px;
+    height: 20px;
+  }
+  .detail-head .actions .btn.solid {
+    flex: 1 1 auto;
+    width: auto;
+    padding: 0 18px;
+    font-size: 15px;
+    gap: 8px;
+  }
+  .detail-head .actions .btn:not(.solid):not(.kept) {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    border-color: transparent;
+  }
+
+  /* 首页封面故事：封套别占满一整屏，下面的标题和按钮在第一屏里就能看到 */
+  .feature-art {
+    width: 76%;
+  }
+}

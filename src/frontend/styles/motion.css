@@ -42,6 +42,32 @@ html[data-vt='page']::view-transition-new(page) {
   animation: vt-page-in 0.5s var(--ease-out) 0.06s both;
 }
 
+/* 安卓横滑切页（#13）：新旧两页顺着手指的方向横着进出 */
+html[data-vt='page'][data-swipe='next']::view-transition-old(page) {
+  animation: vt-swipe-out-next 0.24s var(--ease-soft) both;
+}
+html[data-vt='page'][data-swipe='next']::view-transition-new(page) {
+  animation: vt-swipe-in-next 0.42s var(--ease-out) both;
+}
+html[data-vt='page'][data-swipe='prev']::view-transition-old(page) {
+  animation: vt-swipe-out-prev 0.24s var(--ease-soft) both;
+}
+html[data-vt='page'][data-swipe='prev']::view-transition-new(page) {
+  animation: vt-swipe-in-prev 0.42s var(--ease-out) both;
+}
+@keyframes vt-swipe-out-next {
+  to { opacity: 0; transform: translateX(-22%); }
+}
+@keyframes vt-swipe-in-next {
+  from { opacity: 0; transform: translateX(26%); }
+}
+@keyframes vt-swipe-out-prev {
+  to { opacity: 0; transform: translateX(22%); }
+}
+@keyframes vt-swipe-in-prev {
+  from { opacity: 0; transform: translateX(-26%); }
+}
+
 /* 封面从卡片飞到详情页头图（或反过来） */
 ::view-transition-group(hero) {
   animation-duration: 0.62s;

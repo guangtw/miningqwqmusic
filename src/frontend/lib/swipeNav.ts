@@ -1,7 +1,7 @@
 // 安卓手机上在主内容区左右滑动，切到相邻的一级页面（#13）。
 //
-// - 顺序就是窄屏顶栏里实际露出来的导航项（读 DOM，导航改了这里不用跟着改）；当前页不在其中（详情页、搜索页、
-//   个人中心……）就不响应，横滑留给页面自己。
+// - 顺序就是手机底部导航里实际露出来的那一排（读 DOM，导航改了这里不用跟着改）；当前页不在其中（详情页、
+//   个人中心、私信……）就不响应，横滑留给页面自己。
 // - 手指往左划 = 去右边那一项，往右划 = 回左边那一项；首尾页拉不动，只会轻轻弹回。
 // - 起手点落在输入框、滑块、能横向滚动的列表（卡片轨道等）、或屏幕左右边缘（系统返回手势）上时不接管。
 // - 切页和点导航一样写一条历史记录，安卓返回键按来时的顺序一页页退回去。
@@ -33,9 +33,9 @@ function ownsHorizontal(target: Element, root: HTMLElement): boolean {
   return false;
 }
 
-/** 窄屏顶栏上露出来的一级导航（按显示顺序） */
+/** 手机上露出来的一级导航（底部那一排，按显示顺序） */
 function visibleTabs(): string[] {
-  return [...document.querySelectorAll<HTMLAnchorElement>('.side .nav a')]
+  return [...document.querySelectorAll<HTMLAnchorElement>('[data-swipe-tabs] a')]
     .filter((a) => a.getClientRects().length > 0)
     .map((a) => a.getAttribute('href') ?? '');
 }

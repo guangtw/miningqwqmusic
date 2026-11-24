@@ -5,7 +5,7 @@ import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { downloadTrack } from '../lib/download';
 import { formatCount, formatTime } from '../lib/format';
 import { useInsight } from '../lib/insight';
-import { activeLineIndex, displayLines, isUnsynced } from '../lib/lrc';
+import { activeLineIndex, displayLines, isUnsynced, lineProgress, splitCredits } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
 import { motionEnabled } from '../lib/settings';
 import { openShare } from '../lib/share';
@@ -15,6 +15,7 @@ import { useStore } from '../lib/store';
 import { audioTime, currentTrack, playerStore, seek, swapDirection, toggle } from '../player/player';
 import { openTrackMenu, uiStore } from '../player/ui';
 import { Comments } from './Comments';
+import { sized } from './Cover';
 import { HeartButton } from './HeartButton';
 import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
@@ -110,7 +111,8 @@ export function NowPlaying() {
   }, [open]);
   const peek = narrow && !focus;
 
-  const lines = useMemo(() => displayLines(lyric), [lyric]);
+  // 开头的作词、作曲等署名拆出来，放在歌名下面；歌词里只留唱的部分
+  const { credits, lines } = useMemo(() => splitCredits(displayLines(lyric)), [lyric]);
   const unsynced = isUnsynced(lines);
   const [active, setActive] = useState(-1);
   const listRef = useRef<HTMLDivElement>(null);
@@ -158,16 +160,29 @@ export function NowPlaying() {
     [],
   );
 
+  // 当前这句按演唱进度从左往右点亮：直接改这一行的 CSS 变量，不走 React 渲染
+  const paint = (i: number, t: number) => {
+    const el = listRef.current?.children[i] as HTMLElement | undefined;
+    el?.style.setProperty('--p', `${(lineProgress(lines, i, t) * 100).toFixed(1)}%`);
+  };
+
   // 每帧算当前行，只有换行时才触发渲染
   useFrame(() => {
     if (unsynced || !lines.length) return;
-    const i = activeLineIndex(lines, (playing ? audioTime() : position) + LEAD_MS);
+    const t = (playing ? audioTime() : position) + LEAD_MS;
+    const i = activeLineIndex(lines, t);
     setActive((prev) => (prev === i ? prev : i));
+    paint(i, t);
   }, open && playing);
 
   useEffect(() => {
-    if (!open || !playing) setActive(unsynced ? -1 : activeLineIndex(lines, position + LEAD_MS));
-  }, [open, playing, position, lines, unsynced]);
+    if (open && !playing && !unsynced) {
+      const t = position + LEAD_MS;
+      const i = activeLineIndex(lines, t);
+      setActive(i);
+      paint(i, t);
+    } else if (!open || !playing) setActive(unsynced ? -1 : activeLineIndex(lines, position + LEAD_MS));
+  }, [open, playing, position, lines, unsynced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 当前行滚到歌词框 42% 处（遮罩渐隐区之下、视觉中心略偏上）；手机上只露两行时顶在第一行。
   // 用户刚手动滚过的话先不抢。刚打开面板、刚换歌、刚切换全屏时直接定位，不从顶部滚下来
@@ -220,6 +235,8 @@ export function NowPlaying() {
       aria-hidden={!open}
       ref={panelRef}
     >
+      {/* 整页铺一层放大、虚化的封面，颜色比光斑更饱满；封面只取小图，反正要糊掉 */}
+      {track && <div className="np-art" key={coverOf(track)} style={{ backgroundImage: `url("${sized(coverOf(track), 160)}")` }} aria-hidden="true" />}
       {glows.map((g) => (
         <div key={g.key} className={`np-glow ${g.phase === 'on' ? '' : g.phase}`} style={tintVars(g.tint)} aria-hidden="true">
           <i />
@@ -286,13 +303,28 @@ export function NowPlaying() {
                   </>
                 )}
               </p>
+              {credits.length > 0 && (
+                <p className="np-credits">
+                  {credits.slice(0, 4).map((c, i) => (
+                    <span key={i}>
+                      <span className="mono">{c.role}</span> {c.name}
+                    </span>
+                  ))}
+                </p>
+              )}
               <SourceRecovery variant="line" />
               <div className="np-actions">
                 <button className="np-chip" onClick={(e) => openTrackMenu(e, [track], { addOnly: true })} aria-haspopup="menu">
-                  <Icon name="listAdd" size={16} /> <span className="chip-long">加到</span>歌单
+                  <Icon name="listAdd" size={16} />
+                  <span>
+                    <span className="chip-long">加到</span>歌单
+                  </span>
                 </button>
                 <button className={`np-chip ${view === 'notes' ? 'on' : ''}`} aria-pressed={view === 'notes'} onClick={() => setView(view === 'notes' ? 'lyrics' : 'notes')}>
-                  <Icon name="notes" size={16} /> <span className="chip-long">唱片</span>内页
+                  <Icon name="notes" size={16} />
+                  <span>
+                    <span className="chip-long">唱片</span>内页
+                  </span>
                 </button>
                 <button
                   className={`np-chip ${view === 'comments' ? 'on' : ''}`}

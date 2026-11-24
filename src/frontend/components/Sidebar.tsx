@@ -94,13 +94,6 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* 手机上的搜索入口：导航里的「搜索」收起来，单独一条整宽的搜索栏，单手好点、不会误触旁边的导航项。
-          到了搜索页就让位给页面自己的搜索框（同一个位置） */}
-      <a href={href.search()} className={`side-search ${section === 'search' ? 'on' : ''}`} aria-label="搜索">
-        <Icon name="search" />
-        <span className="side-search-text" aria-hidden="true">搜索歌曲、艺人、歌单</span>
-      </a>
-
       <div className="side-foot">
         {status === 'authenticated' && user && (
           <a

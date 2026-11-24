@@ -1,4 +1,4 @@
-// 安卓手机：顶栏的整宽搜索栏（#12）和主内容区左右滑动切换一级页面（#13）。
+// 安卓手机：Apple Music 式底栏（一个胶囊放五个页面 + 一个圆是缩起来的迷你播放台，下翻时两者换个个儿，#12）和主内容区左右滑动切换一级页面（#13）。
 // 只在 chromium-mobile（Pixel 7，412 宽，安卓 UA，可触摸）里跑；触摸用 CDP 发真实的 touchStart/Move/End，
 // 走浏览器自己的手势判定（touch-action、竖向滚动），不是直接调脚本。
 import { expect, test, type Page } from '@playwright/test';
@@ -78,32 +78,43 @@ const width = (page: Page) => page.viewportSize()!.width;
 const swipeLeft = (page: Page, y = 520) => drag(page, { x: width(page) * 0.78, y }, { x: width(page) * 0.22, y: y + 6 });
 const swipeRight = (page: Page, y = 520) => drag(page, { x: width(page) * 0.22, y }, { x: width(page) * 0.78, y: y + 6 });
 const hash = (page: Page) => page.evaluate(() => location.hash || '#/');
-const current = (page: Page) => page.locator('.side .nav a[aria-current="page"]');
+/** 底栏里亮着的那一项（data-key：home / charts / radio / library / search） */
+const current = (page: Page) => page.locator('.dock [aria-current="page"]').getAttribute('data-key');
+const lens = async (page: Page) => {
+  const [l, on] = await Promise.all([page.locator('.dock-lens').boundingBox(), page.locator('.dock-pill a.cur').boundingBox()]);
+  return !!l && !!on && Math.abs(l.x - on.x) < 2 && Math.abs(l.width - on.width) < 2;
+};
 
 test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== 'chromium-mobile', '安卓手机上的交互');
   await backend(page);
 });
 
-test('the search entry is a full-width bar under the nav and runs the whole search flow', async ({ page }) => {
+test('the bottom dock is one capsule of pages plus one circle for the mini player, all within thumb reach', async ({ page }) => {
   await page.goto('/#/');
-  const bar = page.locator('.side-search');
-  await expect(bar).toBeVisible();
-  // 导航里的「搜索」收起来了，只剩这一条
-  await expect(page.locator('.side .nav a[data-key="search"]')).toBeHidden();
-  const box = (await bar.boundingBox())!;
+  const dock = page.getByRole('navigation', { name: '主导航' }).filter({ has: page.locator('.dock-pill') });
+  await expect(dock).toBeVisible();
+  // 顶栏不再放导航
+  await expect(page.locator('.side .nav')).toBeHidden();
+  const search = dock.getByRole('link', { name: '搜索', exact: true });
+  const box = (await search.boundingBox())!;
+  const vh = page.viewportSize()!.height;
+  expect(box.width).toBeGreaterThanOrEqual(44);
   expect(box.height).toBeGreaterThanOrEqual(44);
-  expect(box.width).toBeGreaterThan(width(page) - 40);
-  // 和导航项之间留着空：最近的导航项底边在搜索栏上沿之上
-  const navBottom = await page.locator('.side .nav a').first().evaluate((a) => a.getBoundingClientRect().bottom);
-  expect(box.y - navBottom).toBeGreaterThanOrEqual(6);
+  // 贴在屏幕底部
+  expect(box.y + box.height).toBeGreaterThan(vh - 32);
+  // 还没放歌：没有右边那颗圆，胶囊占满一行
+  await expect(page.locator('.player')).toBeHidden();
+  const pill = (await page.locator('.dock-pill').boundingBox())!;
+  expect(pill.width).toBeGreaterThan(width(page) - 40);
+  expect(await current(page)).toBe('home');
 
-  await page.getByRole('link', { name: '搜索', exact: true }).tap();
+  await search.tap();
   await expect.poll(() => hash(page)).toBe('#/search');
   const input = page.getByRole('combobox');
   await expect(input).toBeFocused();
-  // 到了搜索页，顶栏这一条让给页面自己的搜索框
-  await expect(bar).toBeHidden();
+  expect(await current(page)).toBe('search');
+  await expect.poll(() => lens(page)).toBe(true);
   await input.fill('晨光');
   await input.press('Enter');
   await expect.poll(() => hash(page)).toBe(`#/search?q=${encodeURIComponent('晨光')}`);
@@ -113,13 +124,67 @@ test('the search entry is a full-width bar under the nav and runs the whole sear
   await expect.poll(() => hash(page)).toBe('#/search');
   await page.goBack();
   await expect.poll(() => hash(page)).toBe('#/');
-  await expect(bar).toBeVisible();
-  await expect(current(page)).toHaveText('本期');
+  expect(await current(page)).toBe('home');
+});
+
+test('scrolling down swaps the capsule and the circle: pages fold into a circle, the mini player opens up', async ({ page }) => {
+  await page.goto('/#/search?q=晨光&type=track');
+  await page.locator('.track .t').first().click();
+  // 放上新歌时底栏先换到播放台那边；换页后回到页面导航
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await page.evaluate(() => (location.hash = '#/'));
+  await expect(page.locator('.main .page')).toBeVisible();
+  // 等切页过渡播完：过渡期间整页盖着快照，手指滚不动主内容区
+  await page.waitForTimeout(800);
+  const main = page.locator('.main');
+  const pill = page.locator('.dock-pill');
+  const player = page.locator('.player');
+  const sameRow = async () => {
+    const [p, pl] = [(await pill.boundingBox())!, (await player.boundingBox())!];
+    return Math.abs(p.y - pl.y) < 4 && Math.abs(p.height - pl.height) < 4 && p.x + p.width <= pl.x;
+  };
+
+  // 平时：胶囊放页面，右边一颗圆是转着的小唱片，点它打开唱机
+  await expect.poll(async () => (await player.boundingBox())!.width).toBeLessThan(80);
+  expect(await sameRow()).toBe(true);
+  await expect(player.locator('.np-text')).toBeHidden();
+
+  await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await expect.poll(async () => (await pill.boundingBox())!.width).toBeLessThan(80);
+  await expect.poll(async () => (await player.boundingBox())!.width).toBeGreaterThan(220);
+  // 还是一行两个：左边一颗圆（只剩当前页图标），右边完整的播放台
+  await expect.poll(sameRow).toBe(true);
+  await expect(player.locator('.np-text')).toBeVisible();
+  // 那颗圆里只剩当前页的图标，正好在圆心
+  await expect.poll(async () => {
+    const [p, icon] = [(await pill.boundingBox())!, (await page.locator('.dock-pill a.cur svg').boundingBox())!];
+    return Math.abs(p.x + p.width / 2 - (icon.x + icon.width / 2)) < 1 && Math.abs(p.y + p.height / 2 - (icon.y + icon.height / 2)) < 1;
+  }).toBe(true);
+  await expect(player.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+
+  // 点那颗圆钮：展开，不跳页
+  await pill.tap();
+  await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
+  expect(await hash(page)).toBe('#/');
+  await expect.poll(async () => (await pill.boundingBox())!.width).toBeGreaterThan(200);
+
+  // 再往下翻收起，往回翻展开
+  await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await drag(page, { x: 200, y: 300 }, { x: 206, y: 520 });
+  await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
+
+  // 换页时总是展开
+  await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await main.evaluate(() => (location.hash = '#/charts'));
+  await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
 });
 
 test('swiping the main area moves between neighbouring top-level pages', async ({ page }) => {
   await page.goto('/#/');
-  await expect(current(page)).toHaveText('本期');
+  expect(await current(page)).toBe('home');
 
   // 首页往右划：没有上一页，原地弹回
   await swipeRight(page);
@@ -128,37 +193,34 @@ test('swiping the main area moves between neighbouring top-level pages', async (
 
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/charts');
-  await expect(current(page)).toHaveText('榜单');
-  // 选中指示条跟着到了「榜单」
-  const pillOn = async () => {
-    const [pill, on] = await Promise.all([
-      page.locator('.nav-pill').boundingBox(),
-      current(page).boundingBox(),
-    ]);
-    return Math.abs(pill!.x - on!.x) < 2;
-  };
-  await expect.poll(pillOn).toBe(true);
+  expect(await current(page)).toBe('charts');
+  // 镜片跟着滑到「榜单」
+  await expect.poll(() => lens(page)).toBe(true);
 
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/radio');
   await swipeLeft(page);
   await expect.poll(() => hash(page)).toBe('#/library');
-  await expect(current(page)).toHaveText('唱片架');
-  // 最后一页往左划：拉不动
+  expect(await current(page)).toBe('library');
+  // 底栏最后是搜索
   await swipeLeft(page);
-  expect(await hash(page)).toBe('#/library');
+  await expect.poll(() => hash(page)).toBe('#/search');
+  expect(await current(page)).toBe('search');
+  // 最后一页往左划：拉不动
+  await swipeLeft(page, 600);
+  expect(await hash(page)).toBe('#/search');
 
-  await swipeRight(page);
-  await expect.poll(() => hash(page)).toBe('#/radio');
+  await swipeRight(page, 600);
+  await expect.poll(() => hash(page)).toBe('#/library');
 
   // 返回键按来时的顺序退回去
   await page.goBack();
-  await expect.poll(() => hash(page)).toBe('#/library');
+  await expect.poll(() => hash(page)).toBe('#/search');
   await page.goBack();
-  await expect.poll(() => hash(page)).toBe('#/radio');
+  await expect.poll(() => hash(page)).toBe('#/library');
 });
 
-test('vertical scroll, horizontal rails, screen edges and detail pages keep their own gestures', async ({ page }) => {
+test('vertical scroll, horizontal rails, screen edges, inputs and detail pages keep their own gestures', async ({ page }) => {
   await page.goto('/#/');
   await expect(page.locator('.main .page')).toBeVisible();
   const main = page.locator('.main');
@@ -191,16 +253,20 @@ test('vertical scroll, horizontal rails, screen edges and detail pages keep thei
   expect(await hash(page)).toBe('#/');
   expect(await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.main *')].some((e) => e.scrollLeft > 0))).toBe(true);
 
-  // 详情页（不是一级导航）不响应横滑
-  await page.goto('/#/playlist/p1');
+  // 详情页（不是一级导航）不响应横滑；底栏仍亮着来时那一项
+  await page.goto('/#/charts');
+  await expect(page.locator('.dock-pill a.cur')).toHaveAttribute('data-key', 'charts');
+  await page.evaluate(() => (location.hash = '#/playlist/p1'));
   await expect(page.getByRole('heading', { name: '本期精选' })).toBeVisible();
+  await expect(page.locator('.dock-pill a.cur')).toHaveAttribute('data-key', 'charts');
   await swipeLeft(page, 600);
   await swipeRight(page, 600);
   expect(await hash(page)).toBe('#/playlist/p1');
 
-  // 搜索页（搜索栏不在导航那一排里）也不响应，输入框照常用
+  // 搜索框里横划：是在挪光标，不切页
   await page.goto('/#/search');
-  await swipeLeft(page, 400);
+  const input = (await page.getByRole('combobox').boundingBox())!;
+  await drag(page, { x: input.x + input.width - 30, y: input.y + input.height / 2 }, { x: input.x + 30, y: input.y + input.height / 2 + 2 });
   expect(await hash(page)).toBe('#/search');
 });
 
@@ -212,7 +278,12 @@ test('playback keeps going while swiping between pages', async ({ page }) => {
   await page.goto('/#/search?q=晨光&type=track');
   await page.locator('.track .t').first().click();
   const bar = page.getByRole('contentinfo', { name: '播放控制' });
+  // 放上新歌：底栏换到播放台那边，暂停键就在手边
   await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  // 点左边那颗圆换回页面导航，再去「本期」
+  await page.locator('.dock-pill').tap();
+  await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
   await page.getByRole('link', { name: '本期' }).tap();
   await expect.poll(() => hash(page)).toBe('#/');
 

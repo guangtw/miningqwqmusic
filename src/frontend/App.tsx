@@ -9,6 +9,7 @@ import { ImportDialog, PlaylistDialog } from './components/PlaylistDialogs';
 import { PlayerBar, toggleNowPlaying } from './components/PlayerBar';
 import { QueueDrawer } from './components/QueueDrawer';
 import { Sidebar } from './components/Sidebar';
+import { TabBar } from './components/TabBar';
 import { Empty } from './components/States';
 import { Toast } from './components/Toast';
 import { RECORD_LAND_MS } from './components/Turntable';
@@ -196,6 +197,7 @@ export function App() {
       <main className="main" ref={mainRef}>
         <View route={route} />
       </main>
+      <TabBar />
       <PlayerBar />
       <NowPlaying />
       <QueueDrawer />

@@ -25,6 +25,19 @@ const clientDownloads = { schemaVersion: 1, platforms: [
     artifacts: [artifact('android', 'apk', 'MiningQwQMusic-android-v1.0.9.apk', 1028139, 'b'.repeat(64))] },
 ] };
 
+/** 打开正在播放页：点播放台上那张小唱片。手机底栏平时把播放台缩成一颗圆，只剩它；宽屏和展开时也都在 */
+const openNowPlaying = (page: Page) => page.locator('.player').getByRole('button', { name: '打开正在播放' }).click();
+
+/** 点主导航。手机底栏换到播放台那边时，页面胶囊缩成了左边一颗圆，先点它展开 */
+async function goNav(page: Page, name: string) {
+  const folded = page.locator('html[data-dock="min"]');
+  if (await folded.count()) {
+    await page.locator('.dock-pill').click();
+    await expect(folded).toHaveCount(0);
+  }
+  await page.getByRole('link', { name, exact: true }).click();
+}
+
 function wav() {
   const length = 8000 * 30 * 2;
   const out = Buffer.alloc(44 + length);
@@ -127,7 +140,7 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.goto('/');
   await expect(page).toHaveTitle('Mining唱片行');
   await expect(page.getByRole('heading', { name: '本期精选' })).toBeVisible();
-  await page.getByRole('link', { name: '搜索', exact: true }).click();
+  await goNav(page, '搜索');
   await page.getByRole('combobox').fill('晨光');
   await page.getByRole('combobox').press('Enter');
   // 默认是综合页：最佳匹配 + 单曲 + 艺人 + 歌单
@@ -145,7 +158,7 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.locator('.track .t').first().click();
   await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   expect(state.calls.some((c) => c.path === '/api/music/track/101/play-url?level=exhigh&unblockMode=auto')).toBe(true);
-  await page.locator('.player .np-text').click();
+  await openNowPlaying(page);
   await expect(page.locator('.nowplaying')).toHaveClass(/open/);
   await expect(page.getByText('第一句歌词', { exact: true })).toBeVisible();
   // 手机上歌词平时只露两行，点一下进全屏歌词
@@ -172,7 +185,7 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
   await page.evaluate(() => history.back());
   await expect(page.locator('.nowplaying')).not.toHaveClass(/open/);
   expect(page.url()).toBe(before);
-  await page.locator('.player .np-text').click();
+  await openNowPlaying(page);
   await expect(page.locator('.nowplaying')).toHaveClass(/open/);
   await page.getByRole('button', { name: '收起', exact: true }).click();
   // 手机上播放台要等面板收起后才缩回去，队列键随之藏起来
@@ -182,13 +195,13 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
     await expect(page.locator('.drawer .q-item')).toHaveCount(2);
     await page.locator('.drawer').getByRole('button', { name: '关闭', exact: true }).click();
   }
-  await page.getByRole('link', { name: '唱片架', exact: true }).click();
+  await goNav(page, '唱片架');
   await expect(page.getByRole('heading', { name: '我的唱片架' })).toBeVisible();
   await expect(page.locator('.track .t')).toHaveCount(1);
   await expect(page.locator('.track .t')).toHaveText('晨光唱片');
   await page.reload();
   await expect(page.locator('.track .t')).toHaveText('晨光唱片');
-  await page.getByRole('link', { name: '榜单', exact: true }).click();
+  await goNav(page, '榜单');
   await page.locator('a[href="#/toplist/t1"]').first().click();
   await expect(page.locator('.detail-title')).toHaveText('本期精选');
   await page.goto('/#/album/b1');
@@ -204,7 +217,7 @@ test('actual downgraded quality is visible before opening its menu', async ({ pa
   await page.goto('/#/playlist/p1');
   await expect(page.locator('.detail-title')).toHaveText('本期精选');
   await page.locator('.track .t').first().click();
-  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  if (info.project.name.includes('mobile')) await openNowPlaying(page);
   const chip = page.getByRole('button', { name: '音质：极高', exact: true });
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute('title', '已选「超清母带」，实际「极高」');
@@ -220,7 +233,7 @@ test('an unblock quality report is displayed immediately without an unknown tier
   await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
-  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  if (info.project.name.includes('mobile')) await openNowPlaying(page);
   await expect(page.getByRole('button', { name: '音质：超清母带', exact: true })).toBeVisible();
   await expect(page.getByText('音质未知', { exact: true })).toHaveCount(0);
   await expect(page.locator('.q-panel')).toHaveCount(0);
@@ -233,7 +246,7 @@ test('a Dolby preference falling back to sky displays the immersive tag consiste
   await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'dolby', preferUnblock: true })));
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
-  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  if (info.project.name.includes('mobile')) await openNowPlaying(page);
   const chip = page.getByRole('button', { name: '音质：沉浸环绕声', exact: true });
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute('title', '已选「杜比全景声」，实际「沉浸环绕声」');
@@ -252,7 +265,7 @@ test('a manual upgrade remembers forced matching and inline recovery preserves t
   const state = await backend(page, { qualityUpgrade: true });
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
-  if (info.project.name.includes('mobile')) await page.locator('.player .np-text').click();
+  if (info.project.name.includes('mobile')) await openNowPlaying(page);
   await page.getByRole('button', { name: '音质：极高', exact: true }).click();
   await page.getByRole('radio', { name: /超清母带/ }).click();
   await expect(page.getByRole('button', { name: '音质：超清母带', exact: true })).toBeVisible();
@@ -346,7 +359,7 @@ test.describe('iPhone', () => {
     // 开合唱机不拍快照：唱片复制一份飞过去，落地后收掉
     await page.locator('.track .t').first().click();
     const before = (await transitions()).length;
-    await page.locator('.player .np-text').click();
+    await openNowPlaying(page);
     await expect(page.locator('.nowplaying')).toHaveClass(/open/);
     await expect(page.locator('.disc-flight')).toHaveCount(1);
     await expect(page.locator('.disc-flight')).toHaveCount(0);
@@ -391,7 +404,7 @@ test('a single playback timeout allows an immediate manual switch and lyrics do 
   await page.locator('.track .t').nth(1).click();
   await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   expect(attempts).toBe(2);
-  await page.locator('.player .np-text').click();
+  await openNowPlaying(page);
   await expect(page.getByText('第一句歌词', { exact: true })).toBeVisible();
   expect(state.calls.filter(call => call.path.endsWith('/insight'))).toHaveLength(0);
   expect(state.errors).toEqual([]);
@@ -464,7 +477,7 @@ test('disabled account, retry, theme persistence and old device data migration',
   await page.getByRole('button', { name: /重试/ }).click();
   await expect(page.getByRole('heading', { name: '本期精选' })).toBeVisible();
   await expect(page.getByRole('button', { name: '登录同步' })).toHaveCount(0);
-  await page.getByRole('link', { name: '唱片架', exact: true }).click();
+  await goNav(page, '唱片架');
   await expect(page.locator('.track .t')).toHaveText('晨光唱片');
   await page.goto('/#/settings');
   await page.getByRole('radio', { name: '夜间', exact: true }).click();
@@ -484,7 +497,7 @@ test('radio picks songs by pace, sati tags switch and liner notes show credits',
   await expect(page.getByRole('contentinfo', { name: '播放控制' }).getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   await page.getByRole('tab', { name: '雨声', exact: true }).click();
   await expect(page.locator('.sound-title')).toHaveText('窗外的雨');
-  await page.locator('.player .np-text').click();
+  await openNowPlaying(page);
   // The responsive chip reads “唱片 内页” on desktop and “内页” on mobile.
   await page.getByRole('region', { name: '正在播放', exact: true }).getByRole('button', { name: /^(?:唱片\s*)?内页$/ }).click();
   await expect(page.locator('.notes-credits')).toContainText('某人');
@@ -505,7 +518,7 @@ test('listen together: open a room and follow what a friend plays', async ({ pag
   await dialog.getByRole('button', { name: '登录', exact: true }).click();
   await expect(dialog).toHaveCount(0);
   // 一起听在播放台中间那排的最左边；手机上平时收着，打开正在播放页后才展开
-  await page.locator('.player .np-text').click();
+  await openNowPlaying(page);
   await page.locator('.player .t-left').getByRole('button', { name: '一起听' }).click();
   await page.getByRole('button', { name: /开一个房间/ }).click();
   await expect(page.locator('.listen-code-big')).toContainText('ABC123'.split('').join(''));

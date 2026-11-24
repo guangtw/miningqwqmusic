@@ -25,6 +25,7 @@ const SECTION_ALIAS: Record<string, string> = { mine: 'library' };
 const NARROW = '(max-width: 860px)';
 /** 往一个方向连续翻过这么多像素才收起 / 展开，免得手指一抖就来回变 */
 const TRAVEL = 36;
+const SCROLL_QUIET_MS = 120;
 
 /** 最近待过的那一页：进了歌单、专辑这些详情页，底栏仍然亮着来时那一项（收起时圆钮也显示它） */
 let lastTab = '';
@@ -41,14 +42,37 @@ export function TabBar() {
   const [folded, setMin] = useState(false);
   // 没在放歌：右边没有播放台可展开，不收
   const min = folded && hasTrack;
+  const pending = useRef<boolean | null>(null);
 
   // 跟着主内容区的滚动方向收起 / 展开
   useEffect(() => {
     const main = document.querySelector<HTMLElement>('.main');
-    if (!main) return;
+    if (!main || !hasTrack) return;
     const narrow = window.matchMedia(NARROW);
     let last = main.scrollTop;
     let travel = 0;
+    let touching = false;
+    let timer = 0;
+    const settle = () => {
+      if (touching || pending.current === null) return;
+      if (narrow.matches) setMin(pending.current);
+      pending.current = null;
+      clearTimeout(timer);
+    };
+    // 老版本 WebView 没有 scrollend。手仍在屏上时，短暂停顿也不应触发收展。
+    const afterQuiet = () => {
+      clearTimeout(timer);
+      if (!touching && pending.current !== null) timer = window.setTimeout(settle, SCROLL_QUIET_MS);
+    };
+    const touchStart = () => {
+      touching = true;
+      clearTimeout(timer);
+    };
+    const touchEnd = (event: TouchEvent) => {
+      touching = event.touches.length > 0;
+      afterQuiet();
+    };
+    const nativeEnd = 'onscrollend' in main;
     const onScroll = () => {
       const y = main.scrollTop;
       const dy = y - last;
@@ -56,16 +80,30 @@ export function TabBar() {
       if (!narrow.matches) return;
       if (y < 24) {
         travel = 0;
-        setMin(false);
-        return;
+        pending.current = false;
+      } else {
+        travel = Math.sign(dy) === Math.sign(travel) ? travel + dy : dy;
+        if (travel > TRAVEL) pending.current = true;
+        else if (travel < -TRAVEL) pending.current = false;
       }
-      travel = Math.sign(dy) === Math.sign(travel) ? travel + dy : dy;
-      if (travel > TRAVEL) setMin(true);
-      else if (travel < -TRAVEL) setMin(false);
+      if (nativeEnd) clearTimeout(timer);
+      else afterQuiet();
     };
     main.addEventListener('scroll', onScroll, { passive: true });
-    return () => main.removeEventListener('scroll', onScroll);
-  }, []);
+    main.addEventListener('scrollend', settle);
+    main.addEventListener('touchstart', touchStart, { passive: true });
+    main.addEventListener('touchend', touchEnd, { passive: true });
+    main.addEventListener('touchcancel', touchEnd, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      pending.current = null;
+      main.removeEventListener('scroll', onScroll);
+      main.removeEventListener('scrollend', settle);
+      main.removeEventListener('touchstart', touchStart);
+      main.removeEventListener('touchend', touchEnd);
+      main.removeEventListener('touchcancel', touchEnd);
+    };
+  }, [route.path, trackId, hasTrack]);
 
   useEffect(() => setMin(false), [route.path]);
 
@@ -95,6 +133,7 @@ export function TabBar() {
           if (!min) return;
           e.preventDefault();
           e.stopPropagation();
+          pending.current = null;
           setMin(false);
         }}
       >

@@ -62,6 +62,9 @@
     height: var(--dock-h);
     pointer-events: none;
   }
+  .main {
+    isolation: isolate;
+  }
   .dock-pill {
     position: relative;
     display: flex;
@@ -122,7 +125,9 @@
     position: absolute;
     top: 4px;
     bottom: 4px;
-    left: 0;
+    left: 4px;
+    width: calc((100% - 8px) / var(--dock-tab-count));
+    transform: translateX(var(--dock-lens-x));
     border-radius: calc(var(--dock-h) / 2 - 4px);
     background: color-mix(in srgb, var(--ink) 8%, transparent);
     transition: transform 0.5s var(--ease-spring), width 0.4s var(--ease-out), opacity 0.25s;
@@ -141,6 +146,8 @@
     pointer-events: none;
   }
   .dock.min .dock-lens {
+    width: calc(100% - 8px);
+    transform: translateX(0);
     opacity: 0;
   }
   /* 字收起来不占地方，图标落在圆的正中（不然字隐了还占着一行，图标被顶到上半边） */
@@ -159,6 +166,7 @@
   /* ---- 迷你播放台：平时缩成右边那颗圆，只露一张转着的小唱片 ---- */
   /* 鸿蒙客户端会在页面载入后注入 .app .player 的旧定位。迷你播放台与导航共用底栏边界。 */
   .app .player:not(.np-open) {
+    contain: layout;
     left: calc(100% - var(--dock-right) - var(--dock-h));
     right: var(--dock-right);
     bottom: var(--dock-bottom);

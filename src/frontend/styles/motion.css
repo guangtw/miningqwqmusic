@@ -206,6 +206,21 @@ html:not([data-vt]):not([data-deck-anim]) .player {
    新旧两张快照都贴着底边、按原尺寸画，不拉伸；外框从旧高度平滑收放到新高度，超出的部分裁掉，
    两张快照交叉淡化。展开时新快照是「活的」，里面控件依次弹出来的动画照常播 */
 @media (max-width: 860px) {
+  /* 页面和飞行封面都有独立快照；导航胶囊也按真实层级合成。宽度和高亮由原来的弹性过渡驱动。 */
+  html[data-vt='page'] .dock-pill {
+    view-transition-name: mobile-nav;
+  }
+  html[data-vt='page']::view-transition-group(mobile-nav) {
+    z-index: 29;
+    border-radius: calc(var(--dock-h) / 2);
+    animation: none;
+  }
+  html[data-vt='page']::view-transition-old(mobile-nav) {
+    display: none;
+  }
+  html[data-vt='page']::view-transition-new(mobile-nav) {
+    animation: none;
+  }
   html[data-vt^='np-']::view-transition-group(deck) {
     animation-duration: 0.5s;
     animation-timing-function: cubic-bezier(0.3, 1.1, 0.4, 1);

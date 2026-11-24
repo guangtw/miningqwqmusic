@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { nav } from '../config/site';
 import { useRoute } from '../lib/router';
 import { useStore } from '../lib/store';
@@ -41,8 +41,6 @@ export function TabBar() {
   const [folded, setMin] = useState(false);
   // 没在放歌：右边没有播放台可展开，不收
   const min = folded && hasTrack;
-  const pillRef = useRef<HTMLDivElement>(null);
-  const lensRef = useRef<HTMLSpanElement>(null);
 
   // 跟着主内容区的滚动方向收起 / 展开
   useEffect(() => {
@@ -81,38 +79,17 @@ export function TabBar() {
     if (!first && changed && trackId != null && window.matchMedia(NARROW).matches) setMin(true);
   }, [trackId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement;
     if (min) root.dataset.dock = 'min';
     else delete root.dataset.dock;
   }, [min]);
 
-  // 选中项底下的那块「镜片」滑到当前项；胶囊变宽变窄（收起、展开、转屏）时跟着重算
-  useLayoutEffect(() => {
-    const pill = pillRef.current;
-    const lens = lensRef.current;
-    if (!pill || !lens) return;
-    const place = () => {
-      const el = pill.querySelector<HTMLElement>('a.cur');
-      if (!el || !el.offsetWidth) {
-        lens.style.opacity = '0';
-        return;
-      }
-      lens.style.opacity = '';
-      lens.style.width = `${el.offsetWidth}px`;
-      lens.style.transform = `translateX(${el.offsetLeft}px)`;
-    };
-    place();
-    const ro = new ResizeObserver(place);
-    ro.observe(pill);
-    return () => ro.disconnect();
-  }, [current]);
-
   return (
     <nav className={`dock ${min ? 'min' : ''} ${hasTrack ? '' : 'solo'}`} aria-label="主导航" data-swipe-tabs>
       <div
         className="dock-pill"
-        ref={pillRef}
+        style={{ '--dock-tab-count': TABS.length, '--dock-lens-x': `${TABS.findIndex((t) => t.key === current) * 100}%` } as CSSProperties}
         onClickCapture={(e) => {
           // 收起时整颗圆钮就是「展开」：不跳页
           if (!min) return;
@@ -121,7 +98,7 @@ export function TabBar() {
           setMin(false);
         }}
       >
-        <span className="dock-lens" ref={lensRef} aria-hidden="true" />
+        <span className="dock-lens" aria-hidden="true" />
         {TABS.map((t) => {
           const n = nav.find((x) => x.key === t.key)!;
           return (

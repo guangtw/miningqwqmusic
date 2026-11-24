@@ -182,6 +182,33 @@ test('scrolling down swaps the capsule and the circle: pages fold into a circle,
   await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
 });
 
+test('mobile navigation stays above the page throughout the route transition', async ({ page }) => {
+  await page.goto('/#/');
+  const charts = page.locator('.dock [data-key="charts"]');
+  await expect(charts).toBeVisible();
+  const layers = await charts.evaluate(link => new Promise<{
+    name: string; page: number; hero: number; nav: number; deck: number; blur: string;
+  }>(resolve => {
+    function capture(event: AnimationEvent) {
+      if (event.animationName !== 'vt-page-in') return;
+      document.removeEventListener('animationstart', capture);
+      const root = document.documentElement;
+      const group = (name: string) => getComputedStyle(root, `::view-transition-group(${name})`);
+      const z = (name: string) => Number.parseInt(group(name).zIndex, 10) || 0;
+      resolve({ name: getComputedStyle(link.parentElement!).viewTransitionName,
+        page: z('page'), hero: z('hero'), nav: z('mobile-nav'), deck: z('deck'),
+        blur: group('mobile-nav').backdropFilter });
+    }
+    document.addEventListener('animationstart', capture);
+    (link as HTMLAnchorElement).click();
+  }));
+  expect(layers.name).toBe('mobile-nav');
+  expect(layers.nav).toBeGreaterThan(Math.max(layers.page, layers.hero));
+  expect(layers.nav).toBeLessThan(layers.deck);
+  expect(layers.blur).toContain('blur(24px)');
+  await expect.poll(() => lens(page)).toBe(true);
+});
+
 test('HarmonyOS safe-area injection keeps both dock states aligned and tappable', async ({ page }, info) => {
   await page.goto('/#/search?q=晨光&type=track');
   await page.locator('.track .t').first().click();

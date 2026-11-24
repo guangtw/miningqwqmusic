@@ -80,6 +80,20 @@ const swipeRight = (page: Page, y = 520) => drag(page, { x: width(page) * 0.22, 
 const hash = (page: Page) => page.evaluate(() => location.hash || '#/');
 /** 底栏里亮着的那一项（data-key：home / charts / radio / library / search） */
 const current = (page: Page) => page.locator('.dock [aria-current="page"]').getAttribute('data-key');
+/**
+ * 露出来的那段玻璃。胶囊和播放台的盒子尺寸固定，收展时玻璃在一层固定的圆角外壳里平移（refresh.css 第 1 节），
+ * 看到的形状 = 外壳 ∩ 玻璃。播放台的玻璃在它后面的 .player-skin 里
+ */
+const glass = (page: Page, which: 'pill' | 'player') => page.evaluate((which) => {
+  const shell = which === 'pill' ? '.dock-pill .dock-skin' : '.player-skin';
+  const skin = document.querySelector(shell)!.getBoundingClientRect();
+  const fill = document.querySelector(`${shell} .dock-skin-fill`)!.getBoundingClientRect();
+  const left = Math.max(skin.left, fill.left);
+  const right = Math.min(skin.right, fill.right);
+  return { x: left, y: skin.top, width: right - left, height: skin.height };
+}, which);
+/** 收起时左边那颗圆钮就是当前页那一项（点它展开） */
+const foldedPill = (page: Page) => page.locator('.dock-pill a.cur');
 const lens = async (page: Page) => {
   const [l, on] = await Promise.all([page.locator('.dock-lens').boundingBox(), page.locator('.dock-pill a.cur').boundingBox()]);
   return !!l && !!on && Math.abs(l.x - on.x) < 2 && Math.abs(l.width - on.width) < 2;
@@ -105,7 +119,7 @@ test('the bottom dock is one capsule of pages plus one circle for the mini playe
   expect(box.y + box.height).toBeGreaterThan(vh - 32);
   // 还没放歌：没有右边那颗圆，胶囊占满一行
   await expect(page.locator('.player')).toBeHidden();
-  const pill = (await page.locator('.dock-pill').boundingBox())!;
+  const pill = await glass(page, 'pill');
   expect(pill.width).toBeGreaterThan(width(page) - 40);
   await expect.poll(() => current(page)).toBe('home');
 
@@ -137,37 +151,36 @@ test('scrolling down swaps the capsule and the circle: pages fold into a circle,
   // 等切页过渡播完：过渡期间整页盖着快照，手指滚不动主内容区
   await page.waitForTimeout(800);
   const main = page.locator('.main');
-  const pill = page.locator('.dock-pill');
   const player = page.locator('.player');
   const sameRow = async () => {
-    const [p, pl] = [(await pill.boundingBox())!, (await player.boundingBox())!];
-    return Math.abs(p.y - pl.y) < 4 && Math.abs(p.height - pl.height) < 4 && p.x + p.width <= pl.x;
+    const [p, pl] = [await glass(page, 'pill'), await glass(page, 'player')];
+    return Math.abs(p.y - pl.y) < 4 && Math.abs(p.height - pl.height) < 4 && p.x + p.width <= pl.x + 0.5;
   };
 
   // 平时：胶囊放页面，右边一颗圆是转着的小唱片，点它打开唱机
-  await expect.poll(async () => (await player.boundingBox())!.width).toBeLessThan(80);
+  await expect.poll(async () => (await glass(page, 'player')).width).toBeLessThan(80);
   expect(await sameRow()).toBe(true);
   await expect(player.locator('.np-text')).toBeHidden();
 
   await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
   await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
-  await expect.poll(async () => (await pill.boundingBox())!.width).toBeLessThan(80);
-  await expect.poll(async () => (await player.boundingBox())!.width).toBeGreaterThan(220);
+  await expect.poll(async () => (await glass(page, 'pill')).width).toBeLessThan(80);
+  await expect.poll(async () => (await glass(page, 'player')).width).toBeGreaterThan(220);
   // 还是一行两个：左边一颗圆（只剩当前页图标），右边完整的播放台
   await expect.poll(sameRow).toBe(true);
   await expect(player.locator('.np-text')).toBeVisible();
   // 那颗圆里只剩当前页的图标，正好在圆心
   await expect.poll(async () => {
-    const [p, icon] = [(await pill.boundingBox())!, (await page.locator('.dock-pill a.cur svg').boundingBox())!];
+    const [p, icon] = [await glass(page, 'pill'), (await page.locator('.dock-pill a.cur svg').boundingBox())!];
     return Math.abs(p.x + p.width / 2 - (icon.x + icon.width / 2)) < 1 && Math.abs(p.y + p.height / 2 - (icon.y + icon.height / 2)) < 1;
   }).toBe(true);
   await expect(player.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
 
   // 点那颗圆钮：展开，不跳页
-  await pill.tap();
+  await foldedPill(page).tap();
   await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
   expect(await hash(page)).toBe('#/');
-  await expect.poll(async () => (await pill.boundingBox())!.width).toBeGreaterThan(200);
+  await expect.poll(async () => (await glass(page, 'pill')).width).toBeGreaterThan(200);
 
   // 再往下翻收起，往回翻展开
   await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
@@ -195,7 +208,7 @@ test('mobile navigation stays above the page throughout the route transition', a
       const root = document.documentElement;
       const group = (name: string) => getComputedStyle(root, `::view-transition-group(${name})`);
       const z = (name: string) => Number.parseInt(group(name).zIndex, 10) || 0;
-      resolve({ name: getComputedStyle(link.parentElement!).viewTransitionName,
+      resolve({ name: getComputedStyle(link.closest('.dock-pill')!).viewTransitionName,
         page: z('page'), hero: z('hero'), nav: z('mobile-nav'), deck: z('deck'),
         blur: group('mobile-nav').backdropFilter });
     }
@@ -225,8 +238,7 @@ test('HarmonyOS safe-area injection keeps both dock states aligned and tappable'
   const assertDock = async (folded: boolean) => {
     const y = height - 18 - 12 - 62;
     await expect.poll(async () => {
-      const [nav, bar] = await Promise.all([pill.boundingBox(), player.boundingBox()]);
-      if (!nav || !bar) return false;
+      const [nav, bar] = [await glass(page, 'pill'), await glass(page, 'player')];
       return Math.abs(nav.x - 16) < 1 && Math.abs(bar.x + bar.width - (width - 24)) < 1 &&
         Math.abs(nav.y - y) < 1 && Math.abs(bar.y - y) < 1 && nav.height === 62 && bar.height === 62 &&
         Math.abs(bar.x - nav.x - nav.width - 10) < 1 && Math.abs((folded ? nav : bar).width - 62) < 1;
@@ -237,7 +249,7 @@ test('HarmonyOS safe-area injection keeps both dock states aligned and tappable'
   };
   await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
   await assertDock(true);
-  await pill.tap();
+  await foldedPill(page).tap();
   await assertDock(false);
   await pill.locator('[data-key="home"]').tap();
   await expect.poll(() => hash(page)).toBe('#/');
@@ -357,7 +369,7 @@ test('playback keeps going while swiping between pages', async ({ page }) => {
   await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
   // 点左边那颗圆换回页面导航，再去「本期」
-  await page.locator('.dock-pill').tap();
+  await foldedPill(page).tap();
   await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
   await page.getByRole('link', { name: '本期' }).tap();
   await expect.poll(() => hash(page)).toBe('#/');

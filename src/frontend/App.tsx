@@ -200,6 +200,10 @@ export function App() {
       <TabBar />
       <div className="player-slot">
         <PlayerBar />
+        {/* 手机上迷你播放台的玻璃（refresh.css）：放在播放台外面，Chromium 才给它模糊下面的页面 */}
+        <span className="player-skin" aria-hidden="true">
+          <i className="dock-skin-fill" />
+        </span>
       </div>
       <NowPlaying />
       <QueueDrawer />

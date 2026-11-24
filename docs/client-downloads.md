@@ -41,7 +41,7 @@
 }
 ```
 
-上面仅展示 Windows 对象；真实 `platforms` 同时包含 Android。Android 的 `platform=android`、`architecture=universal`、`variant=apk`，当前版本 `1.0.3`。Windows 只提供 EXE 安装版；**不要设计便携版下载入口**。APK 是安装包，不是应用商店链接。版本、大小、哈希以接口为准，不要在前端硬编码；`size` 单位是字节，`publishedAt` 为 UTC ISO 时间。
+上面仅展示 Windows 对象；真实 `platforms` 同时包含 Android。Android 的 `platform=android`、`architecture=universal`、`variant=apk`，当前版本 `1.0.5`。Windows 只提供 EXE 安装版；**不要设计便携版下载入口**。APK 是安装包，不是应用商店链接。版本、大小、哈希以接口为准，不要在前端硬编码；`size` 单位是字节，`publishedAt` 为 UTC ISO 时间。
 
 优先使用普通链接 `<a href={platform.downloadUrl}>` 发起下载。不要 `fetch(...).blob()` 将大文件载入内存；也不需要将文件交给 Next/账户接口中转。稳定地址返回 **307**，重定向到本站对应版本的不可变文件地址，Nginx 设置 `Content-Disposition: attachment`，浏览器接管下载。Android 使用 `/api/downloads/android`；Windows 使用 `/api/downloads/windows`。需要绑定页面当时展示的确切版本时，使用 `artifact.url`。
 

@@ -8,6 +8,10 @@
   if (window.MiningAndroid) window.MiningAndroid.onmessage = event => {
     try {
       const reply = JSON.parse(event.data);
+      if (reply.type === 'media-command') {
+        window.dispatchEvent(new CustomEvent('android-media-command', { detail: reply }));
+        return;
+      }
       const request = pending.get(reply.ack);
       if (!request) return;
       pending.delete(reply.ack);
@@ -28,9 +32,29 @@
   // in memory until a later disk flush. A rotating refresh cookie must be durable
   // before the caller receives a successful authentication response.
   const fetch = window.fetch.bind(window);
+  // Share the page's lyric response. Keep a small per-song cache so a late
+  // response from the previous song cannot replace the current timeline.
+  const lyricRequests = new Map();
+  const lyricPath = /^\/api\/music\/track\/([^/]+)\/lyric\/?$/;
+  function readTimeline(response, id) {
+    if (!response.ok) return [];
+    return response.json().then(({ data }) => {
+      if (String(data?.trackId) !== id || !Array.isArray(data.lines)) return [];
+      const lines = data.lines.filter(line => Number.isFinite(line.timeMs) && line.text?.trim())
+        .sort((a, b) => a.timeMs - b.timeMs);
+      return lines.length > 1 && lines.every(line => line.timeMs === 0) ? [] : lines;
+    });
+  }
   window.fetch = async (...args) => {
-    const response = await fetch(...args);
+    const request = fetch(...args);
     const url = resolve(args[0] instanceof Request ? args[0].url : args[0]);
+    const match = window.MiningAndroid && url && trusted(url) && lyricPath.exec(url.pathname);
+    if (match) {
+      const id = decodeURIComponent(match[1]);
+      lyricRequests.set(id, request.then(response => readTimeline(response.clone(), id)).catch(() => []));
+      if (lyricRequests.size > 4) lyricRequests.delete(lyricRequests.keys().next().value);
+    }
+    const response = await request;
     if (window.MiningAndroid && response.ok && url && trusted(url)
       && /^\/api\/account\/auth\/(login|register|refresh|logout|logout-all|change-password)\/?$/.test(url.pathname))
       await transfer({ type: 'persist-session' });
@@ -79,6 +103,150 @@
       }
     };
   }
+
+  // Use the site's transport handlers so queue navigation, URL renewal and fades
+  // follow the same path as a tap in the player. Its Audio element is detached.
+  function connectMediaControls() {
+    if (!window.MiningAndroid) return;
+    // Android WebView can omit the Web Media Session API. Expose the subset
+    // the online player uses before it registers its queue transport handlers.
+    if (!window.MediaMetadata) {
+      window.MediaMetadata = class {
+        constructor({ title = '', artist = '', album = '', artwork = [] } = {}) {
+          Object.assign(this, { title, artist, album, artwork: artwork.map(art => ({ ...art, src: secureResourceUrl(art.src) })) });
+        }
+      };
+    }
+    if (!navigator.mediaSession) Object.defineProperty(navigator, 'mediaSession', {
+      value: { metadata: null, setActionHandler() {} },
+    });
+    const session = navigator.mediaSession;
+    const handlers = new Map();
+    const register = session.setActionHandler.bind(session);
+    session.setActionHandler = (action, callback) => {
+      try { register(action, callback); } catch (error) {
+        if (error.name !== 'NotSupportedError') throw error;
+      }
+      if (callback) handlers.set(action, callback);
+      else handlers.delete(action);
+    };
+    const actions = { play: 'play', pause: 'pause', previous: 'previoustrack', next: 'nexttrack', seek: 'seekto' };
+    addEventListener('android-media-command', ({ detail }) => {
+      const action = actions[detail.action];
+      const handler = handlers.get(action);
+      if (handler) return handler({ action, seekTime: detail.position / 1000 });
+      // Older WebViews install this script after the site registered its handlers.
+      if (!active) return;
+      if (action === 'seekto') {
+        if (Number.isFinite(active.duration)) active.currentTime = Math.min(active.duration, detail.position / 1000);
+        return;
+      }
+      const labels = { play: '播放', pause: '暂停', nexttrack: '下一首', previoustrack: '上一首' };
+      if (labels[action]) document.querySelector('.player button[aria-label="' + labels[action] + '"]')?.click();
+    });
+
+    let active;
+    let lastCover;
+    let source;
+    let sequence = 0;
+    let track;
+    let timeline = [];
+    let lastLine = '';
+    function lineAtPosition() {
+      let lo = 0, hi = timeline.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (timeline[mid].timeMs <= active.currentTime * 1000) lo = mid + 1;
+        else hi = mid;
+      }
+      return timeline[lo - 1]?.text.trim().slice(0, 512) || '';
+    }
+    const syncLine = () => { if (lastLine !== lineAtPosition()) publish(); };
+    function loadTrack() {
+      track = null;
+      timeline = [];
+      try {
+        const saved = JSON.parse(localStorage.getItem('cph.player.v2'));
+        track = saved?.queue?.[saved.index];
+      } catch {}
+      if (!track?.id) return;
+      const id = String(track.id);
+      const token = sequence;
+      const request = lyricRequests.get(id) || fetch('/api/music/track/' + encodeURIComponent(id) + '/lyric')
+        .then(response => readTimeline(response, id)).catch(() => []);
+      request.then(lines => {
+        if (sequence !== token) return;
+        timeline = lines;
+        syncLine();
+      });
+    }
+    const publishCover = (url, id) => {
+      if (!url) return;
+      const cover = new Image();
+      cover.crossOrigin = 'anonymous';
+      cover.onload = () => {
+        if (sequence !== id || url !== lastCover) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 256;
+        try {
+          canvas.getContext('2d').drawImage(cover, 0, 0, 256, 256);
+          send({ type: 'playback-art', id, jpeg: canvas.toDataURL('image/jpeg', 0.8).split(',')[1] });
+        } catch { /* Some providers do not permit pixel access. */ }
+      };
+      const thumbnail = resolve(url);
+      if (thumbnail?.protocol === 'https:' && /^p\d+\.music\.126\.net$/i.test(thumbnail.hostname)) {
+        thumbnail.searchParams.set('param', '256y256');
+        cover.src = thumbnail.href;
+      } else cover.src = url;
+    };
+    const publish = event => {
+      if (!active.getAttribute('src') || active.error) {
+        source = lastCover = undefined;
+        timeline = [];
+        lastLine = '';
+        sequence++;
+        send({ type: 'playback' });
+        return;
+      }
+      const meta = session.metadata;
+      // Assigning the same CDN URL again can still select a different track.
+      if (source !== active.src || event?.type === 'loadstart') {
+        source = active.src;
+        sequence++;
+        lastCover = undefined;
+        loadTrack();
+      }
+      const status = active.paused || active.ended ? 'paused'
+        : active.readyState < HTMLMediaElement.HAVE_FUTURE_DATA ? 'buffering' : 'playing';
+      lastLine = lineAtPosition();
+      const url = secureResourceUrl(track ? track.coverUrl || track.album?.coverUrl : meta?.artwork?.[0]?.src);
+      send({ type: 'playback', id: sequence, title: track?.name || meta?.title || '音乐播放',
+        artist: (track ? track.artists?.map(artist => artist.name).join(' / ') : meta?.artist) || '',
+        album: (track ? track.album?.name : meta?.album) || '', lyric: lastLine,
+        cover: url?.startsWith('https://') ? url : '', status,
+        duration: Number.isFinite(active.duration) ? Math.round(active.duration * 1000) : 0,
+        position: Math.round(active.currentTime * 1000) });
+      if (url !== lastCover) {
+        lastCover = url;
+        publishCover(url, sequence);
+      }
+    };
+    const events = ['loadstart', 'playing', 'waiting', 'pause', 'seeked', 'durationchange', 'ended', 'emptied', 'error'];
+    const play = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+      if (this instanceof HTMLAudioElement && (handlers.has('play') || document.querySelector('.player .play-btn')) && this !== active) {
+        if (active) {
+          for (const name of events) active.removeEventListener(name, publish);
+          active.removeEventListener('timeupdate', syncLine);
+        }
+        active = this;
+        active.addEventListener('timeupdate', syncLine);
+        for (const name of events) active.addEventListener(name, publish);
+      }
+      return play.call(this);
+    };
+  }
+  connectMediaControls();
 
   // Native callbacks also deny all of these, including requests from subframes.
   window.alert = () => {};

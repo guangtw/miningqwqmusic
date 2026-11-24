@@ -25,6 +25,10 @@ final class ShellWebViewClient extends WebViewClient {
         return !NavigationPolicy.isTrusted(url);
     }
 
+    @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
+        activity.resetPlayback();
+    }
+
     @Override public void onPageCommitVisible(WebView view, String url) {
         if (NavigationPolicy.isTrusted(url)) activity.pageReady();
     }

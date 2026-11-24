@@ -66,6 +66,186 @@ public class ShellInstrumentedTest {
         } finally { press.recycle(); release.recycle(); }
     }
 
+    @Test public void mediaSessionControlsBackgroundAudio() throws Exception {
+        instrumentation.runOnMainSync(() -> web.loadDataWithBaseURL(NavigationPolicy.HOME,
+                "<!doctype html><title>Media fixture</title>", "text/html", "utf-8", null));
+        awaitJs("document.title === 'Media fixture' && !!window.__miningAndroidShell");
+        String clip = pcmClip();
+        js("window.clip=new Audio('data:audio/wav;base64," + clip + "');"
+                + "const s=navigator.mediaSession; s.metadata=new MediaMetadata({title:'Media fixture',artist:'QA'});"
+                + "s.setActionHandler('play',()=>clip.play());s.setActionHandler('pause',()=>clip.pause());"
+                + "s.setActionHandler('seekto',e=>clip.currentTime=e.seekTime);"
+                + "s.setActionHandler('nexttrack',()=>window.skipped='next');"
+                + "s.setActionHandler('previoustrack',()=>window.skipped='previous');void clip.play();true");
+        awaitJs("clip.currentTime > 0");
+        android.app.NotificationManager manager = activity.getSystemService(android.app.NotificationManager.class);
+        android.app.Notification card = awaitPlaybackCard(manager);
+        android.media.session.MediaSession.Token token = card.extras.getParcelable(android.app.Notification.EXTRA_MEDIA_SESSION);
+        assertNotNull("Media session token missing", token);
+        android.media.session.MediaController controller = new android.media.session.MediaController(activity, token);
+        assertEquals("Media fixture", controller.getMetadata().getString(android.media.MediaMetadata.METADATA_KEY_TITLE));
+        instrumentation.runOnMainSync(() -> activity.moveTaskToBack(true));
+        awaitJs("document.hidden");
+        android.media.session.MediaController.TransportControls transport = controller.getTransportControls();
+        // Some system UIs use the MediaStyle PendingIntents; Android 13+ can
+        // instead use the session actions. Exercise both against the same audio.
+        assertEquals(3, card.actions.length);
+        card.actions[1].actionIntent.send();
+        awaitJs("clip.paused");
+        waitForState(controller, android.media.session.PlaybackState.STATE_PAUSED);
+        card.actions[2].actionIntent.send();
+        awaitJs("window.skipped === 'next'");
+        card.actions[0].actionIntent.send();
+        awaitJs("window.skipped === 'previous'");
+        js("window.skipped=null");
+        dispatchMediaKey("play");
+        awaitJs("!clip.paused");
+        waitForState(controller, android.media.session.PlaybackState.STATE_PLAYING);
+        transport.pause();
+        awaitJs("clip.paused");
+        transport.seekTo(12000);
+        awaitJs("Math.abs(clip.currentTime - 12) < 0.1");
+        transport.play();
+        awaitJs("clip.currentTime > 12.2");
+        // The playback clock must continue after screen-off, and a headset
+        // transport key must reach the existing page without reopening it.
+        shellCommand("input keyevent KEYCODE_SLEEP");
+        try {
+            double before = Double.parseDouble(js("clip.currentTime"));
+            awaitJs("clip.currentTime > " + (before + 3));
+            dispatchMediaKey("play-pause");
+            awaitJs("clip.paused");
+        } finally {
+            shellCommand("input keyevent KEYCODE_WAKEUP");
+        }
+        transport.skipToNext();
+        awaitJs("window.skipped === 'next'");
+        transport.skipToPrevious();
+        awaitJs("window.skipped === 'previous'");
+        js("clip.pause();clip.removeAttribute('src');clip.load()");
+        for (int i = 0; i < 100 && controller.getPlaybackState() != null; i++) Thread.sleep(100);
+        assertNull(controller.getPlaybackState());
+    }
+
+    private String pcmClip() {
+        // A local PCM clip exercises the WebView decoder without an account or audio CDN.
+        int samples = 8000 * 60;
+        java.nio.ByteBuffer wav = java.nio.ByteBuffer.allocate(44 + samples).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        wav.putInt(0x46464952).putInt(36 + samples).putInt(0x45564157).putInt(0x20746d66)
+                .putInt(16).putShort((short) 1).putShort((short) 1).putInt(8000).putInt(8000)
+                .putShort((short) 1).putShort((short) 8).putInt(0x61746164).putInt(samples);
+        return android.util.Base64.encodeToString(wav.array(), android.util.Base64.NO_WRAP);
+    }
+
+    @Test public void legacyControlsKeepArtworkAndLyricsWithCurrentTrack() throws Exception {
+        instrumentation.runOnMainSync(() -> {
+            web.setWebViewClient(new android.webkit.WebViewClient() {
+                @Override public android.webkit.WebResourceResponse shouldInterceptRequest(WebView view,
+                        android.webkit.WebResourceRequest request) {
+                    String path = request.getUrl().getPath();
+                    if (path == null || !path.endsWith("/lyric")) return null;
+                    String id = path.contains("/first/") ? "first" : "second";
+                    String lines = id.equals("first")
+                            ? "[{\"timeMs\":0,\"text\":\"第一句\"},{\"timeMs\":9000,\"text\":\"第二句\"}]" : "[]";
+                    String body = "{\"data\":{\"trackId\":\"" + id + "\",\"lines\":" + lines + "}}";
+                    return new android.webkit.WebResourceResponse("application/json", "utf-8",
+                            new java.io.ByteArrayInputStream(body.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+                }
+            });
+            web.loadDataWithBaseURL(NavigationPolicy.HOME, "<title>Legacy fixture</title>"
+                    + "<div class='player'><button class='play-btn' aria-label='暂停' onclick='clip.pause()'></button></div>",
+                    "text/html", "utf-8", null);
+        });
+        awaitJs("document.title === 'Legacy fixture' && !!window.__miningAndroidShell");
+        // Simulate registration before shell installation. The detached audio is first played later.
+        js("window.savedQueue=localStorage.getItem('cph.player.v2')");
+        try {
+            js("const c=document.createElement('canvas');c.width=c.height=2;"
+                    + "const ctx=c.getContext('2d');ctx.fillStyle='red';ctx.fillRect(0,0,2,2);"
+                    + "window.fixtureTrack=(id,cover)=>localStorage.setItem('cph.player.v2',JSON.stringify({index:0,queue:["
+                    + "{id,name:id,artists:[{name:'歌手'}],album:{name:'专辑'},coverUrl:cover}]}));"
+                    + "fixtureTrack('first',c.toDataURL());window.clip=new Audio('data:audio/wav;base64," + pcmClip()
+                    + "');void clip.play();true");
+            awaitJs("clip.currentTime > 0");
+            android.app.NotificationManager manager = activity.getSystemService(android.app.NotificationManager.class);
+            android.app.Notification card = awaitPlaybackCard(manager);
+            android.media.session.MediaController controller = new android.media.session.MediaController(activity,
+                    (android.media.session.MediaSession.Token) card.extras.getParcelable(android.app.Notification.EXTRA_MEDIA_SESSION));
+            awaitMetadata(controller, "first", "歌手 · 第一句", true);
+            controller.getTransportControls().pause();
+            awaitJs("clip.paused");
+            controller.getTransportControls().seekTo(12000);
+            awaitMetadata(controller, "first", "歌手 · 第二句", true);
+            controller.getTransportControls().seekTo(1000);
+            awaitMetadata(controller, "first", "歌手 · 第一句", true);
+            js("fixtureTrack('second','');clip.src=URL.createObjectURL(new Blob([new Uint8Array("
+                    + "atob(clip.src.split(',')[1]).split('').map(ch=>ch.charCodeAt(0)))],{type:'audio/wav'}));void clip.play()");
+            awaitMetadata(controller, "second", "歌手", false);
+        } finally {
+            js("if(savedQueue===null)localStorage.removeItem('cph.player.v2');else localStorage.setItem('cph.player.v2',savedQueue)");
+        }
+    }
+
+    private void awaitMetadata(android.media.session.MediaController controller, String title,
+            String subtitle, boolean hasCover) throws Exception {
+        for (int i = 0; i < 120; i++) {
+            android.media.MediaMetadata m = controller.getMetadata();
+            if (m != null && title.equals(m.getString(android.media.MediaMetadata.METADATA_KEY_TITLE))
+                    && "专辑".equals(m.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM))
+                    && "歌手".equals(m.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST))
+                    && subtitle.contentEquals(m.getDescription().getSubtitle())) {
+                android.graphics.Bitmap bitmap = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+                android.app.Notification card = awaitPlaybackCard(activity.getSystemService(android.app.NotificationManager.class));
+                if (subtitle.equals(card.extras.getString(android.app.Notification.EXTRA_TEXT))
+                        && (bitmap != null) == hasCover
+                        && (!hasCover || android.graphics.Color.red(bitmap.getPixel(0, 0)) > 240)) return;
+            }
+            Thread.sleep(100);
+        }
+        fail("Missing metadata for " + title + " / " + subtitle);
+    }
+
+    private android.app.Notification awaitPlaybackCard(android.app.NotificationManager manager) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            for (android.service.notification.StatusBarNotification card : manager.getActiveNotifications()) {
+                if (card.getNotification().extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION))
+                    return card.getNotification();
+            }
+            Thread.sleep(100);
+        }
+        throw new AssertionError("MediaStyle notification missing");
+    }
+
+    private void waitForState(android.media.session.MediaController controller, int expected) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            android.media.session.PlaybackState snapshot = controller.getPlaybackState();
+            if (snapshot != null && snapshot.getState() == expected) return;
+            Thread.sleep(100);
+        }
+        fail("PlaybackState did not reach " + expected);
+    }
+
+    private void dispatchMediaKey(String key) throws Exception {
+        String tool = android.os.Build.VERSION.SDK_INT >= 30 ? "cmd media_session" : "media";
+        shellCommand(tool + " dispatch " + key);
+    }
+
+    private void shellCommand(String command) throws Exception {
+        android.os.ParcelFileDescriptor output = instrumentation.getUiAutomation()
+                .executeShellCommand(command);
+        try (java.io.InputStream stream = new android.os.ParcelFileDescriptor.AutoCloseInputStream(output)) {
+            while (stream.read() != -1) { /* Wait for the input command. */ }
+        }
+    }
+
+    private void awaitJs(String condition) throws Exception {
+        for (int i = 0; i < 100; i++) {
+            if ("true".equals(js(condition))) return;
+            Thread.sleep(100);
+        }
+        fail(condition);
+    }
+
     @Test public void nativePolicyBlocksAutofillAndBrowserUiBeforeNavigation() {
         instrumentation.runOnMainSync(() -> {
             assertEquals(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS, web.getImportantForAutofill());

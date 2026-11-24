@@ -3,6 +3,9 @@ package cn.miningqwq.music;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.ComponentName;
+import android.content.ServiceConnection;
+import android.os.IBinder;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -20,6 +23,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
 
+import androidx.webkit.JavaScriptReplyProxy;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
@@ -47,6 +51,31 @@ public final class MainActivity extends Activity {
     };
     private final Runnable retryTask = this::retry;
     private NativeDownloads downloads;
+    private PlaybackService playback;
+    private JSONObject lastPlayback, lastArtwork;
+    private boolean bound;
+    private JavaScriptReplyProxy mediaPage;
+    private final PlaybackService.Commands controls = (action, position) -> {
+        if (mediaPage != null && !destroyed) {
+            mediaPage.postMessage("{\"type\":\"media-command\",\"action\":" + JSONObject.quote(action)
+                    + ",\"position\":" + position + "}");
+        }
+    };
+    private final ServiceConnection playbackConnection = new ServiceConnection() {
+        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+            playback = ((PlaybackService.LocalBinder) binder).service();
+            playback.attach(controls);
+            if (lastPlayback != null) playback.update(lastPlayback);
+            if (lastArtwork != null) playback.artwork(lastArtwork);
+        }
+        @Override public void onServiceDisconnected(ComponentName name) { playback = null; }
+    };
+
+    void resetPlayback() {
+        mediaPage = null;
+        lastPlayback = lastArtwork = null;
+        if (playback != null) playback.clear();
+    }
 
     @Override @SuppressWarnings("deprecation") public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -89,7 +118,7 @@ public final class MainActivity extends Activity {
         // The site resolves a signed URL asynchronously after a user taps Play.
         // WebView otherwise rejects that later play() call after the gesture expires.
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.3");
+        settings.setUserAgentString(settings.getUserAgentString() + " MiningQwQMusicAndroid/1.0.5");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setBackgroundColor(Color.TRANSPARENT);
@@ -124,7 +153,10 @@ public final class MainActivity extends Activity {
                                 downloads.transfer(payload, ok -> {
                                     if (!destroyed) reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":" + ok + "}");
                                 });
-                            } else handleMessage(payload);
+                            } else {
+                                if ("playback".equals(payload.optString("type"))) mediaPage = reply;
+                                handleMessage(payload);
+                            }
                         }
                         catch (JSONException | IllegalStateException ignored) { /* malformed/untrusted payload */ }
                     });
@@ -134,6 +166,7 @@ public final class MainActivity extends Activity {
         }
         connectivity = getSystemService(ConnectivityManager.class);
         connectivity.registerDefaultNetworkCallback(networkCallback);
+        bound = bindService(new Intent(this, PlaybackService.class), playbackConnection, BIND_AUTO_CREATE);
         webView.loadUrl(NavigationPolicy.HOME);
     }
 
@@ -147,6 +180,17 @@ public final class MainActivity extends Activity {
             case "download":
                 downloads.downloadUrl(message.optString("url"), webView.getSettings().getUserAgentString(),
                         message.optString("name"), message.optString("mime", "audio/mpeg"));
+                break;
+            case "playback":
+                if (lastPlayback == null || !lastPlayback.optString("id").equals(message.optString("id"))) lastArtwork = null;
+                lastPlayback = message;
+                if (playback != null) playback.update(message);
+                break;
+            case "playback-art":
+                if (lastPlayback != null && lastPlayback.optString("id").equals(message.optString("id"))) {
+                    lastArtwork = message;
+                    if (playback != null) playback.artwork(message);
+                }
                 break;
             case "state": updateSystemBars(message.optBoolean("dark")); break;
             default: break;
@@ -228,6 +272,8 @@ public final class MainActivity extends Activity {
         handler.removeCallbacksAndMessages(null);
         if (connectivity != null) connectivity.unregisterNetworkCallback(networkCallback);
         if (fileCallback != null) fileCallback.onReceiveValue(null);
+        if (playback != null) playback.detach(controls);
+        if (bound) unbindService(playbackConnection);
         downloads.close();
         root.removeView(webView);
         webView.stopLoading();

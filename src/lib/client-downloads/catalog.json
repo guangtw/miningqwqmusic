@@ -21,16 +21,16 @@
     {
       "platform": "android",
       "name": "Android",
-      "version": "1.0.3",
+      "version": "1.0.5",
       "architecture": "universal",
-      "releaseTag": "android-v1.0.3",
-      "publishedAt": "2026-11-02T03:58:19Z",
+      "releaseTag": "android-v1.0.5",
+      "publishedAt": "2026-11-24T07:36:44Z",
       "artifacts": [
         {
           "variant": "apk",
-          "fileName": "MiningQwQMusic-android-v1.0.3.apk",
-          "size": 1028139,
-          "sha256": "91f0846d02d6bca24d4a28471a67e2bb4b98ddf48db86b91c65011db40d7d30a",
+          "fileName": "MiningQwQMusic-android-v1.0.5.apk",
+          "size": 1034495,
+          "sha256": "0f7d7b55f0c1ae93b06977335469fea9363026e6395dde0e3335d71fd4464a6f",
           "contentType": "application/vnd.android.package-archive"
         }
       ]

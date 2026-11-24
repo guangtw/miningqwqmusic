@@ -27,7 +27,9 @@
 
 APK 不包含网页 HTML/JS/CSS 或 WebView 内核；在线加载网站，使用系统 WebView 默认的 HTTP 资源缓存、站点 Service Worker 与站点已有的数据缓存。没有实现原生页面保活、独立离线页面包或持久页面缓存。返回加载问题尚未在实体用户设备上定位，回滚不等于已证明该问题修复。
 
-没有新增网页提醒、重绘前端、修改服务端或引入私有音源密钥。此版是轻量 WebView 壳层，未实现原生前台播放服务；长时间后台/锁屏保活和不同厂商的省电策略尚不作保证。系统安装提示、系统文件选择器与第三方输入法本身的界面属于 Android 系统行为。
+v1.0.4 播放时启动 Android 媒体播放前台服务。通知栏、锁屏和耳机媒体键通过同一个 MediaSession 控制网页播放器，支持播放、暂停、上下首和进度定位。系统卡片显示歌曲、歌手及可读取的封面。暂停一分钟后服务退出前台，清空音源或关闭页面时回收媒体会话状态。声音仍由 WebView 解码，厂商设备上的后台流畅度需要实机验证。
+
+v1.0.5 将 HarmonyOS 4.x 的安卓应用环境列为兼容目标。系统可通过媒体会话读取曲名、歌手、专辑和封面；通知正文与媒体描述的副标题随播放进度更新当前时间轴歌词。无时间轴或无歌词时显示歌手。卡片实际展示哪些字段由系统决定。旧 WebView 若在页面加载后才安装播控脚本，可通过站点播放栏接收控制；原生消息仍要求 WebView 支持限定来源的 Web 消息监听器。华为专属音频播控中心的应用范围以华为公布的支持清单为准。
 
 ## 构建与验证
 
@@ -56,7 +58,7 @@ cd desktop/android
 ```powershell
 # 首次生成发行密钥。已有密钥时必须恢复并复用，不能重新生成。
 .\scripts\init-signing.ps1
-.\scripts\package.ps1 -Version 1.0.3 -SourceCommit (git rev-parse HEAD)
+.\scripts\package.ps1 -Version 1.0.5 -SourceCommit (git rev-parse HEAD)
 ```
 
 `signing.properties`、发行密钥、SDK 路径、构建目录和 `artifacts/` 都在 Git 忽略列表。首次生成的密钥与签名配置恢复副本保存在 `%LOCALAPPDATA%\MiningQwQMusicAndroid\signing\`；请私下备份，后续版本复用同一密钥才能覆盖升级。密钥和密码不得上传 GitHub。

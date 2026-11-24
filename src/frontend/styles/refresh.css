@@ -28,8 +28,9 @@
   :root {
     --dock-h: 62px;
     --dock-gap: 10px;
-    --dock-side: 12px;
-    --dock-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+    --dock-left: max(12px, var(--harmony-safe-left, 0px));
+    --dock-right: max(12px, var(--harmony-safe-right, 0px));
+    --dock-bottom: calc(var(--harmony-safe-bottom, env(safe-area-inset-bottom, 0px)) + 12px);
     /* 底栏整块占的高度，页面底部要留出来 */
     --dock-full: calc(var(--dock-bottom) + var(--dock-h));
     --dock-ease: cubic-bezier(0.3, 1.25, 0.4, 1);
@@ -52,8 +53,8 @@
 
   .dock {
     position: fixed;
-    left: var(--dock-side);
-    right: var(--dock-side);
+    left: var(--dock-left);
+    right: var(--dock-right);
     bottom: var(--dock-bottom);
     /* 在正在播放页（30）之下：打开唱机时被整页盖住；在播放台（40）之下 */
     z-index: 29;
@@ -156,9 +157,10 @@
   }
 
   /* ---- 迷你播放台：平时缩成右边那颗圆，只露一张转着的小唱片 ---- */
-  .player:not(.np-open) {
-    left: calc(100% - var(--dock-side) - var(--dock-h));
-    right: var(--dock-side);
+  /* 鸿蒙客户端会在页面载入后注入 .app .player 的旧定位。迷你播放台与导航共用底栏边界。 */
+  .app .player:not(.np-open) {
+    left: calc(100% - var(--dock-right) - var(--dock-h));
+    right: var(--dock-right);
     bottom: var(--dock-bottom);
     height: var(--dock-h);
     border-radius: calc(var(--dock-h) / 2);
@@ -180,7 +182,7 @@
   }
   /* 下翻：右边的圆展开成完整的播放台，占掉胶囊让出来的地方 */
   html[data-dock='min'] .player:not(.np-open) {
-    left: calc(var(--dock-side) + var(--dock-h) + var(--dock-gap));
+    left: calc(var(--dock-left) + var(--dock-h) + var(--dock-gap));
   }
   html[data-dock='min'] .player:not(.np-open) :is(.np-text, .transport) {
     animation: fade-in 0.35s var(--ease-out) 0.12s both;

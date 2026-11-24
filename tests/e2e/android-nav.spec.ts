@@ -182,6 +182,42 @@ test('scrolling down swaps the capsule and the circle: pages fold into a circle,
   await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
 });
 
+test('HarmonyOS safe-area injection keeps both dock states aligned and tappable', async ({ page }, info) => {
+  await page.goto('/#/search?q=晨光&type=track');
+  await page.locator('.track .t').first().click();
+  // Existing HarmonyOS clients append WebLayout.ets styles after the site's CSS.
+  await page.addStyleTag({ content: `
+    :root { --harmony-safe-left: 16px; --harmony-safe-right: 24px; --harmony-safe-bottom: 18px; }
+    body { padding-inline: var(--harmony-safe-left) var(--harmony-safe-right); }
+    .app .player { bottom: max(var(--deck-gap), var(--harmony-safe-bottom));
+      left: max(var(--deck-gap), var(--harmony-safe-left)); right: max(var(--deck-gap), var(--harmony-safe-right)); }
+  ` });
+  const pill = page.locator('.dock-pill');
+  const player = page.locator('.player');
+  const { width, height } = page.viewportSize()!;
+  const assertDock = async (folded: boolean) => {
+    const y = height - 18 - 12 - 62;
+    await expect.poll(async () => {
+      const [nav, bar] = await Promise.all([pill.boundingBox(), player.boundingBox()]);
+      if (!nav || !bar) return false;
+      return Math.abs(nav.x - 16) < 1 && Math.abs(bar.x + bar.width - (width - 24)) < 1 &&
+        Math.abs(nav.y - y) < 1 && Math.abs(bar.y - y) < 1 && nav.height === 62 && bar.height === 62 &&
+        Math.abs(bar.x - nav.x - nav.width - 10) < 1 && Math.abs((folded ? nav : bar).width - 62) < 1;
+    }).toBe(true);
+    await info.attach(folded ? 'harmony-folded.png' : 'harmony-expanded.png', {
+      body: await page.screenshot({ clip: { x: 0, y: y - 12, width, height: height - y + 12 } }), contentType: 'image/png'
+    });
+  };
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await assertDock(true);
+  await pill.tap();
+  await assertDock(false);
+  await pill.locator('[data-key="home"]').tap();
+  await expect.poll(() => hash(page)).toBe('#/');
+  await player.locator('.mini-vinyl').tap();
+  await expect(page.locator('.nowplaying')).toHaveClass(/\bopen\b/);
+});
+
 test('swiping the main area moves between neighbouring top-level pages', async ({ page }) => {
   await page.goto('/#/');
   await expect.poll(() => current(page)).toBe('home');

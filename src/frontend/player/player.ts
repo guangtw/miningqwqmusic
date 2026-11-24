@@ -5,6 +5,7 @@ import type { PlayQualityLevel, PlaySource, PlayUnblockMode } from '../api/types
 import { getSettings, updateSettings } from '../lib/settings';
 import { readJSON, writeJSON } from '../lib/storage';
 import { createStore } from '../lib/store';
+import { detectVisitor } from '../lib/clientDownloads';
 import { toast } from '../lib/toast';
 import { getPlayQualityLabel, PLAY_QUALITY_LEVELS } from '@/src/lib/play-quality';
 
@@ -60,7 +61,10 @@ const audio = new Audio();
 audio.preload = 'auto';
 // iOS Safari 的 volume 是只读的（永远读回 1），那里没法渐变，播放暂停照旧立刻生效
 audio.volume = 0.5;
-const canFade = audio.volume === 0.5;
+// The APK can be backgrounded between play() and its promise settling. Start its
+// decoder at the user's volume, without waiting for a WebView timer to unmute it.
+const androidClient = detectVisitor().inClient === 'android';
+const canFade = !androidClient && audio.volume === 0.5;
 
 // ---- 淡入淡出 ----
 // 只动 audio.volume：播放地址在第三方 CDN 上、不保证带 CORS，接 Web Audio 增益节点会被浏览器静音
@@ -115,12 +119,17 @@ function softPause() {
 
 /** 播放并淡入：暂停中的从静音起，淡出到一半的从当前音量接着淡回来 */
 function softPlay(): Promise<void> {
+  if (!canFade) {
+    gain = 1;
+    applyVolume();
+    return audio.play();
+  }
   const id = ++fadeId;
   if (pausing) {
     pausing = false;
     set({ playing: true });
   } else if (audio.paused) {
-    gain = canFade ? 0 : 1;
+    gain = 0;
     applyVolume();
   }
   // 等真正出声再淡入，缓冲的那段不白白耗掉渐变
@@ -186,28 +195,30 @@ export const audioDuration = () => (Number.isFinite(audio.duration) ? audio.dura
 export const isAudioPlaying = audible;
 
 // ---- 持久化 ----
-let lastSaved = '';
+let lastSaved = get();
 playerStore.subscribe(() => {
   const { queue, index, volume, mode } = get();
-  const snap = JSON.stringify({ queue, index, volume, mode });
-  if (snap !== lastSaved) {
-    lastSaved = snap;
-    writeJSON(SAVE_KEY, { queue, index, volume, mode });
-  }
+  if (queue === lastSaved.queue && index === lastSaved.index && volume === lastSaved.volume && mode === lastSaved.mode) return;
+  lastSaved = get();
+  writeJSON(SAVE_KEY, { queue, index, volume, mode });
 });
 
 // ---- <audio> 事件 ----
 /** 换歌时上一首还在淡出：它的进度和播完不能算到新歌头上 */
 const outgoing = () => !!loaded && loaded.id !== currentTrack()?.id;
-audio.addEventListener('timeupdate', () => { if (!outgoing()) set({ position: audio.currentTime * 1000 }); });
+function syncPosition() {
+  if (!outgoing() && !(androidClient && document.hidden)) set({ position: audio.currentTime * 1000 });
+}
+audio.addEventListener('timeupdate', syncPosition);
+if (androidClient) document.addEventListener('visibilitychange', syncPosition);
 audio.addEventListener('durationchange', () => {
   if (Number.isFinite(audio.duration)) set({ duration: audio.duration * 1000 });
 });
-audio.addEventListener('play', () => set({ playing: true }));
+audio.addEventListener('play', () => { if (!androidClient) set({ playing: true }); });
 audio.addEventListener('pause', () => set({ playing: false }));
 audio.addEventListener('waiting', () => set({ loading: true }));
 audio.addEventListener('playing', () => {
-  set({ loading: false });
+  set({ loading: false, playing: !audio.paused && !pausing });
   const t = currentTrack();
   if (t && !recentPushed) {
     recentPushed = true;

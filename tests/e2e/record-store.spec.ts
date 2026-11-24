@@ -25,13 +25,18 @@ const clientDownloads = { schemaVersion: 1, platforms: [
     artifacts: [artifact('android', 'apk', 'MiningQwQMusic-android-v1.0.9.apk', 1028139, 'b'.repeat(64))] },
 ] };
 
-function wav() {
-  const length = 8000 * 30 * 2;
+function wav(seconds = 30, frequency = 0) {
+  const length = 8000 * seconds * 2;
   const out = Buffer.alloc(44 + length);
   out.write('RIFF'); out.writeUInt32LE(length + 36, 4); out.write('WAVEfmt ', 8);
   out.writeUInt32LE(16, 16); out.writeUInt16LE(1, 20); out.writeUInt16LE(1, 22);
   out.writeUInt32LE(8000, 24); out.writeUInt32LE(16000, 28); out.writeUInt16LE(2, 32);
   out.writeUInt16LE(16, 34); out.write('data', 36); out.writeUInt32LE(length, 40);
+  if (frequency) {
+    for (let sample = 0; sample < length / 2; sample++) {
+      out.writeInt16LE(Math.round(8000 * Math.sin(sample * 2 * Math.PI * frequency / 8000)), 44 + sample * 2);
+    }
+  }
   return out;
 }
 
@@ -307,6 +312,58 @@ test('play, pause and switching songs fade the audio in and out', async ({ page 
   await expect.poll(volume, { intervals: [10] }).toBeLessThan(0.3);
   await expect.poll(volume).toBeCloseTo(0.8);
   await expect(bar.getByRole('button', { name: '暂停', exact: true })).toBeVisible();
+});
+
+test.describe('Android APK', () => {
+  test.use({ userAgent: devices['Pixel 7'].userAgent + ' MiningQwQMusicAndroid/1.0.5' });
+
+  test('outputs both tones at user volume across natural queue advance', async ({ page }) => {
+    await backend(page);
+    for (const [i, track] of tracks.entries()) {
+      const url = '/tone-' + track.id + '.wav';
+      const body = wav(i === 0 ? 3 : 12, i === 0 ? 440 : 880);
+      await page.route('**' + url, route => route.fulfill({ contentType: 'audio/wav', body }));
+      await page.route('**/track/' + track.id + '/play-url*', route =>
+        route.fulfill({ json: { code: 0, data: { url, preview: false } } }));
+    }
+    await page.addInitScript(() => {
+      const play = HTMLMediaElement.prototype.play;
+      let analyser: AnalyserNode;
+      const volumes: number[] = [];
+      HTMLMediaElement.prototype.play = function () {
+        if (!analyser) {
+          const context = new AudioContext();
+          analyser = context.createAnalyser();
+          context.createMediaElementSource(this).connect(analyser).connect(context.destination);
+          void context.resume();
+          // The page is hidden when the first track finishes. Keep the real
+          // decoder, ended event, URL resolution and audio output graph.
+          this.addEventListener('ended', () => Object.defineProperty(document, 'hidden', { value: true }), { once: true, capture: true });
+          Object.assign(window, { readTone: () => {
+            const bins = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(bins);
+            const level = Math.max(...bins);
+            return { hz: bins.indexOf(level) * context.sampleRate / analyser.fftSize, level, volumes };
+          } });
+        }
+        volumes.push(this.volume);
+        return play.call(this);
+      };
+    });
+    await page.goto('/#/search?q=晨光&type=song');
+    await page.locator('.track .t').first().click();
+    const signal = () => page.evaluate(() => (window as unknown as {
+      readTone(): { hz: number; level: number; volumes: number[] }
+    }).readTone());
+    for (const frequency of [440, 880]) {
+      await expect.poll(async () => {
+        const { hz, level } = await signal();
+        return level > 80 && Math.abs(hz - frequency) < 35;
+      }, { timeout: 12000, intervals: [60] }).toBe(true);
+    }
+    expect((await signal()).volumes).toEqual([0.8, 0.8]);
+    await expect(page.locator('.player .np-title')).toHaveText(tracks[1].name);
+  });
 });
 
 test.describe('iPhone', () => {

@@ -20,6 +20,7 @@ import { watchListen } from './lib/listen';
 import { applyGlobalTint, DEFAULT_TINT, tintOf, type Tint } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
 import { getSettings, motionEnabled, subscribeSettings } from './lib/settings';
+import { useSwipeNav } from './lib/swipeNav';
 import { useStore } from './lib/store';
 import { currentTrack, next, playerStore, prev, seek, toggle } from './player/player';
 import { uiStore } from './player/ui';
@@ -163,6 +164,7 @@ export function App() {
   const mainRef = useRef<HTMLElement>(null);
 
   useShortcuts();
+  useSwipeNav(mainRef, route.path);
 
   useEffect(() => {
     const stop = watchSessionRecovery();

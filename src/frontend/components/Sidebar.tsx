@@ -53,17 +53,25 @@ export function Sidebar() {
   useLayoutEffect(() => {
     const box = navRef.current;
     const pill = pillRef.current;
-    const el = box?.querySelector<HTMLElement>('a.on');
     if (!box || !pill) return;
-    if (!el) {
-      pill.style.opacity = '0';
-      return;
-    }
-    const vertical = getComputedStyle(box).flexDirection === 'column';
-    pill.style.opacity = '1';
-    pill.style.width = `${el.offsetWidth}px`;
-    pill.style.height = `${el.offsetHeight}px`;
-    pill.style.transform = vertical ? `translateY(${el.offsetTop}px)` : `translateX(${el.offsetLeft}px)`;
+    const place = () => {
+      const el = box.querySelector<HTMLElement>('a.on');
+      // 当前页不在导航里，或者这一项在手机上收起来了（搜索）
+      if (!el || !el.offsetWidth) {
+        pill.style.opacity = '0';
+        return;
+      }
+      const vertical = getComputedStyle(box).flexDirection === 'column';
+      pill.style.opacity = '1';
+      pill.style.width = `${el.offsetWidth}px`;
+      pill.style.height = `${el.offsetHeight}px`;
+      pill.style.transform = vertical ? `translateY(${el.offsetTop}px)` : `translateX(${el.offsetLeft}px)`;
+    };
+    place();
+    // 手机顶栏里导航项会跟着右边的私信、头像出现与否变宽变窄，指示条要跟上
+    const ro = new ResizeObserver(place);
+    ro.observe(box);
+    return () => ro.disconnect();
   }, [section]);
 
   return (
@@ -80,11 +88,18 @@ export function Sidebar() {
       <div className="nav" ref={navRef}>
         <span className="nav-pill" ref={pillRef} aria-hidden="true" />
         {nav.map((n) => (
-          <a key={n.key} href={n.to} className={section === n.key ? 'on' : ''} aria-current={section === n.key ? 'page' : undefined}>
+          <a key={n.key} href={n.to} data-key={n.key || 'home'} className={section === n.key ? 'on' : ''} aria-current={section === n.key ? 'page' : undefined}>
             {n.label}
           </a>
         ))}
       </div>
+
+      {/* 手机上的搜索入口：导航里的「搜索」收起来，单独一条整宽的搜索栏，单手好点、不会误触旁边的导航项。
+          到了搜索页就让位给页面自己的搜索框（同一个位置） */}
+      <a href={href.search()} className={`side-search ${section === 'search' ? 'on' : ''}`} aria-label="搜索">
+        <Icon name="search" />
+        <span className="side-search-text" aria-hidden="true">搜索歌曲、艺人、歌单</span>
+      </a>
 
       <div className="side-foot">
         {status === 'authenticated' && user && (

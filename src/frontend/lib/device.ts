@@ -6,3 +6,6 @@ export const isIPhone = () => typeof navigator !== 'undefined' && /iPhone|iPod/.
 /** iPadOS 默认伪装成 Mac，靠触摸点数认出来 */
 export const isIOS = () =>
   isIPhone() || /iPad/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/** 安卓（浏览器和安卓客户端的 WebView 都算）：主内容区左右滑动切换一级页面只在这里开 */
+export const isAndroid = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);

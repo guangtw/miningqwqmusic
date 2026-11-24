@@ -6483,6 +6483,93 @@ html {
   }
 }
 
+/* ============ 手机顶栏：导航一行，搜索栏单独一行（#12） ============
+   原来「搜索」挤在一排导航里，40×34 的字块，单手很难点准、容易点到旁边的榜单。
+   手机上把它从导航里拿出来，在导航下面放一条整宽的搜索栏；导航剩四项，每项也跟着变宽。 */
+.side-search {
+  display: none;
+}
+@media (max-width: 860px) {
+  /* 第一行：唱片标志 · 导航（靠右）· 私信和头像；第二行：搜索栏 */
+  .side {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: 'brand nav foot' 'search search search';
+    row-gap: 10px;
+  }
+  .side .brand {
+    grid-area: brand;
+  }
+  .side .nav {
+    grid-area: nav;
+    justify-self: end;
+    max-width: 100%;
+    margin: 0;
+  }
+  .side .side-foot {
+    grid-area: foot;
+  }
+  .side .nav a[data-key='search'] {
+    display: none;
+  }
+  .side .nav a {
+    flex: 0 1 auto;
+    width: 64px;
+    min-width: 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    text-align: center;
+  }
+  .side-search {
+    grid-area: search;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+    padding: 0 16px 0 14px;
+    border-radius: 22px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow-1);
+    color: var(--ink-3);
+    font-size: 15px;
+    transition: border-color 0.2s, transform 0.3s var(--ease-spring);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .side-search:active {
+    transform: scale(0.985);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  }
+  .side-search svg {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    color: var(--ink-2);
+  }
+  .side-search-text {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* 搜索页自己的大搜索框就在这个位置，顶栏这条让出来 */
+  .side-search.on {
+    display: none;
+  }
+  /* 安卓上主内容区横滑切页（#13）：横向的拖动交给脚本，竖向滚动和双指缩放照旧 */
+  .main.swipe-nav {
+    touch-action: pan-y pinch-zoom;
+  }
+}
+@media (max-width: 420px) {
+  .side {
+    row-gap: 8px;
+  }
+  .side .nav a {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
+
 /* ============ 私信里的音乐卡片：一张封套，后面藏着半张唱片 ============ */
 .msg.has-card .bubble + .mcard {
   margin-top: 4px;

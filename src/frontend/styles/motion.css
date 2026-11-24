@@ -323,6 +323,20 @@ html:not([data-vt]):not([data-deck-anim]) .player {
   }
 }
 
+/* These entrance effects end at the underlying style. Release their layers once
+   the last frame has played so scrolling under the mobile glass stays cheap. */
+@media (max-width: 860px) {
+  .home .reveal,
+  .mast-d,
+  .epigraph::before,
+  .epigraph-label,
+  .epigraph-text .ch,
+  .epigraph-tr,
+  .epigraph-src {
+    animation-fill-mode: backwards;
+  }
+}
+
 /* 详情页 / 封面故事：唱片从封套里滑出来，带一点回弹 */
 .detail-vinyl,
 .feature-vinyl {

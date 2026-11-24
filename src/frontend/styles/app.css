@@ -439,6 +439,8 @@ img {
     radial-gradient(circle, transparent 0 94%, rgba(255, 255, 255, 0.07) 95%, transparent 97%),
     repeating-radial-gradient(circle, #151517 0 1px, #0a0a0b 1.4px 2.6px);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.vinyl-disc[data-can-spin] {
   will-change: transform;
 }
 .vinyl-label {

@@ -24,6 +24,9 @@
 .dock {
   display: none;
 }
+.player-slot {
+  display: contents;
+}
 @media (max-width: 860px) {
   :root {
     --dock-h: 62px;
@@ -61,6 +64,21 @@
     display: block;
     height: var(--dock-h);
     pointer-events: none;
+    contain: size layout style;
+  }
+  /* Keep the morph's layout roots as small as the dock. The player still measures
+     its insets from the same bottom edge. Shadows can paint beyond the slot. */
+  .player-slot {
+    display: block;
+    position: fixed;
+    inset: auto 0 0;
+    height: var(--dock-full);
+    contain: size layout style;
+    pointer-events: none;
+    z-index: 40;
+  }
+  .player-slot > .player {
+    pointer-events: auto;
   }
   .main {
     isolation: isolate;

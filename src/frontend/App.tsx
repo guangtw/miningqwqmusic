@@ -198,7 +198,9 @@ export function App() {
         <View route={route} />
       </main>
       <TabBar />
-      <PlayerBar />
+      <div className="player-slot">
+        <PlayerBar />
+      </div>
       <NowPlaying />
       <QueueDrawer />
       <ListenDrawer />

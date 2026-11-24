@@ -289,7 +289,19 @@ test('vertical scroll, horizontal rails, screen edges, inputs and detail pages k
   const main = page.locator('.main');
 
   // 竖着划：照常滚动，不切页
+  const tabReads = await page.evaluateHandle(() => {
+    const reads = { count: 0 };
+    document.querySelectorAll<HTMLAnchorElement>('.dock-pill a').forEach((tab) => {
+      const measure = tab.getClientRects.bind(tab);
+      tab.getClientRects = () => {
+        reads.count++;
+        return measure();
+      };
+    });
+    return reads;
+  });
   await drag(page, { x: 200, y: 640 }, { x: 214, y: 300 });
+  expect(await tabReads.evaluate((reads) => reads.count)).toBe(0);
   expect(await hash(page)).toBe('#/');
   expect(await main.evaluate((m) => m.scrollTop)).toBeGreaterThan(100);
   await main.evaluate((m) => m.scrollTo(0, 0));

@@ -71,7 +71,8 @@ export function useSwipeNav(mainRef: RefObject<HTMLElement>, path: string) {
     let g: {
       x: number;
       y: number;
-      t: number;
+      target: Element;
+      hash: string;
       lastX: number;
       lastT: number;
       v: number;
@@ -101,28 +102,22 @@ export function useSwipeNav(mainRef: RefObject<HTMLElement>, path: string) {
       const t = e.touches[0];
       if (t.clientX < EDGE || t.clientX > window.innerWidth - EDGE) return;
       const target = e.target as Element;
-      if (main.contains(target)) {
-        if (ownsHorizontal(target, main)) return;
-      } else {
+      if (!main.contains(target)) {
         // 上一次切页的过渡还在播（连着划的时候）：整页盖着过渡层，触摸落在根元素上，按坐标判断是不是在主内容区
         if (!document.documentElement.dataset.vt || target !== document.documentElement) return;
         const inside = (r?: DOMRect) => !!r && t.clientX >= r.left && t.clientX <= r.right && t.clientY >= r.top && t.clientY <= r.bottom;
         if (!inside(main.getBoundingClientRect()) || inside(document.querySelector('.player')?.getBoundingClientRect())) return;
       }
-      const tabs = visibleTabs();
-      const at = tabs.indexOf(currentHash());
-      if (at < 0) return;
       const now = performance.now();
       g = {
         x: t.clientX,
         y: t.clientY,
-        t: now,
+        target: target === document.documentElement ? main : target,
+        hash: currentHash(),
         lastX: t.clientX,
         lastT: now,
         v: 0,
         mode: 'pending',
-        prev: tabs[at - 1],
-        next: tabs[at + 1],
         page: main.firstElementChild as HTMLElement | null,
         animate: motionEnabled(),
       };
@@ -145,6 +140,19 @@ export function useSwipeNav(mainRef: RefObject<HTMLElement>, path: string) {
           g.mode = 'off';
           return;
         }
+        // 竖滑不需要查祖先的计算样式和底栏按钮的尺寸，尤其在底栏正收展时。
+        if (currentHash() !== g.hash || !main.contains(g.target) || ownsHorizontal(g.target, main)) {
+          g.mode = 'off';
+          return;
+        }
+        const tabs = visibleTabs();
+        const at = tabs.indexOf(g.hash);
+        if (at < 0) {
+          g.mode = 'off';
+          return;
+        }
+        g.prev = tabs[at - 1];
+        g.next = tabs[at + 1];
         g.mode = 'swipe';
       }
       const now = performance.now();

@@ -10,14 +10,16 @@ const REV_MS = 1800;
  * 让元素像唱片一样转：转速用弹簧逼近目标，
  * 开始播放时慢慢转起来，暂停时带着惯性慢慢停下。
  */
-export function useSpin(ref: React.RefObject<HTMLElement>, spinning: boolean) {
+export function useSpin(ref: React.RefObject<HTMLElement>, spinning?: boolean) {
   const anim = useRef<Animation | null>(null);
   const spring = useRef(new Spring(0, 14, 7));
   const raf = useRef(0);
+  // Decorative records never rotate independently of their sleeves.
+  const canSpin = spinning !== undefined;
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || !el.animate) return;
+    if (!canSpin || !el?.animate) return;
     anim.current = el.animate([{ transform: 'rotate(0turn)' }, { transform: 'rotate(1turn)' }], {
       duration: REV_MS,
       iterations: Infinity,
@@ -26,8 +28,9 @@ export function useSpin(ref: React.RefObject<HTMLElement>, spinning: boolean) {
     return () => {
       cancelAnimationFrame(raf.current);
       anim.current?.cancel();
+      anim.current = null;
     };
-  }, [ref]);
+  }, [ref, canSpin]);
 
   useEffect(() => {
     const a = anim.current;
@@ -64,7 +67,7 @@ interface VinylProps {
  * 所以转起来时能看到光在纹路上「流」。
  */
 export const Vinyl = forwardRef<HTMLDivElement, VinylProps>(function Vinyl(
-  { cover, spinning = false, className = '', labelPx = 160 },
+  { cover, spinning, className = '', labelPx = 160 },
   outerRef,
 ) {
   const discRef = useRef<HTMLDivElement>(null);
@@ -72,7 +75,7 @@ export const Vinyl = forwardRef<HTMLDivElement, VinylProps>(function Vinyl(
   const label = sized(cover, labelPx);
   return (
     <div ref={outerRef} className={`vinyl ${className}`}>
-      <div ref={discRef} className="vinyl-disc">
+      <div ref={discRef} className="vinyl-disc" data-can-spin={spinning === undefined ? undefined : ''}>
         <div className="vinyl-label">{label && <img src={label} alt="" decoding="async" />}</div>
       </div>
       <div className="vinyl-sheen" aria-hidden="true" />

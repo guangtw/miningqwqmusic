@@ -79,7 +79,7 @@ try {
   const id = 'echo-' + new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14) + '-' + musicCommit.slice(0, 8);
   const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'echo-publish-'));
   console.log('Release:', id, '\nExact source:', musicCommit, loginCommit, '\nWork directory:', stage);
-  const helpers = ['deploy-echo.cjs', 'account-migrations.cjs', 'music-source-config.cjs', 'music-egress.cjs', 'verify-music-egress.cjs', 'verify-login-protection.cjs', 'verify-account-session.cjs', 'verify-listen-session.cjs', 'verify-membership-session.cjs', 'verify-social-playlist-session.cjs', 'install-client-downloads.cjs', 'sync-client-downloads.mjs', 'verify-client-downloads.cjs', 'run-echo-release.sh'];
+  const helpers = ['deploy-echo.cjs', 'release-mail-check.cjs', 'account-migrations.cjs', 'music-source-config.cjs', 'music-egress.cjs', 'verify-music-egress.cjs', 'verify-login-protection.cjs', 'verify-account-session.cjs', 'verify-listen-session.cjs', 'verify-membership-session.cjs', 'verify-social-playlist-session.cjs', 'install-client-downloads.cjs', 'sync-client-downloads.mjs', 'verify-client-downloads.cjs', 'run-echo-release.sh'];
   exportCommit(root, 'music', [...runtime, ...checkFiles, ...helpers.map(name => 'ops/scripts/' + name)], stage);
   exportCommit(loginRoot, 'login', [...loginRuntime, ...checkFiles], stage);
   const pack = path.join(stage, 'release');
@@ -128,6 +128,7 @@ try {
     if (result) {
       const state = JSON.parse(result);
       if (state.id !== id || state.status !== 'success') throw Error('Server release failed; previous services restored where necessary. Log: ' + remote + '/job.log');
+      if (state.mailStatus === 'auth-warning') console.warn('SMTP_AUTH_WARNING: provider rejected previously verified credentials; mail delivery may be affected.');
       complete = true;
       break;
     }

@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { execFileSync, spawn } = require('child_process');
 const { normalizeLegacyUnblockSources, setEnvValues } = require('./music-source-config.cjs');
 const { selectAccountMigrations } = require('./account-migrations.cjs');
+const { checkReleaseMail, probe } = require('./release-mail-check.cjs');
 if (process.getuid?.() !== 0) throw Error('Deployment requires the authorized sudo account');
 const packageDir = path.resolve(process.argv[2] || '');
 if (!packageDir.startsWith('/home/aiops/releases/')) throw Error('Unexpected package directory');
@@ -189,13 +190,15 @@ function verifyLoopbackListeners() {
     if (!listeners.length || listeners.some(line => !line.includes('127.0.0.1:' + port + ' '))) throw Error('Public trusted-proxy listener detected: ' + port);
   }
 }
-function liveAccountQa(origin) {
+let mailStatus;
+async function liveAccountQa(origin) {
   execFileSync(node, [path.join(packageDir, 'ops/verify-client-downloads.cjs'), origin,
     path.join(musicRelease, 'src/lib/client-downloads/catalog.json')], { stdio: 'inherit', timeout: 90000 });
-  if (fs.existsSync(musicBase + '/shared/mail.env')) {
-    execFileSync(node, ['scripts/mail-channel.mjs', '--verify'], { cwd: loginRelease, stdio: 'inherit', timeout: 35000 });
-    console.log('SMTP_AUTHENTICATION_REGRESSION_PASSED');
-  }
+  mailStatus = await checkReleaseMail({
+    loginCommit: manifest.loginCommit, loginDir: loginRelease, mailFile: musicBase + '/shared/mail.env',
+    receiptFile: musicBase + '/shared/deploy-backups/smtp-verification.json', verify: () => probe(node, loginRelease)
+  });
+  console.log('SMTP_RELEASE_CHECK', mailStatus);
   execFileSync(node, [path.join(packageDir, 'ops/verify-login-protection.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-account-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 150000 });
   execFileSync(node, [path.join(packageDir, 'ops/verify-listen-session.cjs'), origin, loginRelease], { stdio: 'inherit', timeout: 90000 });
@@ -239,7 +242,7 @@ let failed = false;
     ACCOUNT_PUBLIC_ORIGIN: 'http://127.0.0.1:3101' });
   await ready(3102, true);
   await ready(3101);
-  liveAccountQa('http://127.0.0.1:3101');
+  await liveAccountQa('http://127.0.0.1:3101');
   let loginChanged = false;
   let musicChanged = false;
   let musicEnvChanged = false;
@@ -262,7 +265,7 @@ let failed = false;
     configureMusic(musicBase + '/current');
     await ready(3001);
     verifyLoopbackListeners();
-    liveAccountQa('https://echo.miningqwq.cn');
+    await liveAccountQa('https://echo.miningqwq.cn');
     const receipt = await (await fetchLocal('https://echo.miningqwq.cn/__deployment.json?check=' + manifest.id)).json();
     if (receipt.id !== manifest.id || receipt.musicCommit !== manifest.musicCommit || receipt.loginCommit !== manifest.loginCommit) throw Error('Public release receipt mismatch');
     const homepage = await fetchLocal('https://echo.miningqwq.cn');
@@ -301,5 +304,5 @@ let failed = false;
       console.log('CANDIDATE_STOPPED', candidate.port);
     } catch (e) { console.error('Candidate cleanup:', e.message); }
   }
-  fs.writeFileSync(packageDir + '/result.json', JSON.stringify({ id: manifest.id, status: failed ? 'failed' : 'success', finishedAt: new Date().toISOString() }), { mode: 0o644 });
+  fs.writeFileSync(packageDir + '/result.json', JSON.stringify({ id: manifest.id, status: failed ? 'failed' : 'success', mailStatus, finishedAt: new Date().toISOString() }), { mode: 0o644 });
 });

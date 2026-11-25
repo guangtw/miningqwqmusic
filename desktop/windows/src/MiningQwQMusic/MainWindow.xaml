@@ -43,5 +43,8 @@
                 </StackPanel>
             </Grid>
         </Grid>
+        <!-- Keep client-area input out of WebView2 underneath the system caption buttons. -->
+        <Border x:Name="CaptionInputShield" Grid.RowSpan="2" Canvas.ZIndex="20" Background="Transparent"
+                HorizontalAlignment="Right" VerticalAlignment="Top" AutomationProperties.AccessibilityView="Raw"/>
     </Grid>
 </Window>

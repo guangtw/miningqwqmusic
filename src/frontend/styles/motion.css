@@ -171,7 +171,9 @@ html[data-deck-anim] .player {
   backdrop-filter: none;
   background: var(--glass-solid);
 }
-html[data-deck-anim] .nowplaying * {
+/* 只管歌词行：写成 .nowplaying * 的话，一打上 data-deck-anim 整块面板（全页大半元素）都要重算样式，
+   iPhone 点唱片那一下多卡几十毫秒（#22） */
+html[data-deck-anim] .nowplaying :is(.lyric-line, .lyric-line span) {
   transition: none !important;
 }
 

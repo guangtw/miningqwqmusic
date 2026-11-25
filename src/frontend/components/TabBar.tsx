@@ -94,7 +94,8 @@ export function TabBar() {
   // 收展动画只在「真的在收展」时开着（<html data-dock-anim>，refresh.css 第 1 节）：
   // 切页、开合唱机这些过渡结束时，底栏从过渡期的画法换回平时的画法，盒子、唱片的位置会一下子变，
   // 动画要是一直开着，浏览器会把这一下也当成收展演 0.6 秒——唱片从左边横穿导航滑回右边（#18）。
-  // 过渡期间（data-vt / data-deck-anim）不开：那时的收展由过渡里的画法自己演
+  // 视图过渡期间收展（换页时自动展开）也写上：过渡里的画法靠它才演宽度变化；过渡一结束 motion.ts 连同 data-vt 一起撤掉。
+  // iPhone 开合唱机（data-deck-anim）期间不开
   const firstDock = useRef(true);
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -104,7 +105,7 @@ export function TabBar() {
       firstDock.current = false;
       return;
     }
-    if (root.dataset.vt || root.dataset.deckAnim) return;
+    if (root.dataset.deckAnim) return;
     root.dataset.dockAnim = '';
     const t = setTimeout(() => delete root.dataset.dockAnim, MORPH_MS);
     return () => {

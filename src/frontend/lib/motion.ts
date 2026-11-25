@@ -47,6 +47,8 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
   finished = vt.finished.catch(() => undefined).finally(() => {
     running = false;
     delete root.dataset.vt;
+    // 过渡里收展过的话，换回平时的画法时不能再演一遍（#18）
+    delete root.dataset.dockAnim;
   });
 }
 

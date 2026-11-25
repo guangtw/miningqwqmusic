@@ -150,22 +150,64 @@
     border-radius: calc(var(--dock-h) / 2) 0 0 calc(var(--dock-h) / 2);
     pointer-events: none;
   }
+  /* ---- 阴影（#24） ----
+     --shadow-2 的大投影是 0 24px 60px -24px：形状先缩 24px 再糊 60px。一颗 62px 的圆缩完只剩 14px，影子很淡；
+     长条缩完还是长条，影子浓。所以不能「端头用圆的影子、其余用长条的影子」在圆心处一刀拼起来——拼缝处明暗突变，
+     就是截图里圆心正下方的两道硬竖边，中间夹一条灰带。
+     现在分两套，按形状交叉淡入淡出（只动 opacity，走合成器）：
+     - 是长条时：拼缝挪到长条中段（离固定端 --shade-seam = 130px，离会动的那端也有一百多 px，都超出模糊范围），
+       固定端那根胶囊越过拼缝再伸 150px，跟着走的长条往固定端那边也多伸 150px，拼缝两侧都是同一条直边的投影，接得上
+     - 缩成圆时：就是一颗圆自己的影子（::before），和真的圆一模一样 */
   .dock-shade {
+    --shade-seam: 130px;
     border-radius: 0;
+  }
+  .dock-shade::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--dock-h);
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: var(--shadow-2);
   }
   .dock-shade-cap {
     right: auto !important;
-    width: var(--dock-h);
+    width: calc(var(--shade-seam) + 150px);
     box-shadow: var(--shadow-2);
-    clip-path: inset(-120px 50% -120px -120px);
+    clip-path: inset(-120px calc(100% - var(--shade-seam)) -120px -120px);
   }
   .dock-shade .dock-shade-clip {
     border-radius: 0;
-    clip-path: inset(-120px -120px -120px calc(var(--dock-h) / 2));
+    clip-path: inset(-120px -120px -120px var(--shade-seam));
   }
   .dock-shade-run {
-    box-shadow: var(--shadow-2);
     transform: translateX(var(--run-shift));
+  }
+  .dock-shade-run::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 0 -150px;
+    border-radius: calc(var(--dock-h) / 2);
+    box-shadow: var(--shadow-2);
+  }
+  /* 长条那套和圆那套：同一时刻只露一套 */
+  .dock-shade::before,
+  .dock-shade-cap,
+  .dock-shade .dock-shade-clip {
+    will-change: opacity;
+  }
+  .dock-shade::before,
+  .dock.min .dock-pill .dock-shade-cap,
+  .dock.min .dock-pill .dock-shade-clip,
+  .dock:not(.min) .dock-shade-player .dock-shade-cap,
+  .dock:not(.min) .dock-shade-player .dock-shade-clip {
+    opacity: 0;
+  }
+  .dock.min .dock-pill .dock-shade::before,
+  .dock:not(.min) .dock-shade-player::before {
+    opacity: 1;
   }
   /* 播放台的阴影：右端固定，长条往右让 */
   .dock-shade-player {
@@ -175,13 +217,20 @@
   .dock.min .dock-shade-player {
     --run-shift: 0px;
   }
+  .dock-shade-player::before {
+    left: auto;
+    right: 0;
+  }
   .dock-shade-player .dock-shade-cap {
     left: auto !important;
     right: 0 !important;
-    clip-path: inset(-120px -120px -120px 50%);
+    clip-path: inset(-120px -120px -120px calc(100% - var(--shade-seam)));
   }
   .dock-shade-player .dock-shade-clip {
-    clip-path: inset(-120px calc(var(--dock-h) / 2) -120px -120px);
+    clip-path: inset(-120px var(--shade-seam) -120px -120px);
+  }
+  .dock-shade-player .dock-shade-run::before {
+    inset: 0 -150px 0 0;
   }
 
   /* 页面导航：四五个标签的位置固定，收起时各自平移、淡出 */
@@ -400,6 +449,12 @@
     transition-duration: 0.6s, 0.3s, 0.2s;
     transition-timing-function: var(--dock-ease), ease, ease;
   }
+  html[data-dock-anim]:not([data-vt]) :is(.dock-shade-cap, .dock-shade-clip) {
+    transition: opacity 0.45s ease;
+  }
+  html[data-dock-anim]:not([data-vt]) .dock-shade::before {
+    transition: opacity 0.45s ease;
+  }
   html[data-dock-anim]:not([data-vt]) .dock-tabs a.cur svg {
     transition: transform 0.6s var(--dock-ease);
   }
@@ -426,6 +481,10 @@
     backdrop-filter: blur(24px) saturate(1.7);
     border: 1px solid var(--line);
     box-shadow: var(--shadow-2), inset 0 1px 0 var(--q-sheen);
+  }
+  /* 只在过渡期间真的收展（换页时自动展开）才演宽度。一进过渡胶囊就从「整行宽的裁剪盒」换成「自己带玻璃、按露出来的长度定宽」，
+     宽度一下子从整行变成让出右边那颗圆；过渡一直开着的话，这一下会被演成右沿先盖过唱片、再缩回来（#23） */
+  html[data-vt][data-dock-anim] .dock-pill {
     transition: width 0.6s var(--dock-ease);
   }
   html[data-vt] :is(.dock-skin, .dock-skin-cap, .dock-shade) {
@@ -451,6 +510,11 @@
   filter: blur(72px) saturate(1.6);
   opacity: var(--np-art-a);
   animation: fade-in 1.2s var(--ease-soft) both;
+}
+/* 预先糊好的小图（bakedArt.ts）：拉伸铺满同一个盒子，不再挂滤镜（#22） */
+.np-art.baked {
+  background-size: 100% 100%;
+  filter: none;
 }
 .nowplaying:not(.open) .np-art,
 html[data-device='iphone'] .np-art {

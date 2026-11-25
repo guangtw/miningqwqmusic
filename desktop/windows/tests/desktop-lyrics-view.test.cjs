@@ -1,11 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { sweep, createClock, transition } = require('../src/MiningQwQMusic/Assets/desktop-lyrics-view.js');
 
 test('sweep matches the player lineProgress for every line of a timeline', async () => {
   // Node 22 strips the type-only import in lrc.ts.
-  const { lineProgress } = await import(path.join(__dirname, '../../../src/frontend/lib/lrc.ts'));
+  const { lineProgress } = await import(pathToFileURL(path.join(__dirname, '../../../src/frontend/lib/lrc.ts')).href);
   const lines = [
     { timeMs: 1000, text: '我们的歌声穿过夜色' },
     { timeMs: 5000, text: '短' },

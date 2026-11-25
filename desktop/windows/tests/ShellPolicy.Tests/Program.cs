@@ -26,3 +26,15 @@ foreach (var payload in new[] { "[]", "{}", "{\"type\":1}", "{\"type\":\"desktop
     if (DesktopRequest.TryParse(json.RootElement, out _)) throw new Exception("Invalid desktop request accepted");
 }
 Console.WriteLine("PASS: desktop capability request allowlist and value types");
+using (var json = System.Text.Json.JsonDocument.Parse("""
+    {"type":"desktop-lyric","title":"Song","artist":"Artist","primary":"Line","secondary":"Translation","start":1000,"end":4500,"position":2410,"playing":true,"reduced":false}
+    """))
+{
+    if (DesktopLyricFrame.Read(json.RootElement) is not { Start: 1000, End: 4500, Position: 2410, Playing: true })
+        throw new Exception("Lyric frame timing must retain millisecond precision");
+}
+using (var json = System.Text.Json.JsonDocument.Parse("""{"title":"","artist":"","primary":"","secondary":"","start":4500,"end":1000}"""))
+{
+    if (DesktopLyricFrame.Read(json.RootElement) is not null) throw new Exception("Inverted lyric timestamps accepted");
+}
+Console.WriteLine("PASS: desktop lyric frame decoding");

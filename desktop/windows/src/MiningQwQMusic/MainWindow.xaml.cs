@@ -30,6 +30,18 @@ public sealed partial class MainWindow : Window
     private readonly TrayIcon tray;
     private readonly nint hwnd;
     private CoreWebView2? Core => MusicWebView.CoreWebView2;
+    private Action<DesktopLyricFrame?>? lyricListeners;
+    private DesktopLyricFrame? lastLyric;
+    // Subscribe on the UI thread. A null frame clears the renderer on navigation or failure.
+    internal event Action<DesktopLyricFrame?> DesktopLyricsChanged
+    {
+        add { lyricListeners += value; value(lastLyric); UpdateWindowAppearance(); }
+        remove
+        {
+            lyricListeners -= value;
+            if (lyricListeners is null) { lastLyric = null; UpdateWindowAppearance(); }
+        }
+    }
 
     public MainWindow()
     {
@@ -141,7 +153,7 @@ public sealed partial class MainWindow : Window
                     ShowError("播放器意外停止", "重新打开播放器即可继续。登录和音乐库会保留。");
                 }
             };
-            foreach (var script in new[] { "desktop-bridge.js", "desktop-settings.js" })
+            foreach (var script in new[] { "desktop-bridge.js", "desktop-lyrics.js", "desktop-settings.js" })
                 await core.AddScriptToExecuteOnDocumentCreatedAsync(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", script)));
             initialized = true;
             core.Navigate(NavigationPolicy.Home.AbsoluteUri);
@@ -305,6 +317,12 @@ public sealed partial class MainWindow : Window
         {
             using var json = JsonDocument.Parse(args.WebMessageAsJson);
             var root = json.RootElement;
+            if (root.TryGetProperty("type", out var messageType) && messageType.GetString() == "desktop-lyric")
+            {
+                if (lyricListeners is not null && DesktopLyricFrame.Read(root) is { } frame)
+                    lyricListeners(lastLyric = frame);
+                return;
+            }
             if (root.TryGetProperty("type", out var type) && type.GetString() == "caption-layout")
             {
                 if (root.TryGetProperty("regions", out var regions) && regions.ValueKind == JsonValueKind.Array && regions.GetArrayLength() <= 32)
@@ -386,12 +404,16 @@ public sealed partial class MainWindow : Window
 
     private void ShowLoading()
     {
+        lastLyric = null;
+        lyricListeners?.Invoke(null);
         ErrorPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Visible;
         LoadingRing.IsActive = true;
     }
     private void ShowError(string title, string message)
     {
+        lastLyric = null;
+        lyricListeners?.Invoke(null);
         LoadingRing.IsActive = false;
         LoadingPanel.Visibility = Visibility.Collapsed;
         ErrorTitle.Text = title;
@@ -421,7 +443,7 @@ public sealed partial class MainWindow : Window
         if (Core is not { } core || !NavigationPolicy.IsTrusted(core.Source)) return;
         var scale = Root.XamlRoot?.RasterizationScale ?? 1;
         core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "window", fullScreen, captionInset = fullScreen ? 0 : AppWindow.TitleBar.RightInset / scale }));
-        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "desktop-settings", protocol = 1, closeToTray = preferences.CloseToTray, fullScreen }));
+        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "desktop-settings", protocol = 1, closeToTray = preferences.CloseToTray, fullScreen, desktopLyrics = lyricListeners is not null }));
     }
     private void SetDragRegions(JsonElement? regions = null)
     {

@@ -29,7 +29,7 @@ jobs:
           node-version: '22'
       - name: Validate native bridge and preferences
         run: |
-          node --test tests/desktop-bridge.test.cjs tests/desktop-settings.test.cjs
+          node --test tests/desktop-bridge.test.cjs tests/desktop-settings.test.cjs tests/desktop-lyrics.test.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Bridge checks failed' }
           dotnet run --project tests/ShellPolicy.Tests/ShellPolicy.Tests.csproj
           if ($LASTEXITCODE -ne 0) { throw 'Policy checks failed' }

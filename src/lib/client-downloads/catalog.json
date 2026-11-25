@@ -4,16 +4,16 @@
     {
       "platform": "windows",
       "name": "Windows",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "architecture": "x64",
-      "releaseTag": "windows-v1.0.0",
-      "publishedAt": "2026-11-01T13:30:25Z",
+      "releaseTag": "windows-v1.0.1",
+      "publishedAt": "2026-11-25T11:59:18Z",
       "artifacts": [
         {
           "variant": "installer",
-          "fileName": "MiningQwQMusic-Windows-1.0.0-x64-Setup.exe",
-          "size": 88154103,
-          "sha256": "4f17b68163dba7b7aefbd0f89b70afbb832ac98bf4f764c3554a107587dbd92b",
+          "fileName": "MiningQwQMusic-Windows-1.0.1-x64-Setup.exe",
+          "size": 88158721,
+          "sha256": "239d03f7b6f04d46f96fef23c1a31f5038d24180a429ddc96059be418c1fae54",
           "contentType": "application/vnd.microsoft.portable-executable"
         }
       ]

@@ -1,7 +1,7 @@
 // 安卓手机：Apple Music 式底栏（一个胶囊放五个页面 + 一个圆是缩起来的迷你播放台，下翻时两者换个个儿，#12）和主内容区左右滑动切换一级页面（#13）。
 // 只在 chromium-mobile（Pixel 7，412 宽，安卓 UA，可触摸）里跑；触摸用 CDP 发真实的 touchStart/Move/End，
 // 走浏览器自己的手势判定（touch-action、竖向滚动），不是直接调脚本。
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 
 const cover = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect width="40" height="40" fill="#c34c2b"/></svg>');
 const tracks = [101, 102].map((id, i) => ({ id: String(id), name: ['晨光唱片', '夜间列车'][i], artists: [{ id: 'a1', name: '测试艺人' }], album: { id: 'b1', name: '测试专辑', coverUrl: cover }, durationMs: 30000, coverUrl: cover }));
@@ -220,6 +220,166 @@ test('mobile navigation stays above the page throughout the route transition', a
   expect(layers.nav).toBeLessThan(layers.deck);
   expect(layers.blur).toContain('blur(24px)');
   await expect.poll(() => lens(page)).toBe(true);
+});
+
+/**
+ * 逐帧记下底栏：右边那张小唱片的圆心、播放台盒子自己的底色、两块玻璃露出来的范围，以及 data-vt / data-deck-anim。
+ * 过渡（切页、开合唱机）结束后底栏要原样停着：唱片不能从导航那边横穿回来，播放台盒子不能露出一条长底色（#18）
+ */
+const recordFrames = (page: Page) => page.evaluate(() => {
+  const w = window as unknown as { __dock: unknown[]; __dockStop?: () => void };
+  w.__dockStop?.();
+  w.__dock = [];
+  let on = true;
+  w.__dockStop = () => { on = false; };
+  const visible = (shell: string) => {
+    const s = document.querySelector(shell);
+    const f = document.querySelector(`${shell} .dock-skin-fill`);
+    if (!s || !f || !(s as HTMLElement).offsetWidth) return null;
+    const [a, b] = [s.getBoundingClientRect(), f.getBoundingClientRect()];
+    return { left: Math.max(a.left, b.left), right: Math.min(a.right, b.right) };
+  };
+  const loop = () => {
+    if (!on) return;
+    const root = document.documentElement;
+    const player = document.querySelector<HTMLElement>('.player');
+    const disc = document.querySelector('.player:not(.np-open) [aria-label="打开正在播放"]')?.getBoundingClientRect();
+    const flight = document.querySelector('.disc-flight')?.getBoundingClientRect();
+    const bg = player ? getComputedStyle(player).backgroundColor : '';
+    w.__dock.push({
+      vt: root.dataset.vt ?? '', deck: root.dataset.deckAnim ?? '', min: root.dataset.dock === 'min',
+      open: !!player?.classList.contains('np-open'),
+      disc: disc?.width ? disc.left + disc.width / 2 : null,
+      flight: flight?.width ? flight.left + flight.width / 2 : null,
+      boxFill: bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)' ? player!.getBoundingClientRect().width : 0,
+      pill: visible('.dock-pill .dock-skin'), bar: visible('.player-skin'),
+    });
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+});
+type DockFrame = { vt: string; deck: string; min: boolean; open: boolean; disc: number | null; flight: number | null; boxFill: number;
+  pill: { left: number; right: number } | null; bar: { left: number; right: number } | null };
+/** 等 ms 毫秒（至少覆盖过渡结束后 0.7 秒），停止记录并取回 */
+const framesAfter = async (page: Page, ms = 1700) => {
+  await page.waitForTimeout(ms);
+  return page.evaluate(() => {
+    const w = window as unknown as { __dock: DockFrame[]; __dockStop?: () => void };
+    w.__dockStop?.();
+    return w.__dock;
+  });
+};
+/** 平时（不在过渡里）的每一帧：唱片停在 rest，播放台盒子不画底色，两块玻璃左右分开 */
+const expectSettled = (frames: DockFrame[], rest: number) => {
+  const plain = frames.filter((f) => !f.vt && !f.deck && !f.open);
+  expect(plain.length).toBeGreaterThan(20);
+  for (const f of plain) {
+    expect(f.disc, JSON.stringify(f)).not.toBeNull();
+    expect(Math.abs(f.disc! - rest), JSON.stringify(f)).toBeLessThan(2);
+    expect(f.boxFill, JSON.stringify(f)).toBe(0);
+    if (f.pill && f.bar) expect(f.pill.right, JSON.stringify(f)).toBeLessThan(f.bar.left);
+  }
+};
+const playThenHome = async (page: Page) => {
+  await page.goto('/#/search?q=晨光&type=track');
+  await page.locator('.track .t').first().click();
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  await page.evaluate(() => (location.hash = '#/'));
+  await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
+  await expect(page.locator('html')).not.toHaveAttribute('data-vt');
+  await page.waitForTimeout(800);
+  const disc = (await page.getByRole('button', { name: '打开正在播放' }).boundingBox())!;
+  return disc.x + disc.width / 2;
+};
+
+test('switching pages, opening details and closing the record player leave the dock where it was', async ({ page }) => {
+  const rest = await playThenHome(page);
+  const dock = page.locator('.dock');
+
+  // 切一级页面，再切回来
+  await recordFrames(page);
+  await dock.locator('[data-key="charts"]').tap();
+  expectSettled(await framesAfter(page), rest);
+  await recordFrames(page);
+  await dock.locator('[data-key="home"]').tap();
+  expectSettled(await framesAfter(page), rest);
+
+  // 首页 → 歌单详情 → 返回（不是点底栏进的新页面）
+  await recordFrames(page);
+  await page.locator('.main .card .sleeve').first().tap();
+  await expect(page.locator('.detail-title')).toHaveText('本期精选');
+  expectSettled(await framesAfter(page), rest);
+  await recordFrames(page);
+  await page.goBack();
+  await expect.poll(() => hash(page)).toBe('#/');
+  const back = await framesAfter(page);
+  expectSettled(back, rest);
+  // 返回时滚回离开时的位置，那一下不是手指翻的：底栏不收起
+  expect(back.some((f) => f.min)).toBe(false);
+
+  // 开唱机、关唱机：唱片飞回右边那颗圆，落地后不再挪
+  await page.getByRole('button', { name: '打开正在播放' }).tap();
+  await expect(page.locator('.nowplaying')).toHaveClass(/open/);
+  await expect(page.locator('html')).not.toHaveAttribute('data-vt');
+  await recordFrames(page);
+  await page.locator('.np-head').getByRole('button', { name: /收起/ }).click();
+  expectSettled(await framesAfter(page), rest);
+
+  // 快速连点：过渡还没播完又点别的标签
+  await recordFrames(page);
+  await dock.locator('[data-key="radio"]').tap();
+  await dock.locator('[data-key="library"]').tap();
+  await page.waitForTimeout(150);
+  await dock.locator('[data-key="home"]').tap();
+  expectSettled(await framesAfter(page, 2200), rest);
+});
+
+test('the scroll fold still animates instead of snapping', async ({ page }) => {
+  await playThenHome(page);
+  await recordFrames(page);
+  await drag(page, { x: 200, y: 600 }, { x: 206, y: 250 });
+  await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+  const frames = await framesAfter(page, 300);
+  const widths = frames.filter((f) => f.pill).map((f) => f.pill!.right - f.pill!.left);
+  const [lo, hi] = [Math.min(...widths), Math.max(...widths)];
+  expect(hi - lo).toBeGreaterThan(150);
+  // 中间有过渡帧：不是一下子跳过去
+  expect(widths.filter((w) => w > lo + 20 && w < hi - 20).length).toBeGreaterThan(3);
+});
+
+test.describe('iPhone', () => {
+  test.use({ userAgent: devices['iPhone 13'].userAgent });
+
+  test('closing the record player flies the record back onto the circle and it stays put', async ({ page }) => {
+    const rest = await playThenHome(page);
+    await expect(page.locator('html')).toHaveAttribute('data-device', 'iphone');
+    await page.getByRole('button', { name: '打开正在播放' }).tap();
+    await expect(page.locator('.nowplaying')).toHaveClass(/open/);
+    await expect(page.locator('html')).not.toHaveAttribute('data-deck-anim');
+    await recordFrames(page);
+    await page.locator('.np-head').getByRole('button', { name: /收起/ }).click();
+    const frames = await framesAfter(page);
+    expect(frames.some((f) => f.deck === 'np-close')).toBe(true);
+    // 复制的唱片落在真唱片上（以前对准的是换歌滑入动画的起点，落地后错开 18px）
+    const flights = frames.filter((f) => f.flight != null);
+    expect(flights.length).toBeGreaterThan(5);
+    expect(Math.abs(flights.at(-1)!.flight! - rest)).toBeLessThan(2);
+    // 飞行期间真唱片就在终点等着，不滑
+    for (const f of frames.filter((x) => x.deck && !x.open)) expect(Math.abs(f.disc! - rest), JSON.stringify(f)).toBeLessThan(2);
+    expectSettled(frames, rest);
+
+    // iPhone 上返回详情页（视图过渡）同样不动
+    await recordFrames(page);
+    await page.locator('.main .card .sleeve').first().tap();
+    await expect(page.locator('.detail-title')).toHaveText('本期精选');
+    expectSettled(await framesAfter(page), rest);
+    await recordFrames(page);
+    await page.goBack();
+    await expect.poll(() => hash(page)).toBe('#/');
+    const back = await framesAfter(page);
+    expectSettled(back, rest);
+    expect(back.some((f) => f.min)).toBe(false);
+  });
 });
 
 test('HarmonyOS safe-area injection keeps both dock states aligned and tappable', async ({ page }, info) => {

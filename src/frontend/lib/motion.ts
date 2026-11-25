@@ -39,6 +39,8 @@ export function transition(update: () => void, kind: TransitionKind = 'page') {
   running = true;
   const root = document.documentElement;
   root.dataset.vt = kind;
+  // 底栏正在收展的话就地停在终点：过渡里有它自己的画法，过渡结束换回平时的画法时也不能再演一遍（#18）
+  delete root.dataset.dockAnim;
   const vt = doc.startViewTransition(() => flushSync(update));
   // 页面在后台、或被别的过渡打断时浏览器会跳过动画（更新照常生效），ready 会 reject，不算错误
   vt.ready.catch(() => undefined);
@@ -94,6 +96,7 @@ function deckMotion(update: () => void, kind: 'np-open' | 'np-close') {
 
   running = true;
   root.dataset.deckAnim = kind;
+  delete root.dataset.dockAnim;
   flushSync(update);
 
   let barShift = 0;

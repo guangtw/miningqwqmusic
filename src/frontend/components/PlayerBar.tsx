@@ -3,6 +3,7 @@ import { libraryStore, toggleFavorite } from '../lib/account';
 import { artistNames } from '../lib/format';
 import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { snap, transition } from '../lib/motion';
+import { motionEnabled } from '../lib/settings';
 import { href } from '../lib/router';
 import { useStore } from '../lib/store';
 import { currentTrack, cycleMode, MODE_LABEL, next, playerStore, prev, setVolume, swapDirection, toggle, toggleMute } from '../player/player';
@@ -59,6 +60,22 @@ uiStore.subscribe(() => {
   npWasOpen = open;
 });
 
+/**
+ * 换歌的滑入：下一首从右边推进来，上一首从左边，小唱片多转半圈。
+ * 用 WAAPI 在这块刚挂载时播一次，不写成 CSS 动画：手机上开唱机时这块是 display:none，
+ * CSS 动画在它重新显示时会从头再播——关唱机时整块又偏 18px 滑一遍，iPhone 上飞回来的唱片对准的是动画起点，落地后错开
+ */
+const swapped = new WeakSet<Element>();
+function swapIn(el: HTMLDivElement | null) {
+  if (!el || swapped.has(el)) return;
+  swapped.add(el);
+  if (!motionEnabled()) return;
+  const back = el.dataset.dir === '-1';
+  const ease = 'cubic-bezier(0.2, 0.8, 0.2, 1)'; // --ease-out
+  el.animate([{ opacity: 0, transform: `translateX(${back ? -18 : 18}px)` }, { opacity: 1, transform: 'none' }], { duration: 550, easing: ease });
+  el.querySelector('.mini-vinyl')?.animate([{ transform: `rotate(${back ? 150 : -150}deg) scale(0.8)` }, { transform: 'none' }], { duration: 700, easing: ease });
+}
+
 export function PlayerBar() {
   const track = useStore(playerStore, (s) => currentTrack(s));
   const playing = useStore(playerStore, (s) => s.playing);
@@ -79,7 +96,7 @@ export function PlayerBar() {
       <div className="np">
         {track ? (
           // key 变化时整块重新挂载，触发换歌的滑入动画：下一首从右边进来，上一首从左边
-          <div className="np-swap" key={track.id} data-dir={swapDirection()}>
+          <div className="np-swap" key={track.id} data-dir={swapDirection()} ref={swapIn}>
             <button onClick={() => toggleNowPlaying()} aria-label="打开正在播放" style={{ flex: 'none' }}>
               <Vinyl
                 cover={coverOf(track)}

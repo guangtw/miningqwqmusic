@@ -99,7 +99,11 @@ public sealed partial class MainWindow : Window
         preferences.Y = AppWindow.Position.Y;
     }
 
-    private async void Root_Loaded(object sender, RoutedEventArgs e) => await InitializeWebViewAsync();
+    private async void Root_Loaded(object sender, RoutedEventArgs e)
+    {
+        Root.XamlRoot.Changed += (_, _) => UpdateWindowAppearance();
+        await InitializeWebViewAsync();
+    }
 
     private async Task InitializeWebViewAsync()
     {
@@ -418,16 +422,23 @@ public sealed partial class MainWindow : Window
     }
     private void UpdateWindowAppearance()
     {
-        if (Core is not { } core || !NavigationPolicy.IsTrusted(core.Source)) return;
+        if (closed) return;
         var scale = Root.XamlRoot?.RasterizationScale ?? 1;
-        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "window", fullScreen, captionInset = fullScreen ? 0 : AppWindow.TitleBar.RightInset / scale }));
+        var bounds = fullScreen ? default : CaptionButtons.Measure(hwnd,
+            Math.Max(AppWindow.TitleBar.RightInset, (int)Math.Ceiling(138 * scale)),
+            Math.Max(AppWindow.TitleBar.Height, (int)Math.Ceiling(32 * scale)));
+        CaptionInputShield.Width = bounds.Width / scale;
+        CaptionInputShield.Height = bounds.Height / scale;
+        if (Core is not { } core || !NavigationPolicy.IsTrusted(core.Source)) return;
+        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "window", fullScreen, captionInsetPx = bounds.Width, captionHeightPx = bounds.Height }));
         core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "desktop-settings", protocol = 1, closeToTray = preferences.CloseToTray, fullScreen }));
     }
     private void SetDragRegions(JsonElement? regions = null)
     {
         if (closed) return;
         var scale = Root.XamlRoot?.RasterizationScale ?? 1;
-        var available = Math.Max(0, AppWindow.Size.Width - AppWindow.TitleBar.RightInset);
+        var reserved = double.IsNaN(CaptionInputShield.Width) ? AppWindow.TitleBar.RightInset : (int)Math.Ceiling(CaptionInputShield.Width * scale);
+        var available = Math.Max(0, AppWindow.ClientSize.Width - reserved);
         var rectangles = new List<RectInt32>();
         if (!fullScreen && regions is { } values)
         {

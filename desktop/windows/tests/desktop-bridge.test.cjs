@@ -7,6 +7,7 @@ function fixture(origin, isTop = true) {
   const events = {}, messages = [], clicks = [], styles = [];
   const window = { chrome: { webview: { postMessage: value => messages.push(value), addEventListener: (type, action) => events[type] = action } } };
   window.top = isTop ? window : {};
+  window.innerWidth = 1200;
   const properties = {};
   const context = { window, location: { origin, hash: '#/' }, requestAnimationFrame() {}, MutationObserver: class { observe() {} }, getComputedStyle: () => ({colorScheme:'light',getPropertyValue:()=> '#f3f2ee'}), setInterval() {}, addEventListener: (type, action) => events[type] = action,
     document: { body:{}, documentElement: { dataset: {}, style:{setProperty:(key,value)=>properties[key]=value} }, head: { append(style) { styles.push(style.textContent); } }, createElement: () => ({}), querySelectorAll:()=>[], querySelector: selector => selector.includes('np-title') ? { textContent: 'Test Song' } : selector.includes('np-artist') ? { textContent: 'Artist' } : { click: () => clicks.push(selector) } } };
@@ -20,7 +21,7 @@ test('bridge is absent on untrusted origins and child frames', () => {
 test('window geometry updates only the local caption safe area', () => {
   const f = fixture('https://echo.miningqwq.cn');
   f.events.DOMContentLoaded();
-  f.events.message({data:{type:'window',fullScreen:true,captionInset:0}});
+  f.events.message({data:{type:'window',fullScreen:true,captionInsetPx:0,captionHeightPx:0}});
   assert.equal(f.document.documentElement.dataset.desktopFullscreen, 'true');
   assert.equal(f.properties['--caption-inset'], '0px');
   assert.equal(f.messages[0].palette.bg, '#f3f2ee');
@@ -32,4 +33,22 @@ test('native commands use website controls and unknown commands do nothing', () 
   f.events.DOMContentLoaded();
   assert.equal(f.messages[0].title, 'Test Song');
   assert.equal(f.messages[0].artist, 'Artist');
+});
+test('caption input is exclusive to system buttons and respects resized bounds, fullscreen and keyboard', () => {
+  const f = fixture('https://echo.miningqwq.cn');
+  const update = (fullScreen, captionInsetPx, captionHeightPx) => f.events.message({data:{type:'window', fullScreen, captionInsetPx, captionHeightPx}});
+  function captured(type, x, y, detail = 1) {
+    let prevented = false, stopped = false;
+    f.events[type]({type, clientX:x, clientY:y, detail, preventDefault(){prevented=true;}, stopImmediatePropagation(){stopped=true;}});
+    assert.equal(prevented,stopped);
+    return stopped;
+  }
+  update(false, 141, 31);
+  for (const x of [1060, 1125, 1199]) for (const type of ['pointerdown','pointerup','mousedown','mouseup','click','dblclick'])
+    assert.equal(captured(type, x, 15),true);
+  assert.equal(captured('click',1058,15),false);
+  assert.equal(captured('click',1199,31),false);
+  assert.equal(captured('click',1199,15,0),false);
+  update(true, 0, 0);
+  assert.equal(captured('click',1199,15),false);
 });

@@ -2,6 +2,20 @@
   'use strict';
   if (window.top !== window || location.origin !== 'https://echo.miningqwq.cn' || !window.chrome?.webview) return;
   let captionInset = 138;
+  let captionHeight = 32;
+  // Consume any physical input forwarded by WebView2 in the native caption strip.
+  // Keyboard activation has no pointer coordinates and remains available.
+  const guardCaption = event => {
+    if (document.documentElement.dataset.desktopFullscreen === 'true' ||
+        (event.type === 'click' && event.detail === 0) || !captionInset || !captionHeight) return;
+    if (event.clientX >= window.innerWidth - captionInset && event.clientX < window.innerWidth &&
+        event.clientY >= 0 && event.clientY < captionHeight) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  };
+  for (const type of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'auxclick', 'dblclick', 'contextmenu'])
+    addEventListener(type, guardCaption, {capture:true, passive:false});
   let captionSignature = '';
   let captionScheduled = false;
   const updateCaption = () => {
@@ -36,7 +50,9 @@
     if (data.type === 'command' && Object.hasOwn(commands, data.command)) commands[data.command]();
     if (data.type === 'window') {
       document.documentElement.dataset.desktopFullscreen = String(!!data.fullScreen);
-      captionInset = Number.isFinite(data.captionInset) ? Math.max(0, data.captionInset) : 138;
+      const pixelRatio = window.devicePixelRatio || 1;
+      captionInset = Number.isFinite(data.captionInsetPx) ? Math.max(0, data.captionInsetPx / pixelRatio) : 138;
+      captionHeight = Number.isFinite(data.captionHeightPx) ? Math.max(0, data.captionHeightPx / pixelRatio) : 32;
       document.documentElement.style.setProperty('--caption-inset', `${captionInset}px`);
       scheduleCaption();
     }

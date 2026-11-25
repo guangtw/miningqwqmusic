@@ -12,13 +12,18 @@ internal sealed class TrayIcon : IDisposable
     private readonly Action restore;
     private readonly Action<string> command;
     private readonly Action exit;
+    private readonly Action<string> desktop;
     private NotifyIconData data;
     private bool disposed;
     public bool IsAvailable { get; private set; }
     public bool IsPlaying { get; set; }
+    public bool LyricsShown { get; set; }
+    public bool LyricsLocked { get; set; }
 
-    public TrayIcon(nint window, string iconPath, Action restore, Action<string> command, Action exit)
+    /// <param name="desktop">Shell toggles from the menu: "lyrics" shows or hides the desktop lyric, "lyricsLock" locks or unlocks it.</param>
+    public TrayIcon(nint window, string iconPath, Action restore, Action<string> command, Action exit, Action<string> desktop)
     {
+        this.desktop = desktop;
         this.window = window;
         this.restore = restore;
         this.command = command;
@@ -92,6 +97,10 @@ internal sealed class TrayIcon : IDisposable
             AppendMenu(menu, 0, 3, "上一首");
             AppendMenu(menu, 0, 4, "下一首");
             AppendMenu(menu, 0x800, 0, "");
+            // MF_CHECKED = 0x8, MF_GRAYED = 0x1. Unlocking lives here because a locked lyric ignores the mouse.
+            AppendMenu(menu, LyricsShown ? 0x8u : 0, 6, "桌面歌词");
+            AppendMenu(menu, LyricsShown ? 0 : 0x1u, 7, LyricsLocked ? "解锁桌面歌词" : "锁定桌面歌词");
+            AppendMenu(menu, 0x800, 0, "");
             AppendMenu(menu, 0, 5, "退出唱片行");
             GetCursorPos(out var point);
             SetForegroundWindow(window);
@@ -104,6 +113,8 @@ internal sealed class TrayIcon : IDisposable
                 case 3: command("previous"); break;
                 case 4: command("next"); break;
                 case 5: exit(); break;
+                case 6: desktop("lyrics"); break;
+                case 7: desktop("lyricsLock"); break;
             }
         }
         finally { DestroyMenu(menu); }

@@ -391,17 +391,27 @@
   html[data-vt] .player-skin {
     display: none;
   }
-  html:not([data-vt]) :is(.dock-skin-fill, .dock-shade-run, .dock-tabs a, .app .player:not(.np-open) .np) {
+  /* 收展动画只在真的收展时开（TabBar 在切换 data-dock 的同时写 data-dock-anim，0.7 秒后撤掉）。
+     切页、开合唱机结束时，播放台从过渡期的画法（盒子缩成圆、唱片不平移）换回平时的画法（长盒子 + 平移），
+     计算值会一下子变；动画一直开着的话，这一下会被演成 0.6 秒的收展：唱片从导航那边横穿回右端（#18）；
+     iPhone 关唱机时复制的唱片也会飞到动画起点，落地后真唱片才滑开 */
+  html[data-dock-anim]:not([data-vt]) :is(.dock-skin-fill, .dock-shade-run, .dock-tabs a, .app .player:not(.np-open) .np) {
     transition-property: transform, opacity, color;
     transition-duration: 0.6s, 0.3s, 0.2s;
     transition-timing-function: var(--dock-ease), ease, ease;
   }
-  html:not([data-vt]) .dock-tabs a.cur svg {
+  html[data-dock-anim]:not([data-vt]) .dock-tabs a.cur svg {
     transition: transform 0.6s var(--dock-ease);
   }
-  /* 原来的画法里播放台位置靠 left 过渡（过渡期间不过渡，同 motion.css） */
+  /* 平时播放台盒子自己不画底色（玻璃在 .player-skin），什么都不过渡：
+     过渡期间它带实色底，结束时那条长盒子的底色要是慢慢淡掉，就是盖住导航的一条长玻璃（#18）。
+     这里也盖掉 motion.css 的 left 过渡 */
   html:not([data-vt]) .app .player:not(.np-open) {
-    transition: background-color 0.35s var(--ease-soft);
+    transition: none;
+  }
+  /* 过渡期间播放台是实色快照，结束后玻璃从实色慢慢回到半透明（同 motion.css 原来给播放台自己的那段） */
+  .player-skin .dock-skin-fill {
+    animation: skin-settle 0.35s var(--ease-soft);
   }
   /* 视图过渡期间（切页的那半秒、开合唱机）：胶囊临时用回「盒子自己带玻璃、改宽度」的画法。
      导航在过渡里单独成层（motion.css 的 mobile-nav），Chrome 会把这个盒子的 backdrop-filter 带到过渡层上，
@@ -723,5 +733,11 @@ html[data-device='iphone'] .np-art {
   /* 首页封面故事：封套别占满一整屏，下面的标题和按钮在第一屏里就能看到 */
   .feature-art {
     width: 76%;
+  }
+}
+
+@keyframes skin-settle {
+  from {
+    background-color: var(--glass-solid);
   }
 }

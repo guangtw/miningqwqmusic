@@ -455,35 +455,7 @@ html:not([data-vt]):not([data-deck-anim]) .player {
   }
 }
 
-/* 播放台：换歌时左侧整块滑入——下一首从右边推进来，上一首从左边，小唱片多转半圈 */
-.np-swap {
-  animation: np-swap 0.55s var(--ease-out) both;
-}
-.np-swap[data-dir='-1'] {
-  --swap-x: -18px;
-}
-.np-swap .mini-vinyl {
-  animation: np-swap-disc 0.7s var(--ease-out) both;
-}
-.np-swap[data-dir='-1'] .mini-vinyl {
-  animation-name: np-swap-disc-back;
-}
-@keyframes np-swap {
-  from {
-    opacity: 0;
-    transform: translateX(var(--swap-x, 18px));
-  }
-}
-@keyframes np-swap-disc {
-  from {
-    transform: rotate(-150deg) scale(0.8);
-  }
-}
-@keyframes np-swap-disc-back {
-  from {
-    transform: rotate(150deg) scale(0.8);
-  }
-}
+/* 播放台换歌时左侧整块滑入：PlayerBar.tsx 的 swapIn（WAAPI，只在换歌时播一次） */
 .player {
   animation: deck-in 0.8s var(--ease-spring) 0.15s both;
 }

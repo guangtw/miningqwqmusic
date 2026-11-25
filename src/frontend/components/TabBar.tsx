@@ -25,6 +25,8 @@ const SECTION_ALIAS: Record<string, string> = { mine: 'library' };
 const NARROW = '(max-width: 860px)';
 /** 往一个方向连续翻过这么多像素才收起 / 展开，免得手指一抖就来回变 */
 const TRAVEL = 36;
+/** 收展动画的时长（refresh.css 里 0.6s）再留一点余量 */
+const MORPH_MS = 700;
 
 /** 最近待过的那一页：进了歌单、专辑这些详情页，底栏仍然亮着来时那一项（收起时圆钮也显示它） */
 let lastTab = '';
@@ -42,6 +44,11 @@ export function TabBar() {
   // 没在放歌：右边没有播放台可展开，不收
   const min = folded && hasTrack;
 
+  // 换页时 App 会把主内容区滚回顶部 / 返回时滚回离开时的位置，那一下不是手指翻的，不算收展
+  const routeSeen = useRef(route.path);
+  const routeNow = useRef(route.path);
+  routeNow.current = route.path;
+
   // 跟着主内容区的滚动方向收起 / 展开
   useEffect(() => {
     const main = document.querySelector<HTMLElement>('.main');
@@ -54,6 +61,11 @@ export function TabBar() {
       const dy = y - last;
       last = y;
       if (!narrow.matches) return;
+      if (routeSeen.current !== routeNow.current) {
+        routeSeen.current = routeNow.current;
+        travel = 0;
+        return;
+      }
       if (y < 24) {
         travel = 0;
         setMin(false);
@@ -79,10 +91,26 @@ export function TabBar() {
     if (!first && changed && trackId != null && window.matchMedia(NARROW).matches) setMin(true);
   }, [trackId]);
 
+  // 收展动画只在「真的在收展」时开着（<html data-dock-anim>，refresh.css 第 1 节）：
+  // 切页、开合唱机这些过渡结束时，底栏从过渡期的画法换回平时的画法，盒子、唱片的位置会一下子变，
+  // 动画要是一直开着，浏览器会把这一下也当成收展演 0.6 秒——唱片从左边横穿导航滑回右边（#18）。
+  // 过渡期间（data-vt / data-deck-anim）不开：那时的收展由过渡里的画法自己演
+  const firstDock = useRef(true);
   useLayoutEffect(() => {
     const root = document.documentElement;
     if (min) root.dataset.dock = 'min';
     else delete root.dataset.dock;
+    if (firstDock.current) {
+      firstDock.current = false;
+      return;
+    }
+    if (root.dataset.vt || root.dataset.deckAnim) return;
+    root.dataset.dockAnim = '';
+    const t = setTimeout(() => delete root.dataset.dockAnim, MORPH_MS);
+    return () => {
+      clearTimeout(t);
+      delete root.dataset.dockAnim;
+    };
   }, [min]);
 
   const curIndex = TABS.findIndex((t) => t.key === current);

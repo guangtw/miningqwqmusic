@@ -29,6 +29,8 @@
     <Content Include="Assets\desktop-bridge.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\desktop-settings.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\desktop-lyrics.js" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\desktop-lyrics-view.html" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\desktop-lyrics-view.js" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\BrandSource.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\SplashScreen.scale-200.png" />
     <Content Include="Assets\LockScreenLogo.scale-200.png" />

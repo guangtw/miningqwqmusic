@@ -55,23 +55,30 @@
       const actions = element('div', 'field-inline');
       actions.append(option('查看下载', 'downloads'), option('重新加载', 'reload'), option('退出唱片行', 'exit'));
       for (const button of actions.children) button.className = 'btn';
+      const lyrics = element('div', 'field-inline');
+      lyrics.append(choice('桌面歌词', [['显示', 'desktopLyrics', true], ['关闭', 'desktopLyrics', false]]),
+        choice('桌面歌词位置', [['可拖动', 'lyricsLocked', false], ['锁定', 'lyricsLocked', true]]));
       const windowButtons = element('div', 'seg');
       const fullscreen = option(settings.fullScreen ? '退出全屏' : '进入全屏', 'fullScreen');
       buttons.set('fullScreen', fullscreen);
       windowButtons.append(fullscreen);
       mounted = [
         field('关闭窗口时', choice('关闭窗口时', [['收进托盘', 'closeToTray', true], ['直接退出', 'closeToTray', false]]), '收进托盘后继续播放。可在托盘菜单中控制播放或退出。'),
+        field('桌面歌词', lyrics, '透明悬浮在桌面上，跟着唱片行逐字点亮。锁定后鼠标会穿过歌词，可在这里或托盘菜单解锁。'),
         field('窗口', windowButtons),
         field('应用', actions),
       ];
       target.append(...mounted);
     }
-    for (const value of [true, false]) {
-      const button = buttons.get(`closeToTray:${value}`);
-      const checked = settings.closeToTray === value;
-      if (button.getAttribute('aria-checked') !== String(checked)) {
-        button.setAttribute('aria-checked', String(checked));
-        button.classList.toggle('on', checked);
+    for (const action of ['closeToTray', 'desktopLyrics', 'lyricsLocked']) {
+      for (const value of [true, false]) {
+        const button = buttons.get(`${action}:${value}`);
+        const checked = settings[action] === value;
+        if (button.getAttribute('aria-checked') !== String(checked)) {
+          button.setAttribute('aria-checked', String(checked));
+          button.classList.toggle('on', checked);
+        }
+        if (action === 'lyricsLocked') button.disabled = !settings.desktopLyrics;
       }
     }
     const label = settings.fullScreen ? '退出全屏' : '进入全屏';
@@ -80,7 +87,7 @@
   const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(sync); } };
   bridge.addEventListener('message', ({ data }) => {
     if (data?.type !== 'desktop-settings' || data.protocol !== 1 || typeof data.closeToTray !== 'boolean' || typeof data.fullScreen !== 'boolean') return;
-    settings = { closeToTray: data.closeToTray, fullScreen: data.fullScreen };
+    settings = { closeToTray: data.closeToTray, fullScreen: data.fullScreen, desktopLyrics: data.desktopLyrics === true, lyricsLocked: data.lyricsLocked === true };
     schedule();
   });
   addEventListener('DOMContentLoaded', () => {

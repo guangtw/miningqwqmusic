@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window
     private CoreWebView2? Core => MusicWebView.CoreWebView2;
     private Action<DesktopLyricFrame?>? lyricListeners;
     private DesktopLyricFrame? lastLyric;
+    private DesktopLyricsWindow? lyricsWindow;
     // Subscribe on the UI thread. A null frame clears the renderer on navigation or failure.
     internal event Action<DesktopLyricFrame?> DesktopLyricsChanged
     {
@@ -52,7 +53,10 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
         Root.SizeChanged += (_, _) => { SetDragRegions(); UpdateWindowAppearance(); };
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-        tray = new TrayIcon(hwnd, Path.Combine(AppContext.BaseDirectory, "Assets", "TrayIcon.ico"), RestoreFromTray, Command, ExitApplication);
+        tray = new TrayIcon(hwnd, Path.Combine(AppContext.BaseDirectory, "Assets", "TrayIcon.ico"), RestoreFromTray, Command, ExitApplication, TrayDesktop)
+        {
+            LyricsLocked = preferences.LyricsLocked
+        };
         AppWindow.Closing += (_, args) =>
         {
             if (exiting || !preferences.CloseToTray) return;
@@ -72,6 +76,8 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             closed = true;
+            // The lyric overlay is a second top-level window: it must go with the player or the process stays alive.
+            CloseLyricsWindow();
             tray.Dispose();
             lifetime.Cancel();
             RememberPlacement();
@@ -111,7 +117,11 @@ public sealed partial class MainWindow : Window
         preferences.Y = AppWindow.Position.Y;
     }
 
-    private async void Root_Loaded(object sender, RoutedEventArgs e) => await InitializeWebViewAsync();
+    private async void Root_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (preferences.DesktopLyrics) SetDesktopLyrics(true);
+        await InitializeWebViewAsync();
+    }
 
     private async Task InitializeWebViewAsync()
     {
@@ -130,9 +140,7 @@ public sealed partial class MainWindow : Window
                 previous.Close();
                 replaceWebView = false;
             }
-            var options = new CoreWebView2EnvironmentOptions { AllowSingleSignOnUsingOSPrimaryAccount = false };
-            var environment = await CoreWebView2Environment.CreateWithOptionsAsync(null,
-                Path.Combine(AppPreferences.DataDirectory, "WebView2"), options);
+            var environment = await WebViewPolicy.CreateEnvironmentAsync();
             if (closed) return;
             await MusicWebView.EnsureCoreWebView2Async(environment);
             if (closed) return;
@@ -335,6 +343,8 @@ public sealed partial class MainWindow : Window
                 {
                     case "ready": UpdateWindowAppearance(); break;
                     case "closeToTray": preferences.CloseToTray = request.Value; preferences.Save(); UpdateWindowAppearance(); break;
+                    case "desktopLyrics": SetDesktopLyrics(request.Value); break;
+                    case "lyricsLocked": SetLyricsLocked(request.Value); break;
                     case "fullScreen": ToggleFullScreen(); break;
                     case "downloads": _ = ShowDownloadsAsync(); break;
                     case "reload": Refresh(); break;
@@ -371,6 +381,83 @@ public sealed partial class MainWindow : Window
             ((SolidColorBrush)Application.Current.Resources[brushes[i]]).Color = Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
         }
         UpdateCaptionTheme();
+        UpdateLyricsAppearance();
+    }
+
+    // The lyric uses the player's ink for the sweep and the player's page colour for the glyph halo.
+    private void UpdateLyricsAppearance()
+    {
+        if (lyricsWindow is null) return;
+        static string Hex(string key) { var c = ((SolidColorBrush)Application.Current.Resources[key]).Color; return $"#{c.R:x2}{c.G:x2}{c.B:x2}"; }
+        lyricsWindow.SetAppearance(Root.ActualTheme == ElementTheme.Dark, Hex("ShellInkBrush"), Hex("ShellBackgroundBrush"));
+    }
+
+    private void SetDesktopLyrics(bool enabled)
+    {
+        if (closed) return;
+        preferences.DesktopLyrics = enabled;
+        preferences.Save();
+        if (enabled && lyricsWindow is null)
+        {
+            var window = new DesktopLyricsWindow(preferences, LyricsRequest);
+            lyricsWindow = window;
+            window.Closed += (_, _) =>
+            {
+                // Closed by the system (not by us): treat it as switching the lyric off.
+                if (lyricsWindow != window) return;
+                lyricsWindow = null;
+                DesktopLyricsChanged -= window.Render;
+                if (closed) return;
+                preferences.DesktopLyrics = false;
+                preferences.Save();
+                tray.LyricsShown = false;
+                UpdateWindowAppearance();
+            };
+            UpdateLyricsAppearance();
+            DesktopLyricsChanged += window.Render;
+            window.ShowPassive();
+        }
+        else if (!enabled) CloseLyricsWindow();
+        tray.LyricsShown = enabled;
+        UpdateWindowAppearance();
+    }
+
+    private void SetLyricsLocked(bool locked)
+    {
+        if (closed) return;
+        preferences.LyricsLocked = locked;
+        preferences.Save();
+        lyricsWindow?.SetLocked(locked);
+        tray.LyricsLocked = locked;
+        UpdateWindowAppearance();
+    }
+
+    private void CloseLyricsWindow()
+    {
+        if (lyricsWindow is not { } window) return;
+        lyricsWindow = null;
+        DesktopLyricsChanged -= window.Render;
+        preferences.Save();
+        window.Close();
+    }
+
+    private void LyricsRequest(string action)
+    {
+        switch (action)
+        {
+            case "close": SetDesktopLyrics(false); break;
+            case "lock": SetLyricsLocked(true); break;
+            case "restart":
+                // The shared WebView2 browser process died; build the overlay again on a fresh one.
+                DispatcherQueue.TryEnqueue(() => { CloseLyricsWindow(); if (preferences.DesktopLyrics) SetDesktopLyrics(true); });
+                break;
+        }
+    }
+
+    private void TrayDesktop(string action)
+    {
+        if (action == "lyrics") SetDesktopLyrics(!preferences.DesktopLyrics);
+        else if (action == "lyricsLock") SetLyricsLocked(!preferences.LyricsLocked);
     }
 
     private void UpdateCaptionTheme()
@@ -443,7 +530,7 @@ public sealed partial class MainWindow : Window
         if (Core is not { } core || !NavigationPolicy.IsTrusted(core.Source)) return;
         var scale = Root.XamlRoot?.RasterizationScale ?? 1;
         core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "window", fullScreen, captionInset = fullScreen ? 0 : AppWindow.TitleBar.RightInset / scale }));
-        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "desktop-settings", protocol = 1, closeToTray = preferences.CloseToTray, fullScreen, desktopLyrics = lyricListeners is not null }));
+        core.PostWebMessageAsJson(JsonSerializer.Serialize(new { type = "desktop-settings", protocol = 1, closeToTray = preferences.CloseToTray, fullScreen, desktopLyrics = lyricListeners is not null, lyricsLocked = preferences.LyricsLocked }));
     }
     private void SetDragRegions(JsonElement? regions = null)
     {

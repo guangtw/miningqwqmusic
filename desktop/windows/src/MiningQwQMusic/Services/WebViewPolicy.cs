@@ -4,6 +4,10 @@ namespace MiningQwQMusic.Services;
 
 internal static class WebViewPolicy
 {
+    // Player and lyric window share one browser process; both must use identical options.
+    public static async Task<CoreWebView2Environment> CreateEnvironmentAsync() => await CoreWebView2Environment.CreateWithOptionsAsync(null,
+        Path.Combine(AppPreferences.DataDirectory, "WebView2"), new CoreWebView2EnvironmentOptions { AllowSingleSignOnUsingOSPrimaryAccount = false });
+
     // Apply before the first Navigate: credentials must never reach browser UI.
     public static void Apply(CoreWebView2 core)
     {

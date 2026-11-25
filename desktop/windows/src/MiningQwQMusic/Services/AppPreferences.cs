@@ -12,6 +12,10 @@ internal sealed class AppPreferences
     public int? X { get; set; }
     public int? Y { get; set; }
     public bool Maximized { get; set; }
+    public bool DesktopLyrics { get; set; }
+    public bool LyricsLocked { get; set; }
+    public int? LyricsX { get; set; }
+    public int? LyricsY { get; set; }
     public static AppPreferences Load()
     {
         try { return JsonSerializer.Deserialize<AppPreferences>(File.ReadAllText(SettingsPath)) ?? new(); }

@@ -19,6 +19,7 @@
 - 保留原站的 Media Session 系统媒体键、歌曲信息和封面，托盘菜单提供播放、上一首、下一首入口。
 - Windows“另存为”和原生下载提示；音源跨域导致网页下载回退到外链时，可在原生对话框选择“下载文件”。下载任务列表是打开时的状态快照。退出会取消未完成任务。
 - 原生加载、网络故障重试和播放器崩溃恢复页面。
+- 桌面歌词：在“唱机调校”页或托盘菜单打开。透明、置顶、不进任务栏，也不抢焦点。当前句沿用播放器从左往右点亮的渐变和换行动画；字形底下垫一层播放器底色的描边，亮色和暗色桌面上都能看清。未锁定时悬停会显示边框，可以拖动、锁定或关闭；锁定后鼠标会穿过歌词，只能在设置页或托盘菜单解锁。位置和开关状态在重启后保留，退出唱片行时歌词窗一起关闭。歌词画面是本地页面（`desktop-lyrics-view.html` + `.js`），以 NavigateToString 加载，只允许这一次 `data:text/html` 导航，不联网；播放器 WebView 的来源限制不变。
 - 壳层不显示快捷键提示，菜单与关于页不加入快捷键文案。
 
 图标直接使用主仓库最新的“赭红封套 + 花体 M + 黑胶”正式图标；应用、安装器、快捷方式和托盘保持一致。来源提交与原图 SHA-256 记录在 `src/MiningQwQMusic/Assets/BrandSource.json`。`scripts/update-icon.ps1` 仅缩放正式 PNG 生成 Windows ICO，不重新绘制。
@@ -37,7 +38,7 @@ WebView2 仅提供内容渲染，不启动 Edge 窗口。所有设置在首次�
 git submodule update --init
 dotnet build src/MiningQwQMusic/MiningQwQMusic.csproj -p:Platform=x64
 dotnet run --project tests/ShellPolicy.Tests/ShellPolicy.Tests.csproj
-node --test tests/desktop-bridge.test.cjs tests/desktop-settings.test.cjs
+node --test tests/desktop-bridge.test.cjs tests/desktop-settings.test.cjs tests/desktop-lyrics.test.cjs tests/desktop-lyrics-view.test.cjs
 .\scripts\build.ps1 -Run
 ```
 

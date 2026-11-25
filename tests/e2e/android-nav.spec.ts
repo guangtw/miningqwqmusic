@@ -253,12 +253,14 @@ const recordFrames = (page: Page) => page.evaluate(() => {
       flight: flight?.width ? flight.left + flight.width / 2 : null,
       boxFill: bg && bg !== 'transparent' && bg !== 'rgba(0, 0, 0, 0)' ? player!.getBoundingClientRect().width : 0,
       pill: visible('.dock-pill .dock-skin'), bar: visible('.player-skin'),
+      // 过渡期间胶囊自己画玻璃（盒子就是露出来的那段）
+      pillRight: root.dataset.vt ? document.querySelector('.dock-pill')!.getBoundingClientRect().right : (visible('.dock-pill .dock-skin')?.right ?? null),
     });
     requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
 });
-type DockFrame = { vt: string; deck: string; min: boolean; open: boolean; disc: number | null; flight: number | null; boxFill: number;
+type DockFrame = { vt: string; deck: string; min: boolean; open: boolean; disc: number | null; flight: number | null; boxFill: number; pillRight: number | null;
   pill: { left: number; right: number } | null; bar: { left: number; right: number } | null };
 /** 等 ms 毫秒（至少覆盖过渡结束后 0.7 秒），停止记录并取回 */
 const framesAfter = async (page: Page, ms = 1700) => {
@@ -332,6 +334,50 @@ test('switching pages, opening details and closing the record player leave the d
   await page.waitForTimeout(150);
   await dock.locator('[data-key="home"]').tap();
   expectSettled(await framesAfter(page, 2200), rest);
+});
+
+test('tapping a tab or the record does not stretch the capsule over the record first', async ({ page }) => {
+  await playThenHome(page);
+  const right = await page.evaluate(() => Math.min(document.querySelector('.dock-pill .dock-skin')!.getBoundingClientRect().right, document.querySelector('.dock-pill .dock-skin-fill')!.getBoundingClientRect().right));
+  const check = (frames: DockFrame[]) => {
+    expect(frames.some((f) => f.vt)).toBe(true);
+    // 过渡快照显示期间也算：右沿不能先伸到唱片那边再缩回来（#23）
+    for (const f of frames.filter((x) => x.pillRight != null && !x.min)) expect(f.pillRight!, JSON.stringify(f)).toBeLessThan(right + 1);
+  };
+  await recordFrames(page);
+  await page.locator('.dock [data-key="charts"]').tap();
+  check(await framesAfter(page));
+  await recordFrames(page);
+  await page.getByRole('button', { name: '打开正在播放' }).tap();
+  await expect(page.locator('.nowplaying')).toHaveClass(/open/);
+  check(await framesAfter(page));
+});
+
+test('the dock shadow has no hard vertical seams', async ({ page }) => {
+  await playThenHome(page);
+  // 纯色背景，只看底栏下面的投影（#24：拼缝处原来有一道明暗突变）
+  await page.addStyleTag({ content: '.main, .side, .np-glow, .vinyl { visibility: hidden !important } html, body, .app { background: #eeeeea !important; background-image: none !important }' });
+  for (const folded of [false, true]) {
+    // 主内容区藏起来了手指拖不动：直接滚它（收展跟着滚动事件走）
+    if (folded) await page.evaluate(async () => { const m = document.querySelector('.main') as HTMLElement; for (let i = 1; i <= 10; i++) { m.scrollTop = i * 40; await new Promise((r) => setTimeout(r, 30)); } });
+    if (folded) await expect(page.locator('html')).toHaveAttribute('data-dock', 'min');
+    else await expect(page.locator('html')).not.toHaveAttribute('data-dock', 'min');
+    await page.waitForTimeout(900);
+    const dock = (await page.locator('.dock').boundingBox())!;
+    const vw = page.viewportSize()!;
+    const y0 = Math.ceil(dock.y + dock.height + 1);
+    const png = await page.screenshot({ clip: { x: 0, y: y0, width: vw.width, height: vw.height - y0 } });
+    const step = await page.evaluate(async (b64) => {
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d')!; g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data; let worst = 0;
+      for (let i = 4; i < d.length; i += 4) if ((i / 4) % c.width) worst = Math.max(worst, ...[0, 1, 2].map((k) => Math.abs(d[i + k] - d[i - 4 + k])));
+      return worst;
+    }, png.toString('base64'));
+    // 拼缝处原来一跳 4~8 级（深色主题 23 级）；平滑的投影相邻像素只差一两级
+    expect(step, folded ? 'folded' : 'unfolded').toBeLessThan(4);
+  }
 });
 
 test('the scroll fold still animates instead of snapping', async ({ page }) => {

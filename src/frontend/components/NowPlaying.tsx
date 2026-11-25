@@ -5,6 +5,7 @@ import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
 import { downloadTrack } from '../lib/download';
 import { formatCount, formatTime } from '../lib/format';
 import { useInsight } from '../lib/insight';
+import { useBakedArt } from '../lib/bakedArt';
 import { activeLineIndex, displayLines, isUnsynced, lineProgress, splitCredits } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
 import { motionEnabled } from '../lib/settings';
@@ -222,6 +223,10 @@ export function NowPlaying() {
   }, [track, open]);
 
   const close = () => toggleNowPlaying(false);
+  // 虚化封面：预先糊好的小图（bakedArt.ts），算好之前退回 CSS 滤镜
+  const artUrl = track ? sized(coverOf(track), 160) : undefined;
+  const baked = useBakedArt(artUrl);
+
   // 面板里的歌手 / 专辑链接：先退掉面板那条历史记录，再跳过去，返回时不会回到一条空记录上
   const go = (e: React.MouseEvent, to: string) => {
     e.preventDefault();
@@ -236,7 +241,14 @@ export function NowPlaying() {
       ref={panelRef}
     >
       {/* 整页铺一层放大、虚化的封面，颜色比光斑更饱满；封面只取小图，反正要糊掉 */}
-      {track && <div className="np-art" key={coverOf(track)} style={{ backgroundImage: `url("${sized(coverOf(track), 160)}")` }} aria-hidden="true" />}
+      {track && (
+        <div
+          className={`np-art ${baked ? 'baked' : ''}`}
+          key={coverOf(track)}
+          style={{ backgroundImage: `url("${baked ?? artUrl}")` }}
+          aria-hidden="true"
+        />
+      )}
       {glows.map((g) => (
         <div key={g.key} className={`np-glow ${g.phase === 'on' ? '' : g.phase}`} style={tintVars(g.tint)} aria-hidden="true">
           <i />

@@ -24,7 +24,8 @@ export function useSpin(ref: React.RefObject<HTMLElement>, spinning?: boolean) {
       duration: REV_MS,
       iterations: Infinity,
     });
-    anim.current.playbackRate = 0;
+    // 停着就真的暂停：以 0 倍速「运行」的动画合成器接不了，只能在主线程上每帧更新
+    anim.current.pause();
     return () => {
       cancelAnimationFrame(raf.current);
       anim.current?.cancel();
@@ -37,18 +38,31 @@ export function useSpin(ref: React.RefObject<HTMLElement>, spinning?: boolean) {
     if (!a) return;
     const s = spring.current;
     s.target = spinning ? 1 : 0;
+    // 转速归零就暂停，转起来之前先恢复：只有弹簧还在加减速的那一两秒在主线程上逐帧改转速，
+    // 匀速转着的时候整段动画交给合成器
+    const settle = () => {
+      if (s.value === 0) a.pause();
+      else a.playbackRate = s.value;
+    };
     if (!motionEnabled()) {
       s.snap(s.target);
-      a.playbackRate = s.value;
+      if (s.value) a.play();
+      settle();
       return;
     }
     cancelAnimationFrame(raf.current);
+    if (s.target > 0 && a.playState === 'paused') {
+      a.playbackRate = Math.max(0.001, s.value);
+      a.play();
+    }
     let last = performance.now();
     const tick = (now: number) => {
       const moving = s.step((now - last) / 1000);
       last = now;
-      a.playbackRate = Math.max(0, s.value);
-      if (moving) raf.current = requestAnimationFrame(tick);
+      if (moving) {
+        a.playbackRate = Math.max(0.001, s.value);
+        raf.current = requestAnimationFrame(tick);
+      } else settle();
     };
     raf.current = requestAnimationFrame(tick);
   }, [spinning]);

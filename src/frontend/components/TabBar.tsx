@@ -85,11 +85,16 @@ export function TabBar() {
     else delete root.dataset.dock;
   }, [min]);
 
+  const curIndex = TABS.findIndex((t) => t.key === current);
+
   return (
     <nav className={`dock ${min ? 'min' : ''} ${hasTrack ? '' : 'solo'}`} aria-label="主导航" data-swipe-tabs>
+      {/* 胶囊的各层都不改尺寸，收展只靠平移（refresh.css 第 1 节）：
+          玻璃整条平移、外面套一层固定的圆角裁剪；阴影一段固定在左端、一段跟着玻璃走；
+          左端被裁掉的那段描边由一段固定的半圆补上 */}
       <div
         className="dock-pill"
-        style={{ '--dock-tab-count': TABS.length, '--dock-lens-x': `${TABS.findIndex((t) => t.key === current) * 100}%` } as CSSProperties}
+        style={{ '--dock-tab-count': TABS.length, '--dock-lens-x': `${curIndex * 100}%` } as CSSProperties}
         onClickCapture={(e) => {
           // 收起时整颗圆钮就是「展开」：不跳页
           if (!min) return;
@@ -98,24 +103,47 @@ export function TabBar() {
           setMin(false);
         }}
       >
-        <span className="dock-lens" aria-hidden="true" />
-        {TABS.map((t) => {
-          const n = nav.find((x) => x.key === t.key)!;
-          return (
-            <a
-              key={t.key}
-              href={n.to}
-              data-key={t.key || 'home'}
-              className={`${section === t.key ? 'on' : ''} ${current === t.key ? 'cur' : ''}`}
-              aria-current={section === t.key ? 'page' : undefined}
-              aria-label={min && current === t.key ? `${n.label}（展开导航）` : undefined}
-            >
-              <Icon name={t.icon} />
-              <span className="dock-label">{n.label}</span>
-            </a>
-          );
-        })}
+        <Shade />
+        <span className="dock-skin" aria-hidden="true">
+          <i className="dock-skin-fill" />
+        </span>
+        <span className="dock-skin-cap" aria-hidden="true" />
+        <div className="dock-tabs">
+          <span className="dock-lens" aria-hidden="true" />
+          {TABS.map((t, i) => {
+            const n = nav.find((x) => x.key === t.key)!;
+            const rel = i === curIndex ? 'cur' : i < curIndex ? 'pre' : 'post';
+            return (
+              <a
+                key={t.key}
+                href={n.to}
+                data-key={t.key || 'home'}
+                className={`${section === t.key ? 'on' : ''} ${rel}`}
+                style={{ '--i': i } as CSSProperties}
+                aria-current={section === t.key ? 'page' : undefined}
+                aria-label={min && i === curIndex ? `${n.label}（展开导航）` : undefined}
+              >
+                <Icon name={t.icon} />
+                <span className="dock-label">{n.label}</span>
+              </a>
+            );
+          })}
+        </div>
       </div>
+      {/* 迷你播放台的阴影：播放台自己裁成圆角（玻璃在里面平移），阴影放不进去，画在这里 */}
+      {hasTrack && <Shade player />}
     </nav>
+  );
+}
+
+/** 一个形状的阴影：端头一颗固定的圆 + 一段跟着玻璃平移的长条，在圆心处各裁一半拼起来 */
+function Shade({ player = false }: { player?: boolean }) {
+  return (
+    <span className={`dock-shade ${player ? 'dock-shade-player' : ''}`} aria-hidden="true">
+      <i className="dock-shade-cap" />
+      <i className="dock-shade-clip">
+        <i className="dock-shade-run" />
+      </i>
+    </span>
   );
 }

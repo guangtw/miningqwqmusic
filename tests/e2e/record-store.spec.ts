@@ -32,7 +32,8 @@ const openNowPlaying = (page: Page) => page.locator('.player').getByRole('button
 async function goNav(page: Page, name: string) {
   const folded = page.locator('html[data-dock="min"]');
   if (await folded.count()) {
-    await page.locator('.dock-pill').click();
+    // 收起时左边那颗圆钮就是当前页那一项；胶囊的盒子是整行宽，点盒子中间会点到播放台上
+    await page.locator('.dock-pill a.cur').click();
     await expect(folded).toHaveCount(0);
   }
   await page.getByRole('link', { name, exact: true }).click();

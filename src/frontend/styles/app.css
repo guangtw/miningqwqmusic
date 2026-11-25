@@ -2430,8 +2430,16 @@ mark.hl {
 .bar.dragging .bar-fill {
   background: var(--accent);
 }
+/* 拖动点的轨道：和进度条一样宽，播放时整条平移（交给合成器），拖动点在它的左端 */
+.bar-rail {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  will-change: transform;
+}
 .bar-thumb {
   position: absolute;
+  left: 0;
   top: 50%;
   width: 14px;
   height: 14px;

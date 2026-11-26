@@ -85,6 +85,7 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
     if (p.endsWith('/auth/login') || p.endsWith('/auth/register')) { signedIn = true; return ok({ accessToken: 'login-token', user }); }
     if (p.endsWith('/auth/me')) return ok({ user });
     if (p.endsWith('/auth/logout')) { signedIn = false; return ok({}); }
+    if (p === '/api/account/presence') return ok({ ok: true });
     if (p.endsWith('/library/snapshot')) return ok({ revision: 1, favorites, recent: [], importedPlaylists: {}, updatedAt: new Date().toISOString() });
     if (p.endsWith('/library/favorites')) {
       const track = request.postDataJSON().track;

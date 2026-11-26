@@ -4106,6 +4106,11 @@ mark.hl {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.admin-who .a.admin-activity {
+  margin-top: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .admin-tag {
   font-size: 10px;
   padding: 2px 7px;

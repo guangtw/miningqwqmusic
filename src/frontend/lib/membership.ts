@@ -59,6 +59,11 @@ export interface AuthorizedUser {
   nickname: string | null;
   role: 'user' | 'admin';
   playbackAuthorization: PlaybackAuthorization;
+  presence?: {
+    online: boolean;
+    lastSeenAt: string | null;
+    nowPlaying: { name: string; artist: string | null } | null;
+  };
 }
 
 export const isAdmin = () => authStore.get().user?.role === 'admin';

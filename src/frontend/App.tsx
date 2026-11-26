@@ -18,6 +18,7 @@ import { restoreSession, watchSessionRecovery } from './lib/account';
 import { watchAccountEvents } from './lib/events';
 import { watchSocial } from './lib/friends';
 import { watchListen } from './lib/listen';
+import { watchPresence } from './lib/presence';
 import { applyGlobalTint, DEFAULT_TINT, tintOf, type Tint } from './lib/palette';
 import { href, navigate, useRoute, type Route } from './lib/router';
 import { getSettings, motionEnabled, subscribeSettings } from './lib/settings';
@@ -173,7 +174,8 @@ export function App() {
     watchSocial();
     const stopListen = watchListen();
     const stopEvents = watchAccountEvents();
-    return () => { stopEvents?.(); stopListen?.(); stop(); };
+    const stopPresence = watchPresence();
+    return () => { stopPresence(); stopEvents?.(); stopListen?.(); stop(); };
   }, []);
 
   useEffect(() => {

@@ -10,12 +10,27 @@ import { useStore } from '../lib/store';
 import { toast } from '../lib/toast';
 
 const nameOf = (u: AuthorizedUser) => u.nickname || u.email.split('@')[0];
+const PRESENCE_REFRESH_MS = 15_000;
+const lastSeenFormat = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short', hourCycle: 'h23' });
 
 function stateText(u: AuthorizedUser) {
   const a = u.playbackAuthorization;
   if (!a.enabled) return '未授权';
   const when = a.grantedAt ? ` · ${a.grantedAt.slice(0, 10)}` : '';
   return a.source === 'invite' ? `邀请码${a.inviteLabel ? `「${a.inviteLabel}」` : ''}${when}` : `手动开通${when}`;
+}
+
+function MemberPresence({ presence }: { presence: AuthorizedUser['presence'] }) {
+  if (!presence) return <span className="a">在线状态暂不可用</span>;
+  const { online, lastSeenAt, nowPlaying } = presence;
+  const song = nowPlaying?.artist ? `${nowPlaying.name} · ${nowPlaying.artist}` : nowPlaying?.name;
+  return (
+    <span className="a admin-activity">
+      {online ? <><strong>在线</strong> · {song ? `正在听 ${song}` : '未在播放'}</> : '离线'}
+      <br />
+      最后上线 {lastSeenAt ? <time dateTime={lastSeenAt}>{lastSeenFormat.format(new Date(lastSeenAt))}</time> : '暂无记录'}
+    </span>
+  );
 }
 
 /** 会员管理（仅管理员）：会员名单里开通 / 撤销播放授权，会员申请里管名额和开关 */
@@ -31,16 +46,30 @@ export function AdminView() {
   const rawTab = useRoute().query.get('tab');
   const tab = rawTab === 'apply' || rawTab === 'familiar' ? rawTab : 'members';
 
-  // 输入停 300ms 再查；新的查询会取消上一个
+  // 输入停 300ms 再查，之后定时更新，离开名单或换查询时取消请求。
   useEffect(() => {
     if (!allowed || tab !== 'members') return;
     const ctrl = new AbortController();
-    const t = setTimeout(() => {
-      setError(null);
-      listAuthorizedUsers(q, ctrl.signal).then(setRows, (e) => {
-        if ((e as Error).name !== 'AbortError') setError(e as Error);
-      });
-    }, q ? 300 : 0);
+    async function refreshRows() {
+      try {
+        const users = await listAuthorizedUsers(q, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setRows((previous) => {
+          const authorizations = new Map(previous?.map((user) => [user.id, user.playbackAuthorization]));
+          return users.map((user) => {
+            const latest = authorizations.get(user.id);
+            return latest && latest.version > user.playbackAuthorization.version ? { ...user, playbackAuthorization: latest } : user;
+          });
+        });
+        setError(null);
+      } catch (error) {
+        if (!ctrl.signal.aborted) setError(error as Error);
+      } finally {
+        if (!ctrl.signal.aborted) t = setTimeout(() => void refreshRows(), PRESENCE_REFRESH_MS);
+      }
+    }
+    setError(null);
+    let t = setTimeout(() => void refreshRows(), q ? 300 : 0);
     return () => {
       clearTimeout(t);
       ctrl.abort();
@@ -85,7 +114,7 @@ export function AdminView() {
             ? '熟人暗号：题目、时期和资格。资格只说明对上过暗号，不代表核实过现实身份，也不会开通会员。'
             : tab === 'apply'
             ? '会员申请按名额自动发码：正常发放后不超过 9 人，10 到 15 是软限制区，15 是硬顶。'
-            : '开通后对方可以放灰色歌曲。改动立刻生效，对方正在放的歌会按新权限重新取音源。'}
+            : '开通后对方可以放灰色歌曲。改动立刻生效，对方正在放的歌会按新权限重新取音源。在线状态自动更新，播放器断开连接约 2 分钟后显示离线。'}
         </p>
       </header>
       <div className="seg admin-tabs" role="tablist" aria-label="会员管理">
@@ -139,6 +168,7 @@ export function AdminView() {
                   {u.role === 'admin' && <span className="admin-tag mono">管理员</span>}
                 </span>
                 <span className="a">{u.email}</span>
+                <MemberPresence presence={u.presence} />
               </span>
               <span className={`admin-state ${u.playbackAuthorization.enabled ? 'on' : ''}`}>{stateText(u)}</span>
               <button

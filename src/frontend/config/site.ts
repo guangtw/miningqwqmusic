@@ -94,6 +94,7 @@ export const api = {
     authChangePassword: '/api/account/auth/change-password',
     profile: '/api/account/profile',
     profileAvatar: '/api/account/profile/avatar',
+    presence: '/api/account/presence',
     librarySnapshot: '/api/account/library/snapshot',
     libraryFavorites: '/api/account/library/favorites',
     libraryFavorite: '/api/account/library/favorites/:id',

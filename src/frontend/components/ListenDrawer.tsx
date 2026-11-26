@@ -11,6 +11,7 @@ import { currentTrack, playerStore } from '../player/player';
 import { uiStore } from '../player/ui';
 import { Avatar } from './Avatar';
 import { Cover } from './Cover';
+import { FriendActivity } from './FriendActivity';
 import { Icon } from './Icon';
 
 const ago = (at: number) => {
@@ -173,6 +174,7 @@ function Room() {
             <Avatar user={f.user} size={36} />
             <span className="person-text">
               <b>{displayName(f.user)}</b>
+              {f.presence && <small><FriendActivity presence={f.presence} /></small>}
             </span>
             <button
               className="btn sm"

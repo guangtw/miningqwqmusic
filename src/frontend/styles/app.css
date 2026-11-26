@@ -4673,6 +4673,37 @@ mark.hl {
   font-size: 12px;
   color: var(--ink-3);
 }
+.friend-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 10px;
+}
+.friend-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.friend-activity.online {
+  color: var(--ink-2);
+}
+.friend-activity > span {
+  display: inline-flex;
+}
+.friend-activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.friend-activity .eq {
+  height: 9px;
+  gap: 1px;
+}
+.friend-activity .eq i {
+  width: 2px;
+  height: 9px;
+}
 .person .text-btn.danger {
   color: #d64545;
 }
@@ -4691,7 +4722,8 @@ mark.hl {
   background: var(--ink-3);
   box-shadow: 0 0 0 2px var(--surface);
 }
-.person-avatar.online::after {
+.person-avatar.online::after,
+.friend-activity-dot {
   background: #2fb36b;
 }
 .people-search {

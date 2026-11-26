@@ -145,6 +145,7 @@ export type FriendSearchResult = {
 export type FriendSummary = {
   user: AccountUser;
   since: string;
+  presence?: { online: boolean; listening: boolean };
 };
 
 export type FriendRequestSummary = {

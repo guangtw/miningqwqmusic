@@ -1,4 +1,4 @@
-import { devices, expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page, type Route } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -588,6 +588,71 @@ test('listen together: open a room and follow what a friend plays', async ({ pag
   const created = state.calls.find((c) => c.path === '/api/account/listen/rooms' && c.method === 'POST');
   expect((created?.body as { playbackState: { queue: unknown[] } }).playbackState.queue).toHaveLength(2);
   expect(state.calls.some((c) => c.path.startsWith('/api/account/listen/rooms/room1/stream') && c.authorization === 'Bearer login-token')).toBe(true);
+  expect(state.errors).toEqual([]);
+});
+
+test('friend activity appears in the friend list, private chat and listen invitations', async ({ page }) => {
+  const state = await backend(page);
+  const friendSince = '2026-10-01T00:00:00.000Z';
+  const outside = { id: 'u3', email: 'outside@example.test', nickname: '窗边的听众' };
+  let listening = true;
+  let online = true;
+  const fulfill = (route: Route, data: unknown) =>
+    route.fulfill({ json: { code: 0, data, traceId: 'e2e' } });
+  await page.route('**/api/account/friends', (route) => fulfill(route, [
+    { user: friend, since: friendSince, presence: { online: false, listening: false } },
+    { user: outside, since: friendSince, presence: { online, listening } },
+  ]));
+  await page.route('**/api/account/messages/conversations*', (route) => fulfill(route, { items: [], nextCursor: null }));
+  await page.route('**/api/account/messages/users/u3/messages*', (route) =>
+    fulfill(route, { items: [], hasMore: false, nextBefore: null, nextAfter: null }));
+  await page.route('**/api/account/events?*', (route) => fulfill(route, { items: [], nextCursor: '0', hasMore: false }));
+  await page.route('**/api/account/events/stream?*', (route) =>
+    route.fulfill({ contentType: 'text/event-stream', body: 'event: ready\ndata: {}\n\n' }));
+  await page.route('**/api/account/messages/users/u3', (route) => fulfill(route, {
+    id: null,
+    peer: { ...outside, avatarUrl: null, avatarFallbackText: '窗', avatarFallbackBg: '#9a663e' },
+    lastMessage: null, unreadCount: 0, lastReadSequence: 0, peerLastReadSequence: 0,
+    sendPolicy: { relationship: 'friend', hasMutualMessages: false, canSend: true, remainingBeforeReply: null, reason: null },
+  }));
+  await page.goto('/#/account');
+  await page.locator('.main').getByRole('button', { name: '登录同步', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.locator('input[type="email"]').fill(user.email);
+  await dialog.locator('input[type="password"]').fill('test-password');
+  await dialog.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.goto('/#/playlist/p1');
+  await page.locator('.track .t').first().click();
+  await expect(page.locator('.player .np-text')).toContainText(tracks[0].name);
+  await page.goto('/#/friends');
+  const friendRow = page.locator('.person').filter({ hasText: outside.nickname });
+  await expect(friendRow.getByText('在线听歌', { exact: true })).toBeVisible();
+  await expect(page.locator('.person').filter({ hasText: friend.nickname }).getByText('离线', { exact: true })).toBeVisible();
+  await friendRow.getByRole('link', { name: '私信' }).click();
+  const header = page.locator('.chat-head');
+  await expect(header.getByText('在线听歌', { exact: true })).toBeVisible();
+  await expect(header.getByRole('button', { name: '邀请一起听' })).toBeEnabled();
+  await expect(page.getByRole('log')).toContainText(`给 ${outside.nickname} 写第一句话`);
+
+  listening = false;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(header.getByText('在线', { exact: true })).toBeVisible();
+  online = false;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(header.getByText('离线', { exact: true })).toBeVisible();
+
+  await openNowPlaying(page);
+  await page.locator('.player .t-left').getByRole('button', { name: '一起听' }).click();
+  await page.getByRole('button', { name: /开一个房间/ }).click();
+  const inviteRow = page.locator('.listen-room .person').filter({ hasText: outside.nickname });
+  await expect(inviteRow.getByText('离线', { exact: true })).toBeVisible();
+  await expect(inviteRow.getByRole('button', { name: '邀请', exact: true })).toBeEnabled();
+  online = true;
+  listening = true;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(inviteRow.getByText('在线听歌', { exact: true })).toBeVisible();
   expect(state.errors).toEqual([]);
 });
 

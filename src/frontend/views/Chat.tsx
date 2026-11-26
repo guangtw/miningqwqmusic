@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useStat
 import type { DirectConversationDto, DirectMessageDto, MessagePeer } from '@/src/types/social';
 import { ApiError } from '../api/http';
 import { Avatar } from '../components/Avatar';
+import { FriendActivity } from '../components/FriendActivity';
 import { Icon } from '../components/Icon';
 import { InviteTicket, MusicCard } from '../components/MusicCard';
 import { Empty, Loading } from '../components/States';
@@ -147,6 +148,7 @@ export function ChatView({ peerId }: { peerId: string }) {
 
 function ChatHead({ peerId, conversation, friendSince }: { peerId: string; conversation?: DirectConversationDto; friendSince?: string }) {
   const outgoing = useStore(socialStore, (s) => s.requests.outgoing.some((r) => r.addressee.id === peerId));
+  const presence = useStore(socialStore, (s) => s.friends.find((f) => f.user.id === peerId)?.presence);
   const [asked, setAsked] = useState(false);
   const peer = conversation?.peer;
   const isFriend = conversation?.sendPolicy.relationship === 'friend' || !!friendSince;
@@ -174,7 +176,10 @@ function ChatHead({ peerId, conversation, friendSince }: { peerId: string; conve
           {conversation && (
             <p className="chat-rel">
               {isFriend ? (
-                <>好友{since && !Number.isNaN(since.getTime()) ? `，${since.getFullYear()} 年 ${since.getMonth() + 1} 月加的` : ''}</>
+                <>
+                  <FriendActivity presence={presence} />
+                  <span>好友{since && !Number.isNaN(since.getTime()) ? `，${since.getFullYear()} 年 ${since.getMonth() + 1} 月加的` : ''}</span>
+                </>
               ) : outgoing || asked ? (
                 <>还不是好友，等对方通过请求</>
               ) : (

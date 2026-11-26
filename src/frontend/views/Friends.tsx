@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FriendRelationStatus, FriendSearchResult, FriendSummary } from '@/src/types/account';
 import type { DirectConversationDto } from '@/src/types/social';
 import { Avatar } from '../components/Avatar';
+import { FriendActivity } from '../components/FriendActivity';
 import { Icon } from '../components/Icon';
 import { Empty, Loading } from '../components/States';
 import { authStore, displayName } from '../lib/account';
@@ -273,9 +274,12 @@ function FriendRow({ f }: { f: FriendSummary }) {
       <Avatar user={f.user} size={40} />
       <span className="person-text">
         <b>{name}</b>
-        <small>{sinceText(f.since)}</small>
+        <small className="friend-meta">
+          <FriendActivity presence={f.presence} />
+          <span>{sinceText(f.since)}</span>
+        </small>
       </span>
-      <a className="btn sm" href={href.chat(f.user.id)}>
+      <a className="btn sm" href={href.chat(f.user.id)} aria-label="私信">
         <Icon name="chat" size={16} /> <span className="btn-label">私信</span>
       </a>
       {inRoom ? (
@@ -283,6 +287,7 @@ function FriendRow({ f }: { f: FriendSummary }) {
       ) : (
         <button
           className="btn sm"
+          aria-label="一起听"
           onClick={() =>
             void attempt(async () => {
               await inviteFriend(f.user.id);

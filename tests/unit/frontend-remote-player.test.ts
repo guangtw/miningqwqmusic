@@ -254,6 +254,56 @@ it('walks the source recovery entry through switching, done and back to hidden',
   await vi.waitFor(() => expect(player.playerStore.get().canSwitchToStableSource).toBe(true));
 });
 
+it('offers Android cache at the selected quality and bypasses it after manual source recovery', async () => {
+  vi.stubGlobal('navigator', { userAgent: 'MiningQwQMusicAndroid/1.0.5', onLine: true });
+  const offline = { url: 'https://m1.music.126.net/song.mp3', mime: 'audio/mpeg', bytes: 5_000_000,
+    durationMs: 180_000, md5: '1234567890abcdef1234567890abcdef', level: 'exhigh' };
+  const localUrl = 'https://echo.miningqwq.cn/__android/audio/entry';
+  let cached = false;
+  const request = vi.fn(async (command: string) =>
+    command === 'find' && cached ? { status: 'ready', url: localUrl, level: 'exhigh', kind: 'cache' } : {});
+  vi.stubGlobal('MiningOffline', { version: 1, request });
+  const settings = await import('@/src/frontend/lib/settings');
+  settings.updateSettings({ quality: 'lossless' });
+  f.source.mockImplementation(async (_id, _quality, _token, _signal, mode) => mode === 'force_off'
+    ? { ...source, preview: true, level: 'exhigh', resolvedVia: 'primary', access: 'paid' }
+    : { ...source, level: 'exhigh', access: 'free', resolvedVia: 'unblock', offline });
+  const player = await import('@/src/frontend/player/player');
+  player.playList([track]);
+  await vi.waitFor(() => expect(player.playerStore.get().loading).toBe(false));
+  expect(f.source.mock.calls[0].slice(4)).toEqual(['force_on', 'android']);
+  expect(request).toHaveBeenCalledWith('find', expect.objectContaining({ quality: 'lossless', md5: offline.md5 }));
+  FakeAudio.last.dispatchEvent(new Event('playing'));
+  expect(request).toHaveBeenCalledWith('start', expect.objectContaining({ quality: 'lossless', source: offline, kind: 'cache' }));
+
+  cached = true;
+  player.playList([track]);
+  await vi.waitFor(() => expect(FakeAudio.last.src).toBe(localUrl));
+  expect(player.switchToStableSource(track.id)).toBe(true);
+  await vi.waitFor(() => expect(player.playerStore.get()).toMatchObject({ loading: false, preview: true, resolvedVia: 'primary' }));
+  expect(request).toHaveBeenCalledWith('invalidate', { trackId: track.id });
+  expect(request.mock.calls.filter(([command]) => command === 'find')).toHaveLength(2);
+  expect(f.source.mock.calls[2].slice(4)).toEqual(['force_off', 'android']);
+});
+
+it('plays the selected downloaded copy without a BFF request when offline', async () => {
+  vi.stubGlobal('navigator', { userAgent: 'MiningQwQMusicAndroid/1.0.5', onLine: false });
+  const entry = {
+    id: 'file-id', trackId: track.id, name: track.name, artist: 'Artist', durationMs: 180_000,
+    quality: 'lossless', level: 'exhigh', mime: 'audio/mpeg', bytes: 5_000_000, writtenBytes: 5_000_000,
+    status: 'ready', kind: 'download', createdAt: 0, lastUsedAt: 0,
+  } as const;
+  const url = 'https://echo.miningqwq.cn/__android/audio/file-id';
+  const request = vi.fn(async () => ({ ...entry, url }));
+  vi.stubGlobal('MiningOffline', { version: 1, request });
+  const player = await import('@/src/frontend/player/player');
+  player.playOfflineEntry(entry);
+  await vi.waitFor(() => expect(FakeAudio.last.src).toBe(url));
+  expect(player.playerStore.get().level).toBe('exhigh');
+  expect(request).toHaveBeenCalledWith('find', { id: entry.id, trackId: track.id, quality: 'lossless', anyQuality: true });
+  expect(f.source).not.toHaveBeenCalled();
+});
+
 it('nudges near the title on every 超清母带 track, but only once per visit for other qualities', async () => {
   let level = 'jymaster';
   f.source.mockImplementation(async () => ({ ...source, access: 'free', resolvedVia: 'unblock', level }));

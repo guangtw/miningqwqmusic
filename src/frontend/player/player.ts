@@ -1,11 +1,15 @@
 import { ApiError, coverOf, music, type Track, type TrackLyric } from '../api';
 import { api } from '../config/site';
 import { authStore, pushRecent } from '../lib/account';
-import type { PlayQualityLevel, PlaySource, PlayUnblockMode } from '../api/types';
+import type { OfflineAudioSource, PlayQualityLevel, PlaySource, PlayUnblockMode } from '../api/types';
 import { getSettings, updateSettings } from '../lib/settings';
 import { readJSON, writeJSON } from '../lib/storage';
 import { createStore } from '../lib/store';
 import { detectVisitor } from '../lib/clientDownloads';
+import {
+  cachePlayedAudio, findOfflineAudio, hasOfflineAudio, invalidateTrackCache, offlineEntryTrack, removeOfflineAudio,
+  type OfflineEntry, type OfflinePlayback,
+} from '../lib/offlineAudio';
 import { toast } from '../lib/toast';
 import { getPlayQualityLabel, PLAY_QUALITY_LEVELS } from '@/src/lib/play-quality';
 
@@ -64,6 +68,7 @@ audio.volume = 0.5;
 // The APK can be backgrounded between play() and its promise settling. Start its
 // decoder at the user's volume, without waiting for a WebView timer to unmute it.
 const androidClient = detectVisitor().inClient === 'android';
+const nativeMobilePlayback = () => androidClient || hasOfflineAudio();
 const canFade = !androidClient && audio.volume === 0.5;
 
 // ---- 淡入淡出 ----
@@ -137,7 +142,12 @@ function softPlay(): Promise<void> {
 }
 
 /** 当前 <audio> 里装的是哪首、地址何时过期 */
-let loaded: { id: string; expiresAt: number } | null = null;
+let loaded: {
+  id: string;
+  expiresAt: number;
+  local?: OfflinePlayback;
+  cache?: { quality: PlayQualityLevel; source: OfflineAudioSource };
+} | null = null;
 let loadToken = 0;
 /** 本次加载是否已经因为地址失效重取过一次 */
 let renewedOnce = false;
@@ -177,7 +187,7 @@ authStore.subscribe(() => {
   const key = authorizationKey();
   if (key === lastAuthorization) return;
   lastAuthorization = key;
-  if (!loaded) return;
+  if (!loaded || loaded.local) return;
   const resumeAt = audio.currentTime * 1000;
   const autoplay = !audio.paused;
   loaded = null;
@@ -220,6 +230,11 @@ audio.addEventListener('waiting', () => set({ loading: true }));
 audio.addEventListener('playing', () => {
   set({ loading: false, playing: !audio.paused && !pausing });
   const t = currentTrack();
+  if (t && loaded?.id === t.id && loaded.cache && !audio.paused) {
+    const { quality, source } = loaded.cache;
+    loaded.cache = undefined;
+    void cachePlayedAudio(t, quality, source).catch(() => undefined);
+  }
   if (t && !recentPushed) {
     recentPushed = true;
     pushRecent(t);
@@ -241,7 +256,9 @@ audio.addEventListener('error', () => {
   // 播放地址是短时效的：第一次出错先续签再接着放
   if (!renewedOnce) {
     renewedOnce = true;
-    void resolveAndPlay(get().index, { resumeAt: at, autoplay: intendedPlaying });
+    const local = loaded?.local;
+    if (local?.kind === 'cache') void removeOfflineAudio(local.id).catch(() => undefined);
+    void resolveAndPlay(get().index, { resumeAt: at, autoplay: intendedPlaying, bypassOffline: !!local });
     return;
   }
   set({ loading: false, playing: false });
@@ -260,15 +277,58 @@ let lastQualityNotice = '';
 /** 只影响当前一轮播放；不写入持久音源偏好。 */
 let stableSourceTrackId: string | null = null;
 
+type PlaybackLoad = { source: PlaySource; local?: OfflinePlayback };
+
+async function loadPlayback(
+  trackId: string,
+  quality: PlayQualityLevel,
+  mode: PlayUnblockMode,
+  signal: AbortSignal,
+  useOffline: boolean,
+  entry?: OfflineEntry,
+): Promise<PlaybackLoad> {
+  const lookup = (options?: Parameters<typeof findOfflineAudio>[2]) =>
+    findOfflineAudio(trackId, quality, options).catch(() => undefined);
+  const localSource = (local: OfflinePlayback): PlaybackLoad => ({
+    source: { trackId, url: local.url, level: local.level, preview: false },
+    local,
+  });
+  if (entry || (useOffline && !navigator.onLine)) {
+    const local = await lookup({ anyQuality: true, id: entry?.id });
+    signal.throwIfAborted();
+    if (local) return localSource(local);
+    throw new Error(entry ? '这首歌的离线文件已不可用。' : '没有这首歌可用的离线文件。');
+  }
+  try {
+    const source = await music.playUrl(trackId, quality, authStore.get().token, signal, mode, nativeMobilePlayback() ? 'android' : undefined);
+    if (useOffline && source.offline) {
+      signal.throwIfAborted();
+      const local = await lookup({ md5: source.offline.md5 });
+      if (local) return { source: { ...source, url: local.url, level: local.level }, local };
+    } else if (useOffline && (source.preview || source.access === 'vip' || source.access === 'paid')) {
+      void invalidateTrackCache(trackId).catch(() => undefined);
+    }
+    return { source };
+  } catch (error) {
+    if (!useOffline || !(error instanceof ApiError) || error.status !== 0 || signal.aborted) throw error;
+    const local = await lookup({ anyQuality: true });
+    if (local) return localSource(local);
+    throw error;
+  }
+}
+
 /** 取播放地址并装进 <audio>；resumeAt 用于续签后从原位置继续 */
 async function resolveAndPlay(
   index: number,
-  opts: { autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean } = {},
+  opts: {
+    autoplay?: boolean; resumeAt?: number; startAt?: number; skipped?: number; remote?: boolean;
+    bypassOffline?: boolean; offlineEntry?: OfflineEntry;
+  } = {},
 ): Promise<void> {
   const { queue } = get();
   const track = queue[index];
   if (!track) return;
-  if (Date.now() < retryNotBefore) {
+  if (Date.now() < retryNotBefore && !opts.offlineEntry && !(hasOfflineAudio() && !navigator.onLine)) {
     loadToken += 1;
     intendedPlaying = false;
     loaded = null;
@@ -301,22 +361,28 @@ async function resolveAndPlay(
     updateMediaSession(track);
   }
   const unblockMode: PlayUnblockMode = stableSourceTrackId === track.id ? 'force_off'
-    : getSettings().preferUnblock === true ? 'force_on' : 'auto';
+    : nativeMobilePlayback() || getSettings().preferUnblock === true ? 'force_on' : 'auto';
   set({ loading: true, unblockMode, canSwitchToStableSource: false });
 
   try {
     // Coalesce same-tick changes before starting either request.
     await Promise.resolve();
     if (token !== loadToken || signal.aborted) return;
-    const requestedQuality = getSettings().quality;
-    const source = music.playUrl(track.id, requestedQuality, authStore.get().token, signal, unblockMode);
-    if (fresh) loadLyric(track.id, token, signal);
-    const src = await source;
+    const requestedQuality = opts.offlineEntry?.quality ?? getSettings().quality;
+    const useOffline = hasOfflineAudio() && !opts.remote && !opts.bypassOffline && stableSourceTrackId !== track.id;
+    const playback = loadPlayback(track.id, requestedQuality, unblockMode, signal, useOffline, opts.offlineEntry);
+    if (fresh && navigator.onLine) loadLyric(track.id, token, signal);
+    const { source: src, local } = await playback;
     if (token !== loadToken) return;
     if (!src.url) throw new ApiError('没有可用的播放地址', 0, 0);
     await silenced;
     if (token !== loadToken) return;
-    loaded = { id: track.id, expiresAt: expiryOf(src) };
+    loaded = {
+      id: track.id,
+      expiresAt: local ? Infinity : expiryOf(src),
+      local,
+      cache: !local && useOffline && src.offline ? { quality: requestedQuality, source: src.offline } : undefined,
+    };
     audio.src = src.url;
     const alignRemote = () => {
       if (!remoteTarget || token !== loadToken) return;
@@ -349,7 +415,8 @@ async function resolveAndPlay(
     });
     if (token !== loadToken) return;
     if (remoteTarget) alignRemote();
-    set({ loading: false, canSwitchToStableSource: src.resolvedVia === 'unblock' && src.access === 'free' && !src.preview });
+    const recoverUnblock = src.resolvedVia === 'unblock' && (nativeMobilePlayback() || src.access === 'free') && !src.preview;
+    set({ loading: false, canSwitchToStableSource: recoverUnblock || (!!local && navigator.onLine) });
   } catch (e) {
     if (token !== loadToken) return;
     if (signal.aborted || (e as Error).name === 'AbortError') return;
@@ -398,6 +465,15 @@ export function playList(tracks: Track[], start = 0) {
   history.length = 0;
   set({ queue: tracks, index: start });
   void resolveAndPlay(start);
+  emit('queue');
+}
+
+/** Offline library entry selected explicitly, including its stored quality. */
+export function playOfflineEntry(entry: OfflineEntry) {
+  if (entry.status !== 'ready') return;
+  history.length = 0;
+  set({ queue: [offlineEntryTrack(entry)], index: 0 });
+  void resolveAndPlay(0, { offlineEntry: entry });
   emit('queue');
 }
 
@@ -659,6 +735,7 @@ export function switchToStableSource(expectedTrackId?: string): boolean {
   const track = currentTrack(s);
   if (!loaded || !track || (expectedTrackId != null && expectedTrackId !== track.id) || s.loading || !s.canSwitchToStableSource) return false;
   stableSourceTrackId = track.id;
+  if (hasOfflineAudio()) void invalidateTrackCache(track.id).catch(() => undefined);
   void resolveAndPlay(s.index, { resumeAt: audio.currentTime * 1000, autoplay: s.playing });
   return true;
 }

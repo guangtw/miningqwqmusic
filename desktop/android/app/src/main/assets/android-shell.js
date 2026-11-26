@@ -16,15 +16,23 @@
       if (!request) return;
       pending.delete(reply.ack);
       clearTimeout(request.timer);
-      reply.ok ? request.resolve() : request.reject(new Error('Download failed'));
+      reply.ok ? request.resolve(reply.data) : request.reject(new Error(reply.error || 'Download failed'));
     } catch {}
   };
   const transfer = data => new Promise((resolve, reject) => {
     const ack = String(++sequence);
-    const timer = setTimeout(() => { pending.delete(ack); reject(new Error('Download timeout')); }, 15000);
+    const timer = setTimeout(() => { pending.delete(ack); reject(new Error('timeout')); }, data.type.startsWith('offline-') ? 60000 : 15000);
     pending.set(ack, { resolve, reject, timer });
     send({ ...data, ack });
   });
+  if (window.MiningAndroid) {
+    Object.defineProperty(window, 'MiningOffline', {
+      value: Object.freeze({
+        version: 1,
+        request: (command, data = {}) => transfer({ ...data, type: 'offline-' + command }),
+      }),
+    });
+  }
   const trusted = url => url.protocol === 'https:' && url.hostname === 'echo.miningqwq.cn' && (!url.port || url.port === '443') && !url.username && !url.password;
   const resolve = value => { try { return new URL(value, location.href); } catch { return null; } };
 

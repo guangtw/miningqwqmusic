@@ -2,6 +2,7 @@ import { runMusicRequest } from "@/src/lib/music/request-context";
 import { failure, success } from "@/src/lib/api-response";
 import { toAppError } from "@/src/lib/errors";
 import { getPlaySource } from "@/src/lib/music/service";
+import { offlineCacheSource } from "@/src/lib/music/offline-audio";
 import { resolvePlaybackAuthorizationState, toPlayQualityLevel, toPlayUnblockMode } from "@/src/lib/music-playback-auth";
 import { createTraceId } from "@/src/lib/trace";
 
@@ -14,6 +15,7 @@ async function handleGET(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const { searchParams } = new URL(request.url);
+    const android = searchParams.get("offline") === "android";
     const requestedLevel = toPlayQualityLevel(searchParams.get("level"));
     const requestedUnblockMode = toPlayUnblockMode(searchParams.get("unblockMode"));
     const authorizationState =
@@ -32,11 +34,13 @@ async function handleGET(request: Request, context: Context) {
     // was opened. The source reports its actual level on this very response.
     const data = await getPlaySource(id, {
       level: requestedLevel,
-      unblockMode: effectiveUnblockMode
+      unblockMode: effectiveUnblockMode,
+      ...(android && effectiveUnblockMode === "force_on" ? { requireFullUnblock: true } : {})
     });
     const response = success(
       {
         ...data,
+        ...(android ? { offline: offlineCacheSource(data) } : {}),
         requestedLevel,
         authorizationScope: canUseUnblock ? ("authorized" as const) : ("guest" as const),
         authorizationVersion

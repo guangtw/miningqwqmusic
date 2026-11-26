@@ -77,13 +77,14 @@ export const music = {
   },
 
   track: (id: string) => request<Track>(path(p.track, { id })),
-  playUrl: (id: string, level: PlayQualityLevel, token?: string | null, signal?: AbortSignal, unblockMode: PlayUnblockMode = 'auto') =>
-    authed<PlaySource>(path(p.playUrl, { id }), { query: { level, unblockMode }, token, signal }),
+  playUrl: (id: string, level: PlayQualityLevel, token?: string | null, signal?: AbortSignal, unblockMode: PlayUnblockMode = 'auto', offline?: 'android') =>
+    authed<PlaySource>(path(p.playUrl, { id }), { query: { level, unblockMode, offline }, token, signal }),
   lyric: (id: string, signal?: AbortSignal) => request<TrackLyric>(path(p.lyric, { id }), { signal }),
   qualityOptions: (id: string, token?: string | null) =>
     authed<TrackQualityAvailability>(path(p.qualityOptions, { id }), { token }),
   insight: (id: string, signal?: AbortSignal) => request<SongInsight>(path(p.insight, { id }), { signal }),
-  downloadUrl: (id: string, level: PlayQualityLevel) => request<DownloadSource>(path(p.downloadUrl, { id }), { query: { level } }),
+  downloadUrl: (id: string, level: PlayQualityLevel, offline?: 'android') =>
+    request<DownloadSource>(path(p.downloadUrl, { id }), { query: { level, offline } }),
   sati: (tag?: string) => request<SceneData>(p.sceneSati, { query: { tag } }),
   sport: (bpm: number) => request<SceneData>(p.sceneSport, { query: { bpm } }),
 

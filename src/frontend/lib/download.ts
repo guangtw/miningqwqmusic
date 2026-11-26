@@ -1,5 +1,6 @@
 import { music, type Track } from '../api';
 import { getSettings } from './settings';
+import { enqueueOfflineDownload, hasOfflineAudio, offlineAudioError } from './offlineAudio';
 import { toast } from './toast';
 
 // 下载：按设置里的音质要一个下载地址，拉成文件存下来。
@@ -33,6 +34,11 @@ export async function downloadTrack(t: Track) {
   if (busy.has(t.id)) return toast(`《${t.name}》正在准备，稍等。`);
   busy.add(t.id);
   try {
+    if (hasOfflineAudio()) {
+      const row = await enqueueOfflineDownload(t, getSettings().quality);
+      toast(row.status === 'ready' ? `《${t.name}》已下载。` : `《${t.name}》已加入下载队列。`);
+      return;
+    }
     const src = await music.downloadUrl(t.id, getSettings().quality);
     const name = fileName(t, src.format);
     // https 页面里取 http 地址会被拦，网易云的音源站两种都支持
@@ -46,7 +52,7 @@ export async function downloadTrack(t: Track) {
       window.open(url, '_blank', 'noopener');
     }
   } catch (e) {
-    toast((e as Error).message);
+    toast(offlineAudioError(e));
   } finally {
     busy.delete(t.id);
   }

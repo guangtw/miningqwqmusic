@@ -76,7 +76,21 @@ async function untilMessage(id, type = 'message.created') {
     const request = await api(a, 'friends/requests', { userId: b.id });
     await api(b, 'friends/requests/' + request.id + '/accept', {});
     check((await api(a, path(b))).sendPolicy.relationship === 'friend', 'Existing friendship not reused');
+    const clientId = crypto.randomBytes(16).toString('hex');
+    const presenceTrack = { name: 'Release QA track', artist: 'Release QA artist' };
+    await api(null, 'presence', { clientId, track: presenceTrack }, 401);
+    await api(a, 'admin/playback-authorizations/users', undefined, 403);
+    await api(a, 'presence', { clientId, track: presenceTrack });
+    const friendEntry = async () => (await api(b, 'friends')).find(row => row.user.id === a.id);
+    const listening = (await friendEntry())?.presence;
+    check(listening?.online === true && listening.listening === true && Object.keys(listening).length === 2,
+      'Friend presence is missing or includes private playback details');
+    await api(a, 'presence', { clientId, track: null });
+    const paused = (await friendEntry())?.presence;
+    check(paused?.online === true && paused.listening === false, 'Paused playback is still shown to friends');
     await api(a, 'friends/' + b.id, undefined, 200, 'DELETE');
+    check(!(await friendEntry()), 'Presence is still visible after removing a friend');
+    console.log('FRIEND_PRESENCE_REGRESSION_PASSED');
     check((await api(a, path(b))).sendPolicy.canSend, 'Mutual reply qualification was lost');
     const track = id => ({ id, name: id, artists: [{ id: 'qa', name: 'QA' }], durationMs: 1000, coverUrl: 'https://example.test/' + id + '.jpg' });
     const playlist = { id: 'mine-release-qa', name: 'Release QA', tracks: [track('a'), track('b')],

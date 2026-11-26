@@ -1,4 +1,4 @@
-const CACHE_NAME = "qwq-music-shell-v7";
+const CACHE_NAME = "qwq-music-shell-v8";
 const OFFLINE_URL = "/offline";
 
 const ASSET_CACHE = [
@@ -57,6 +57,7 @@ self.addEventListener("fetch", (event) => {
     isSameOrigin &&
     (
       url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/__android/") ||
       url.pathname.startsWith("/_next/")
     )
   ) {

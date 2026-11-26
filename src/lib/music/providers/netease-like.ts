@@ -130,6 +130,7 @@ type AdapterConfig = {
 
 type PlayData = {
   id?: number;
+  md5?: string;
   url?: string | null;
   br?: number;
   size?: number;
@@ -153,6 +154,11 @@ type PlayCandidate = {
   data: PlayData;
   resolvedVia: "primary" | "unblock";
 };
+
+function audioBitrateLevel(format?: string, bitrate?: number): PlaySource["level"] {
+  if (!bitrate || !["mp3", "aac", "m4a"].includes(format ?? "")) return;
+  return bitrate <= 128000 ? "standard" : bitrate <= 192000 ? "higher" : "exhigh";
+}
 
 type AudioUrlProbe = {
   contentLength?: number;
@@ -611,18 +617,23 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     const preview = this.isVipPreview(data);
     const format = asString(data.type)?.toLowerCase();
     const bitrate = asNumber(data.br);
-    const bitrateLevel = bitrate && ["mp3", "aac", "m4a"].includes(format ?? "")
-      ? bitrate <= 128000 ? "standard" : bitrate <= 192000 ? "higher" : "exhigh"
-      : undefined;
+    const bitrateLevel = audioBitrateLevel(format, bitrate);
+    const declaredLevel = toPlayQualityLevel(data.level);
     return {
       trackId,
       url: data.url ?? "",
       preview,
       // Match endpoints may expose only a URL. Follow the upstream v1 contract
       // for that case: report the requested tier, while preserving explicit reports.
-      level: toPlayQualityLevel(data.level) ?? (resolvedVia === "unblock" ? toPlayQualityLevel(requestedLevel) : bitrateLevel),
+      level: declaredLevel ?? (resolvedVia === "unblock" ? toPlayQualityLevel(requestedLevel) : bitrateLevel),
       access: data.access,
       bitrate,
+      size: asNumber(data.size),
+      format,
+      sourceTrackId: data.id == null ? undefined : String(data.id),
+      contentMd5: asString(data.md5),
+      contentLevel: declaredLevel ?? bitrateLevel,
+      expectedDurationMs: data.expectedDurationMs,
       restrictionReason: this.getRestrictionReason(raw, data),
       resolvedVia,
       ttlSeconds: data.expi ? Math.max(10, Math.floor(data.expi)) : undefined,
@@ -887,7 +898,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   async getPlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const key = JSON.stringify(["play", trackId, this.resolvePlayLevel(options), this.resolvePlayUnblockMode(options),
-      this.config.pathPlayUrl, this.config.pathPlayUrlUnblock, this.config.unblockSources, this.config.unblockSource]);
+      options?.requireFullUnblock === true, this.config.pathPlayUrl, this.config.pathPlayUrlUnblock,
+      this.config.unblockSources, this.config.unblockSource]);
     // Authorization is checked by the route on every request. Separate guest/authorized
     // modes and quality levels; retain only in-flight results, never completed URLs.
     return this.requests.share(key, () => this.resolvePlaySource(trackId, options), 0, 5000);
@@ -895,6 +907,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
 
   private async resolvePlaySource(trackId: string, options?: PlaySourceRequestOptions): Promise<PlaySource> {
     const unblockMode = this.resolvePlayUnblockMode(options);
+    const requireFullUnblock = unblockMode === "force_on" && options?.requireFullUnblock === true;
     const requestedLevel = this.resolvePlayLevel(options);
     let level = unblockMode === "force_on" ? await this.resolveUnblockPlayLevel(trackId, requestedLevel) : requestedLevel;
     let sourceError: unknown;
@@ -935,6 +948,8 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     if (bestCandidate && (await shouldRejectCandidate(bestCandidate, "primary"))) {
       bestCandidate = null;
     }
+    const usable = (candidate: PlayCandidate | null): candidate is PlayCandidate =>
+      candidate !== null && (!requireFullUnblock || !this.isRestrictedPlaySource(candidate.raw, candidate.data));
 
     const shouldTryUnblock = unblockMode !== "force_off" && (!bestCandidate || this.shouldAttemptUnblock(raw, data));
     this.debugUnblockTrace(trackId, "v1", {
@@ -947,7 +962,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     });
 
     if (!unblockPath || !shouldTryUnblock) {
-      if (bestCandidate) {
+      if (usable(bestCandidate)) {
         return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia, level);
       }
       throw new AppError("Play source unavailable", { code: 3002, status: 404, retryable: true });
@@ -1007,7 +1022,7 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       }
     }
 
-    if (bestCandidate) {
+    if (usable(bestCandidate)) {
       return this.toPlaySource(trackId, bestCandidate.raw, bestCandidate.data, bestCandidate.resolvedVia, level);
     }
 
@@ -1296,8 +1311,12 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
     };
   }
 
-  async getDownloadSource(trackId: string, level?: string): Promise<DownloadSource> {
+  async getDownloadSource(trackId: string, level?: string, forOffline = false): Promise<DownloadSource> {
     const targetLevel = level ?? this.config.downloadLevel;
+    const metadata = forOffline ? await this.getTrackPlaybackMetadata(trackId) : undefined;
+    if (forOffline && (metadata?.access !== "free" || !metadata.durationMs)) {
+      throw new AppError("此歌曲没有可保存的完整官方音源。", { code: 3011, status: 404 });
+    }
     const raw = await this.request<AnyRecord>(this.config.pathSongDownloadUrl, {
       id: trackId,
       level: targetLevel
@@ -1315,6 +1334,11 @@ export class NeteaseLikeAdapter implements MusicSourceAdapter {
       bitrate: asNumber(data.br),
       size: asNumber(data.size),
       format: asString(data.type),
+      sourceTrackId: data.id == null ? undefined : String(data.id),
+      contentMd5: asString(data.md5),
+      contentLevel: toPlayQualityLevel(asString(data.level)) ?? audioBitrateLevel(asString(data.type)?.toLowerCase(), asNumber(data.br)),
+      expectedDurationMs: metadata?.durationMs,
+      preview: forOffline && this.isRestrictedPlaySource(raw, { ...data, url, expectedDurationMs: metadata?.durationMs }) ? true : undefined,
       ttlSeconds: asNumber(data.expi)
     };
   }

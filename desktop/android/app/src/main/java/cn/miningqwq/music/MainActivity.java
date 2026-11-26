@@ -9,6 +9,7 @@ import android.os.IBinder;
 import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -51,6 +52,7 @@ public final class MainActivity extends Activity {
     };
     private final Runnable retryTask = this::retry;
     private NativeDownloads downloads;
+    private NativeOfflineAudio offlineAudio;
     private PlaybackService playback;
     private JSONObject lastPlayback, lastArtwork;
     private boolean bound;
@@ -129,6 +131,7 @@ public final class MainActivity extends Activity {
         webView.setWebViewClient(new ShellWebViewClient(this));
         webView.setWebChromeClient(new ShellChromeClient(this));
         downloads = new NativeDownloads(this);
+        offlineAudio = new NativeOfflineAudio(this);
         webView.setDownloadListener((url, agent, disposition, mime, length) -> downloads.downloadUrl(url, agent, disposition, mime));
         root.addView(webView, new FrameLayout.LayoutParams(-1, -1));
         try (InputStream stream = getAssets().open("android-shell.js")) {
@@ -149,6 +152,17 @@ public final class MainActivity extends Activity {
                                 // its replacement before the page treats the request as complete.
                                 CookieManager.getInstance().flush();
                                 reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":true}");
+                            } else if (payload.optString("type").startsWith("offline-")) {
+                                String ack = payload.optString("ack");
+                                offlineAudio.dispatch(payload, (data, error) -> handler.post(() -> {
+                                    if (destroyed) return;
+                                    try {
+                                        JSONObject result = new JSONObject().put("ack", ack).put("ok", error == null);
+                                        if (error == null) result.put("data", data);
+                                        else result.put("error", error);
+                                        reply.postMessage(result.toString());
+                                    } catch (JSONException | IllegalStateException ignored) {}
+                                }));
                             } else if (payload.optString("type").startsWith("blob-")) {
                                 downloads.transfer(payload, ok -> {
                                     if (!destroyed) reply.postMessage("{\"ack\":" + JSONObject.quote(payload.optString("ack")) + ",\"ok\":" + ok + "}");
@@ -167,7 +181,7 @@ public final class MainActivity extends Activity {
         connectivity = getSystemService(ConnectivityManager.class);
         connectivity.registerDefaultNetworkCallback(networkCallback);
         bound = bindService(new Intent(this, PlaybackService.class), playbackConnection, BIND_AUTO_CREATE);
-        webView.loadUrl(NavigationPolicy.HOME);
+        if (connectivity.getActiveNetwork() != null || !openOfflineShell()) webView.loadUrl(NavigationPolicy.HOME);
     }
 
     private void handleMessage(JSONObject message) throws JSONException {
@@ -224,6 +238,19 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(retryTask);
         handler.postDelayed(retryTask, 10_000);
     }
+
+    boolean openOfflineShell() {
+        if (destroyed || connectivity == null) return false;
+        NetworkCapabilities active = connectivity.getNetworkCapabilities(connectivity.getActiveNetwork());
+        if (active != null && active.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) return false;
+        try (InputStream unused = getAssets().open("android-offline.html")) {
+            failed = false;
+            webView.loadUrl(NavigationPolicy.ORIGIN + NativeOfflineAudio.SHELL_PATH);
+            return true;
+        } catch (IOException unavailable) { return false; }
+    }
+
+    NativeOfflineAudio offlineAudio() { return offlineAudio; }
 
     private void retry() {
         if (destroyed || !failed) return;

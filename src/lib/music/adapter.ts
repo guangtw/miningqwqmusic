@@ -46,7 +46,7 @@ export interface MusicSourceAdapter {
   getAlbumDetail(albumId: string): Promise<AlbumDetail>;
   getArtistDetail(artistId: string): Promise<ArtistDetail>;
   getTrackInsight(trackId: string): Promise<SongInsight>;
-  getDownloadSource(trackId: string, level?: string): Promise<DownloadSource>;
+  getDownloadSource(trackId: string, level?: string, forOffline?: boolean): Promise<DownloadSource>;
   getSatiScene(tag?: string): Promise<SceneData>;
   getSportScene(bpm: number): Promise<SceneData>;
 }

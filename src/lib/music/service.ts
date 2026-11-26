@@ -106,7 +106,7 @@ export async function getPlaySource(trackId: string, options?: PlaySourceRequest
   try {
     return await getAdapter().getPlaySource(trackId, options);
   } catch (error) {
-    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    if (options?.requireFullUnblock || !envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getPlaySource(trackId, options);
   }
 }
@@ -183,11 +183,11 @@ export async function getTrackInsight(trackId: string): Promise<SongInsight> {
   }
 }
 
-export async function getDownloadSource(trackId: string, level?: string): Promise<DownloadSource> {
+export async function getDownloadSource(trackId: string, level?: string, forOffline = false): Promise<DownloadSource> {
   try {
-    return await getAdapter().getDownloadSource(trackId, level);
+    return await getAdapter().getDownloadSource(trackId, level, forOffline);
   } catch (error) {
-    if (!envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
+    if (forOffline || !envEnabled("MUSIC_SOURCE_MOCK_FALLBACK", false)) throw error;
     return createMockMusicAdapter().getDownloadSource(trackId, level);
   }
 }

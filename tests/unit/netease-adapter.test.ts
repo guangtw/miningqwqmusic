@@ -355,6 +355,23 @@ describe("NeteaseLikeAdapter mapping", () => {
     expect(fetchMock.mock.calls.some(([url])=>String(url).includes("/song/url/match"))).toBe(false);
   });
 
+  it("keeps Android member playback on full matching audio until an explicit official request", async () => {
+    const adapter = createAdapter({ pathPlayUrlUnblock: "/song/url/match", unblockSources: ["unm"] });
+    const preview = { url: "https://cdn.test/preview.mp3", time: 30000, level: "exhigh" };
+    const fetchMock = mockPlaySourceFetch([
+      jsonResponse({ data: [preview] }),
+      jsonResponse({ data: [] }),
+      jsonResponse({ data: [preview] })
+    ], { fee: 1 });
+    await expect(adapter.getPlaySource("108485", { unblockMode: "force_on", requireFullUnblock: true }))
+      .rejects.toMatchObject({ code: 3002 });
+    await expect(adapter.getPlaySource("108485", { unblockMode: "force_off" }))
+      .resolves.toMatchObject({ preview: true, resolvedVia: "primary" });
+    const officialRequests = fetchMock.mock.calls.map(([url]) => new URL(String(url)))
+      .filter((url) => url.pathname === "/song/url/v1").map((url) => url.searchParams.get("unblock"));
+    expect(officialRequests).toEqual(["true", "false"]);
+  });
+
   it.each([
     {data:[{url:"https://cdn.test/full",level:"lossless"}]},
     {data:{url:"https://cdn.test/full",level:"lossless"}},

@@ -59,6 +59,7 @@ export type PlayUnblockMode = "auto" | "force_on" | "force_off";
 export type PlaySourceRequestOptions = {
   level?: PlayQualityLevel;
   unblockMode?: PlayUnblockMode;
+  requireFullUnblock?: boolean;
 };
 
 export type PlaySource = {
@@ -70,6 +71,13 @@ export type PlaySource = {
   /** 网易歌曲付费类型；free 包括免费播放、较高音质需会员的类型。 */
   access?: "free" | "vip" | "paid";
   bitrate?: number;
+  size?: number;
+  format?: string;
+  sourceTrackId?: string;
+  contentMd5?: string;
+  contentLevel?: PlayQualityLevel;
+  expectedDurationMs?: number;
+  offline?: OfflineAudioSource;
   restrictionReason?: string;
   resolvedVia?: "primary" | "unblock" | "grace";
   authorizationScope?: "guest" | "authorized";
@@ -193,6 +201,21 @@ export type DownloadSource = {
   size?: number;
   format?: string;
   ttlSeconds?: number;
+  preview?: boolean;
+  sourceTrackId?: string;
+  contentMd5?: string;
+  contentLevel?: PlayQualityLevel;
+  expectedDurationMs?: number;
+  offline?: OfflineAudioSource;
+};
+
+export type OfflineAudioSource = {
+  url: string;
+  mime: string;
+  bytes: number;
+  level: PlayQualityLevel;
+  md5: string;
+  durationMs: number;
 };
 
 export type TrackQualityAvailability = {

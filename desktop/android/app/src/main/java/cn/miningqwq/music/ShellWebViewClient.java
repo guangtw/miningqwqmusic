@@ -11,6 +11,9 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.IOException;
+import java.util.Collections;
+
 final class ShellWebViewClient extends WebViewClient {
     private final MainActivity activity;
 
@@ -38,7 +41,25 @@ final class ShellWebViewClient extends WebViewClient {
     }
 
     @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-        if (request.isForMainFrame()) activity.pageFailed();
+        if (!request.isForMainFrame()) return;
+        int code = error.getErrorCode();
+        if ((code == ERROR_HOST_LOOKUP || code == ERROR_CONNECT || code == ERROR_TIMEOUT || code == ERROR_IO)
+                && !NativeOfflineAudio.SHELL_PATH.equals(request.getUrl().getPath()) && activity.openOfflineShell()) return;
+        activity.pageFailed();
+    }
+
+    @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+        if (!NavigationPolicy.isTrusted(request.getUrl().toString())) return null;
+        if (request.isForMainFrame() && NativeOfflineAudio.SHELL_PATH.equals(request.getUrl().getPath())) {
+            try {
+                return new WebResourceResponse("text/html", "UTF-8", 200, "OK",
+                        Collections.singletonMap("Cache-Control", "no-store"), activity.getAssets().open("android-offline.html"));
+            } catch (IOException unavailable) {
+                return new WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", Collections.emptyMap(), null);
+            }
+        }
+        NativeOfflineAudio offline = activity.offlineAudio();
+        return offline == null ? null : offline.serveAudio(request);
     }
 
     @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {

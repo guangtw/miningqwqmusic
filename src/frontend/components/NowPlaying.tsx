@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { coverOf, hasId } from '../api';
 import { libraryStore, toggleFavorite } from '../lib/account';
 import { dropLayer, hasLayer, popLayer, pushLayer } from '../lib/backstack';
@@ -8,7 +8,7 @@ import { useInsight } from '../lib/insight';
 import { useBakedArt } from '../lib/bakedArt';
 import { activeLineIndex, displayLines, isUnsynced, lineProgress, splitCredits } from '../lib/lrc';
 import { tweenScroll, useFrame, useMedia } from '../lib/motion';
-import { motionEnabled } from '../lib/settings';
+import { getSettings, motionEnabled, subscribeSettings, updateSettings } from '../lib/settings';
 import { openShare } from '../lib/share';
 import { tintVars, useTint } from '../lib/palette';
 import { href, navigate } from '../lib/router';
@@ -18,6 +18,7 @@ import { openTrackMenu, uiStore } from '../player/ui';
 import { Comments } from './Comments';
 import { sized } from './Cover';
 import { HeartButton } from './HeartButton';
+import { Immersive } from './Immersive';
 import { Icon } from './Icon';
 import { LinerNotes } from './LinerNotes';
 import { toggleNowPlaying } from './PlayerBar';
@@ -60,6 +61,16 @@ export function NowPlaying() {
     const t = setTimeout(() => setGlows((p) => p.filter((g) => g.phase !== 'out')), 1300);
     return () => clearTimeout(t);
   }, [glows]);
+  // 沉浸舞台是默认样子；用户切回普通唱机页后记住
+  const immersive = useSyncExternalStore(subscribeSettings, () => getSettings().npMode !== 'classic', () => true);
+  useEffect(() => {
+    const root = document.documentElement;
+    if (open && immersive && track) root.dataset.immersive = '';
+    else delete root.dataset.immersive;
+    return () => {
+      delete root.dataset.immersive;
+    };
+  }, [open, immersive, !!track]); // eslint-disable-line react-hooks/exhaustive-deps
   const liked = useStore(libraryStore, (s) => (track ? track.id in s.favorites : false));
   // 歌词 / 唱片内页 / 评论三选一；百科在内页或菜单实际需要时再查询。
   const [view, setView] = useState<'lyrics' | 'notes' | 'comments'>('lyrics');
@@ -174,7 +185,7 @@ export function NowPlaying() {
     const i = activeLineIndex(lines, t);
     setActive((prev) => (prev === i ? prev : i));
     paint(i, t);
-  }, open && playing);
+  }, open && playing && !immersive);
 
   useEffect(() => {
     if (open && !playing && !unsynced) {
@@ -235,13 +246,15 @@ export function NowPlaying() {
 
   return (
     <section
-      className={`nowplaying ${open ? 'open' : ''} ${focus ? 'np-focus' : ''} ${returning ? 'np-return' : ''}`}
+      className={`nowplaying ${open ? 'open' : ''} ${focus ? 'np-focus' : ''} ${returning ? 'np-return' : ''} ${immersive && track ? 'np-immersive' : ''}`}
       aria-label="正在播放"
       aria-hidden={!open}
       ref={panelRef}
     >
+      {/* 沉浸舞台（默认）：整页换成 WebGL 舞台，普通唱机页的内容一概不挂 */}
+      {immersive && track && <Immersive open={open} />}
       {/* 整页铺一层放大、虚化的封面，颜色比光斑更饱满；封面只取小图，反正要糊掉 */}
-      {track && (
+      {!immersive && track && (
         <div
           className={`np-art ${baked ? 'baked' : ''}`}
           key={coverOf(track)}
@@ -249,12 +262,13 @@ export function NowPlaying() {
           aria-hidden="true"
         />
       )}
-      {glows.map((g) => (
+      {!immersive && glows.map((g) => (
         <div key={g.key} className={`np-glow ${g.phase === 'on' ? '' : g.phase}`} style={tintVars(g.tint)} aria-hidden="true">
           <i />
           <i />
         </div>
       ))}
+      {!immersive && (
       <header className="np-head">
         {focus && track ? (
           <button className="np-mini" onClick={exitFocus} aria-label="返回唱机">
@@ -269,12 +283,18 @@ export function NowPlaying() {
             {String(index + 1).padStart(2, '0')} / {String(total).padStart(2, '0')}
           </span>
         )}
-        <button className="btn ghost" onClick={close}>
-          收起 <Icon name="down" />
-        </button>
+        <span className="np-head-tools">
+          <button className="btn ghost np-to-stage" onClick={() => updateSettings({ npMode: 'immersive' })} title="切换到沉浸舞台">
+            <Icon name="pulse" /> 沉浸
+          </button>
+          <button className="btn ghost" onClick={close}>
+            收起 <Icon name="down" />
+          </button>
+        </span>
       </header>
+      )}
 
-      {track && (
+      {!immersive && track && (
         <div className="np-body">
           <div className="np-deck-col">
             <div className="np-deck-stack">

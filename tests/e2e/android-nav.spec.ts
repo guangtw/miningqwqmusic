@@ -101,6 +101,10 @@ const lens = async (page: Page) => {
 
 test.beforeEach(async ({ page }, info) => {
   test.skip(info.project.name !== 'chromium-mobile', '安卓手机上的交互');
+  // 这些用例量的是普通唱机页（唱片飞进唱盘、唱机上的歌词）；沉浸舞台另有用例
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('cph.settings.v2')) localStorage.setItem('cph.settings.v2', JSON.stringify({ npMode: 'classic' }));
+  });
   await backend(page);
 });
 

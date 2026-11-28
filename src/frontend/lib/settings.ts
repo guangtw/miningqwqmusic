@@ -11,11 +11,13 @@ export interface Settings {
   theme: Theme;
   /** 尊重系统「减少动态效果」之外，用户也可以手动关掉大部分动画 */
   motion: 'full' | 'reduced';
+  /** 正在播放页：沉浸舞台（默认）或普通唱机页 */
+  npMode: 'immersive' | 'classic';
 }
 
 const KEY = 'cph.settings.v2';
 
-const defaults: Settings = { quality: defaultQuality, preferUnblock: false, theme: 'auto', motion: 'full' };
+const defaults: Settings = { quality: defaultQuality, preferUnblock: false, theme: 'auto', motion: 'full', npMode: 'immersive' };
 
 let current: Settings = { ...defaults, ...readJSON<Partial<Settings>>(KEY, {}) };
 const listeners = new Set<() => void>();

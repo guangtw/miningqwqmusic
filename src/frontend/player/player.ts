@@ -193,6 +193,8 @@ export const currentTrack = (s: PlayerState = get()) => s.queue[s.index] ?? null
 export const audioTime = () => audio.currentTime * 1000;
 export const audioDuration = () => (Number.isFinite(audio.duration) ? audio.duration * 1000 : get().duration);
 export const isAudioPlaying = audible;
+/** 当前播放地址：沉浸模式拿去单独取一份做节拍分析（lib/beats.ts），不接 Web Audio，不碰正在放的这一份 */
+export const audioSource = () => audio.currentSrc || audio.src || null;
 
 // ---- 持久化 ----
 let lastSaved = get();

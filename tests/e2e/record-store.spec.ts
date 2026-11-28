@@ -142,6 +142,14 @@ async function backend(page: Page, options: { disabled?: boolean; failedHome?: b
   return { calls, errors, recoverHome: () => { failHome = false; } };
 }
 
+// 下面的用例量的是普通唱机页；沉浸舞台（正在播放页的默认样子）另有用例。
+// 单个用例自己写 settings 时也带上 npMode: 'classic'
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('cph.settings.v2')) localStorage.setItem('cph.settings.v2', JSON.stringify({ npMode: 'classic' }));
+  });
+});
+
 test('search, pagination, collection, playback, lyrics, queue and local favorites', async ({ page }, info) => {
   const state = await backend(page);
   await page.goto('/');
@@ -220,7 +228,7 @@ test('search, pagination, collection, playback, lyrics, queue and local favorite
 
 test('actual downgraded quality is visible before opening its menu', async ({ page }, info) => {
   const state = await backend(page, { actualQuality: 'exhigh' });
-  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster', npMode: 'classic' })));
   await page.goto('/#/playlist/p1');
   await expect(page.locator('.detail-title')).toHaveText('本期精选');
   await page.locator('.track .t').first().click();
@@ -237,7 +245,7 @@ test('actual downgraded quality is visible before opening its menu', async ({ pa
 
 test('an unblock quality report is displayed immediately without an unknown tier', async ({ page }, info) => {
   const state = await backend(page, { actualQuality: 'jymaster', unblocked: true });
-  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster' })));
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'jymaster', npMode: 'classic' })));
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
   if (info.project.name.includes('mobile')) await openNowPlaying(page);
@@ -250,7 +258,7 @@ test('an unblock quality report is displayed immediately without an unknown tier
 
 test('a Dolby preference falling back to sky displays the immersive tag consistently before and after opening the menu', async ({ page }, info) => {
   const state = await backend(page, { actualQuality: 'sky', unblocked: true, spatialFallback: true });
-  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'dolby', preferUnblock: true })));
+  await page.addInitScript(() => localStorage.setItem('cph.settings.v2', JSON.stringify({ quality: 'dolby', preferUnblock: true, npMode: 'classic' })));
   await page.goto('/#/playlist/p1');
   await page.locator('.track .t').first().click();
   if (info.project.name.includes('mobile')) await openNowPlaying(page);
